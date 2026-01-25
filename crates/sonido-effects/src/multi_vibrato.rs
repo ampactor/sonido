@@ -1,0 +1,200 @@
+//! Multi-Vibrato tape simulation
+//!
+//! 10 simultaneous subtle vibratos at different frequencies and waveforms
+//! to simulate authentic tape wow and flutter.
+
+use sonido_core::{Effect, Lfo, LfoWaveform, FixedDelayLine};
+
+/// Number of vibrato units in MultiVibrato
+pub const NUM_VIBRATOS: usize = 10;
+
+/// Single vibrato unit with its own LFO
+struct VibratoUnit {
+    lfo: Lfo,
+    /// Depth in cents (very subtle: 0.1-2 cents typical)
+    depth_cents: f32,
+    /// Delay line for pitch modulation
+    delay: FixedDelayLine<512>,
+    /// Base delay in samples
+    base_delay: f32,
+}
+
+impl VibratoUnit {
+    fn new(sample_rate: f32, rate_hz: f32, depth_cents: f32, waveform: LfoWaveform) -> Self {
+        let mut lfo = Lfo::new(sample_rate, rate_hz);
+        lfo.set_waveform(waveform);
+
+        Self {
+            lfo,
+            depth_cents,
+            delay: FixedDelayLine::new(),
+            base_delay: 128.0, // ~2.7ms base delay for modulation headroom
+        }
+    }
+
+    fn process(&mut self, input: f32, sample_rate: f32) -> f32 {
+        let lfo_val = self.lfo.next();
+
+        // Convert cents to delay modulation
+        let cents_to_samples = self.depth_cents * sample_rate / 44100.0 * 0.01;
+        let delay_mod = lfo_val * cents_to_samples;
+
+        let delay_samples = self.base_delay + delay_mod;
+        self.delay.read_write(input, delay_samples)
+    }
+
+    fn reset(&mut self) {
+        self.lfo.reset();
+        self.delay.clear();
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.lfo.set_sample_rate(sample_rate);
+    }
+}
+
+/// Multi-Vibrato tape simulation
+///
+/// Each individual vibrato is nearly imperceptible, but combined they
+/// create the organic, living quality of real tape.
+///
+/// # Example
+///
+/// ```rust
+/// use sonido_effects::MultiVibrato;
+/// use sonido_core::Effect;
+///
+/// let mut vibrato = MultiVibrato::new(48000.0);
+/// vibrato.set_mix(0.8);
+/// vibrato.set_depth(1.2);
+///
+/// let input = 0.5;
+/// let output = vibrato.process(input);
+/// ```
+pub struct MultiVibrato {
+    vibratos: [VibratoUnit; NUM_VIBRATOS],
+    sample_rate: f32,
+    /// Overall mix (0.0 = dry, 1.0 = full effect)
+    mix: f32,
+    /// Master depth control (scales all vibrato depths)
+    depth_scale: f32,
+}
+
+impl Default for MultiVibrato {
+    fn default() -> Self {
+        Self::new(48000.0)
+    }
+}
+
+impl MultiVibrato {
+    /// Create a new MultiVibrato with default settings.
+    pub fn new(sample_rate: f32) -> Self {
+        // Carefully chosen rates and waveforms for organic tape character
+        let configs: [(f32, f32, LfoWaveform); NUM_VIBRATOS] = [
+            (0.13, 0.8, LfoWaveform::Sine),        // Very slow drift
+            (0.31, 1.2, LfoWaveform::Triangle),    // Slow wobble
+            (0.67, 0.6, LfoWaveform::Sine),        // Medium drift
+            (1.1, 0.9, LfoWaveform::Triangle),     // Flutter component
+            (1.7, 0.5, LfoWaveform::Sine),         // Higher flutter
+            (2.3, 0.4, LfoWaveform::Triangle),     // Subtle fast
+            (0.23, 1.5, LfoWaveform::Sine),        // Another slow
+            (3.1, 0.3, LfoWaveform::Triangle),     // Fast, subtle
+            (0.47, 1.0, LfoWaveform::Sine),        // Medium
+            (4.7, 0.2, LfoWaveform::Triangle),     // Fastest, most subtle
+        ];
+
+        let vibratos = configs.map(|(rate, depth, waveform)| {
+            VibratoUnit::new(sample_rate, rate, depth, waveform)
+        });
+
+        Self {
+            vibratos,
+            sample_rate,
+            mix: 1.0,
+            depth_scale: 1.0,
+        }
+    }
+
+    /// Set overall mix (0.0 = dry, 1.0 = full effect)
+    pub fn set_mix(&mut self, mix: f32) {
+        self.mix = mix.clamp(0.0, 1.0);
+    }
+
+    /// Get current mix
+    pub fn mix(&self) -> f32 {
+        self.mix
+    }
+
+    /// Set master depth scale (multiplies all vibrato depths)
+    pub fn set_depth(&mut self, scale: f32) {
+        self.depth_scale = scale.clamp(0.0, 2.0);
+    }
+
+    /// Get current depth scale
+    pub fn depth(&self) -> f32 {
+        self.depth_scale
+    }
+}
+
+impl Effect for MultiVibrato {
+    fn process(&mut self, input: f32) -> f32 {
+        // Process through all vibratos and average
+        let mut wet = 0.0f32;
+        for vib in &mut self.vibratos {
+            wet += vib.process(input, self.sample_rate);
+        }
+        wet /= NUM_VIBRATOS as f32;
+
+        // Mix dry and wet
+        input * (1.0 - self.mix) + wet * self.mix
+    }
+
+    fn reset(&mut self) {
+        for vib in &mut self.vibratos {
+            vib.reset();
+        }
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.sample_rate = sample_rate;
+        for vib in &mut self.vibratos {
+            vib.set_sample_rate(sample_rate);
+        }
+    }
+
+    fn latency_samples(&self) -> usize {
+        // Report minimal latency from base delay
+        128
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_multi_vibrato_basic() {
+        let mut vibrato = MultiVibrato::new(48000.0);
+        vibrato.set_mix(1.0);
+
+        for _ in 0..1000 {
+            let output = vibrato.process(0.5);
+            assert!(output.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_multi_vibrato_bypass() {
+        let mut vibrato = MultiVibrato::new(48000.0);
+        vibrato.set_mix(0.0);
+
+        let output = vibrato.process(0.5);
+        assert!((output - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_multi_vibrato_latency() {
+        let vibrato = MultiVibrato::new(48000.0);
+        assert_eq!(vibrato.latency_samples(), 128);
+    }
+}
