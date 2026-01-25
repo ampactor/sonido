@@ -1,0 +1,18 @@
+[package]
+name = "sonido-analysis"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Spectral analysis tools for audio DSP reverse engineering"
+keywords = ["dsp", "audio", "fft", "analysis", "spectrum"]
+categories = ["multimedia::audio", "science"]
+
+[features]
+default = []
+
+[dependencies]
+rustfft = { workspace = true }
+sonido-core = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
