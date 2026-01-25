@@ -1,0 +1,24 @@
+[package]
+name = "sonido-effects"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Audio effect implementations for sonido"
+keywords = ["dsp", "audio", "effects", "distortion", "chorus"]
+categories = ["multimedia::audio"]
+
+[features]
+default = ["std"]
+std = ["sonido-core/std"]
+
+[dependencies]
+sonido-core = { workspace = true }
+libm = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "effects_bench"
+harness = false
