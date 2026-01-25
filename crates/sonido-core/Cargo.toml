@@ -1,0 +1,19 @@
+[package]
+name = "sonido-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Core DSP primitives for sonido - no_std compatible"
+keywords = ["dsp", "audio", "effects", "no_std"]
+categories = ["multimedia::audio", "no-std"]
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+libm = { workspace = true }
+num-traits = { workspace = true }
+
+[dev-dependencies]
