@@ -1,0 +1,40 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/sonido-core",
+    "crates/sonido-effects",
+    "crates/sonido-analysis",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+authors = ["Suds"]
+repository = "https://github.com/suds/sonido"
+
+[workspace.dependencies]
+# Core math for no_std
+libm = "0.2"
+
+# FFT for analysis (std only)
+rustfft = "6.2"
+
+# Numeric traits for generic code
+num-traits = { version = "0.2", default-features = false }
+
+# Benchmarking
+criterion = "0.5"
+
+# Internal crates
+sonido-core = { path = "crates/sonido-core", default-features = false }
+sonido-effects = { path = "crates/sonido-effects", default-features = false }
+sonido-analysis = { path = "crates/sonido-analysis" }
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+
+[profile.bench]
+lto = true
