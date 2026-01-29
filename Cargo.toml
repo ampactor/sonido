@@ -4,6 +4,8 @@ members = [
     "crates/sonido-core",
     "crates/sonido-effects",
     "crates/sonido-analysis",
+    "crates/sonido-io",
+    "crates/sonido-cli",
 ]
 
 [workspace.package]
@@ -30,6 +32,16 @@ criterion = "0.5"
 sonido-core = { path = "crates/sonido-core", default-features = false }
 sonido-effects = { path = "crates/sonido-effects", default-features = false }
 sonido-analysis = { path = "crates/sonido-analysis" }
+sonido-io = { path = "crates/sonido-io" }
+
+# CLI dependencies
+clap = { version = "4", features = ["derive"] }
+cpal = "0.15"
+hound = "3.5"
+thiserror = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+indicatif = "0.17"
 
 [profile.release]
 lto = true
