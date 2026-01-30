@@ -39,7 +39,7 @@ pub enum LfoWaveform {
 /// lfo.set_waveform(LfoWaveform::Triangle);
 ///
 /// // Generate modulation values in [-1.0, 1.0]
-/// let value = lfo.next();
+/// let value = lfo.advance();
 /// ```
 #[derive(Debug, Clone)]
 pub struct Lfo {
@@ -118,7 +118,7 @@ impl Lfo {
 
     /// Get next LFO value (-1.0 to 1.0)
     #[inline]
-    pub fn next(&mut self) -> f32 {
+    pub fn advance(&mut self) -> f32 {
         let output = match self.waveform {
             LfoWaveform::Sine => sinf(self.phase * 2.0 * PI),
 
@@ -161,8 +161,8 @@ impl Lfo {
     }
 
     /// Get next value scaled to range (0.0 to 1.0 for unipolar)
-    pub fn next_unipolar(&mut self) -> f32 {
-        (self.next() + 1.0) * 0.5
+    pub fn advance_unipolar(&mut self) -> f32 {
+        (self.advance() + 1.0) * 0.5
     }
 
     /// Set sample rate
@@ -183,7 +183,7 @@ mod tests {
 
         // After 44100 samples (1 second), should complete one cycle
         for _ in 0..44100 {
-            lfo.next();
+            lfo.advance();
         }
 
         // Phase should be very close to 0 or 1 (wrapped around)
@@ -201,7 +201,7 @@ mod tests {
             lfo.reset();
 
             for _ in 0..1000 {
-                let value = lfo.next();
+                let value = lfo.advance();
                 assert!(
                     value >= -1.0 && value <= 1.0,
                     "Waveform {:?} out of range: {}",
@@ -219,8 +219,8 @@ mod tests {
 
         lfo2.set_phase(0.5); // 180° offset
 
-        let val1 = lfo1.next();
-        let val2 = lfo2.next();
+        let val1 = lfo1.advance();
+        let val2 = lfo2.advance();
 
         // Should be approximately opposite for sine
         assert!(
@@ -250,7 +250,7 @@ mod tests {
         let mut lfo = Lfo::new(44100.0, 5.0);
 
         for _ in 0..1000 {
-            let value = lfo.next_unipolar();
+            let value = lfo.advance_unipolar();
             assert!(
                 value >= 0.0 && value <= 1.0,
                 "Unipolar value out of range: {}",

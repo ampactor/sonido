@@ -179,8 +179,10 @@ fn linear_to_db(linear: f32) -> f32 {
 struct Preset {
     name: String,
     #[serde(default)]
+    #[allow(dead_code)]
     description: Option<String>,
     #[serde(default = "default_sample_rate")]
+    #[allow(dead_code)]
     sample_rate: u32,
     effects: Vec<EffectConfig>,
 }

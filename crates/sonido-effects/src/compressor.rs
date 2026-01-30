@@ -123,7 +123,7 @@ impl Effect for Compressor {
         let envelope_db = linear_to_db(envelope);
         let gain_reduction_db = self.gain_computer.compute_gain_db(envelope_db);
         let gain_linear = db_to_linear(gain_reduction_db);
-        let makeup = self.makeup_gain.next();
+        let makeup = self.makeup_gain.advance();
 
         input * gain_linear * makeup
     }

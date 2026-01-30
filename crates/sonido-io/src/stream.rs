@@ -2,7 +2,7 @@
 
 use crate::{Error, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{Device, Host, SampleRate, Stream, SupportedStreamConfig};
+use cpal::{Device, Host, SampleRate, Stream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -122,6 +122,7 @@ pub fn default_device() -> Result<(Option<AudioDevice>, Option<AudioDevice>)> {
 
 /// Real-time audio stream with input and output.
 pub struct AudioStream {
+    #[allow(dead_code)]
     host: Host,
     input_device: Device,
     output_device: Device,
@@ -172,7 +173,7 @@ impl AudioStream {
     {
         use std::sync::mpsc;
 
-        let sample_rate = SampleRate(self.config.sample_rate);
+        let _sample_rate = SampleRate(self.config.sample_rate);
 
         // Get supported configs
         let input_config = self

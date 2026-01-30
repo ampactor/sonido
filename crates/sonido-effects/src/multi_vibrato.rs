@@ -33,7 +33,7 @@ impl VibratoUnit {
     }
 
     fn process(&mut self, input: f32, sample_rate: f32) -> f32 {
-        let lfo_val = self.lfo.next();
+        let lfo_val = self.lfo.advance();
 
         // Convert cents to delay modulation
         let cents_to_samples = self.depth_cents * sample_rate / 44100.0 * 0.01;

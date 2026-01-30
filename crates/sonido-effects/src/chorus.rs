@@ -79,15 +79,15 @@ impl Chorus {
 
 impl Effect for Chorus {
     fn process(&mut self, input: f32) -> f32 {
-        let rate = self.rate.next();
-        let depth = self.depth.next();
-        let mix = self.mix.next();
+        let rate = self.rate.advance();
+        let depth = self.depth.advance();
+        let mix = self.mix.advance();
 
         self.lfo1.set_frequency(rate);
         self.lfo2.set_frequency(rate);
 
-        let mod1 = self.lfo1.next();
-        let mod2 = self.lfo2.next();
+        let mod1 = self.lfo1.advance();
+        let mod2 = self.lfo2.advance();
 
         let delay_time1 = self.base_delay_samples + (mod1 * depth * self.max_mod_samples);
         let delay_time2 = self.base_delay_samples + (mod2 * depth * self.max_mod_samples);

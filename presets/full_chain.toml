@@ -1,0 +1,50 @@
+name = "Full Chain"
+description = "Complete signal chain: boost, drive, modulation, delay"
+
+# Input stage - boost and shape
+[[effects]]
+type = "preamp"
+[effects.params]
+gain = "6"
+
+# Compression - even out dynamics
+[[effects]]
+type = "compressor"
+[effects.params]
+threshold = "-18"
+ratio = "3"
+attack = "10"
+release = "100"
+makeup = "3"
+
+# Drive - add harmonic content
+[[effects]]
+type = "distortion"
+[effects.params]
+drive = "12"
+tone = "4500"
+level = "-3"
+waveshape = "softclip"
+
+# Modulation - add movement
+[[effects]]
+type = "chorus"
+[effects.params]
+rate = "1.2"
+depth = "0.4"
+mix = "0.25"
+
+# Time-based - add space
+[[effects]]
+type = "delay"
+[effects.params]
+time = "330"
+feedback = "0.35"
+mix = "0.3"
+
+# Final filtering - tame highs
+[[effects]]
+type = "filter"
+[effects.params]
+cutoff = "8000"
+resonance = "0.5"

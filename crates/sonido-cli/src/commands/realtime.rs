@@ -146,8 +146,10 @@ pub fn run(args: RealtimeArgs) -> anyhow::Result<()> {
 struct Preset {
     name: String,
     #[serde(default)]
+    #[allow(dead_code)]
     description: Option<String>,
     #[serde(default = "default_sample_rate")]
+    #[allow(dead_code)]
     sample_rate: u32,
     effects: Vec<EffectConfig>,
 }

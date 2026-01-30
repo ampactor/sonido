@@ -1,6 +1,6 @@
 //! WAV file reading and writing.
 
-use crate::{Error, Result};
+use crate::Result;
 use hound::{SampleFormat, WavReader, WavWriter};
 use std::path::Path;
 
