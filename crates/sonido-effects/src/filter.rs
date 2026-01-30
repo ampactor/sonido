@@ -66,8 +66,8 @@ impl LowPassFilter {
 
 impl Effect for LowPassFilter {
     fn process(&mut self, input: f32) -> f32 {
-        self.cutoff.next();
-        self.q.next();
+        self.cutoff.advance();
+        self.q.advance();
 
         if self.needs_update || !self.cutoff.is_settled() || !self.q.is_settled() {
             self.update_coefficients();

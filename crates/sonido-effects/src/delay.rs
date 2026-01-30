@@ -70,9 +70,9 @@ impl Delay {
 
 impl Effect for Delay {
     fn process(&mut self, input: f32) -> f32 {
-        let delay_samples = self.delay_time.next();
-        let feedback = self.feedback.next();
-        let mix = self.mix.next();
+        let delay_samples = self.delay_time.advance();
+        let feedback = self.feedback.advance();
+        let mix = self.mix.advance();
 
         let delayed = self.delay_line.read(delay_samples);
         let feedback_signal = input + (delayed * feedback);

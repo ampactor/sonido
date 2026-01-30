@@ -1,0 +1,9 @@
+name = "Subtle Chorus"
+description = "Light chorus for stereo widening"
+
+[[effects]]
+type = "chorus"
+[effects.params]
+rate = "0.8"
+depth = "0.35"
+mix = "0.3"

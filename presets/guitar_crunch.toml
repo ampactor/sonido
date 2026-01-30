@@ -1,0 +1,15 @@
+name = "Guitar Crunch"
+description = "Classic overdrive sound for guitar"
+
+[[effects]]
+type = "preamp"
+[effects.params]
+gain = "6"
+
+[[effects]]
+type = "distortion"
+[effects.params]
+drive = "15"
+tone = "4000"
+level = "-6"
+waveshape = "softclip"

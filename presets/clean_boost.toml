@@ -1,0 +1,16 @@
+name = "Clean Boost"
+description = "Transparent gain boost with light compression"
+
+[[effects]]
+type = "preamp"
+[effects.params]
+gain = "8"
+
+[[effects]]
+type = "compressor"
+[effects.params]
+threshold = "-12"
+ratio = "2"
+attack = "20"
+release = "150"
+makeup = "0"

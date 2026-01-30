@@ -23,7 +23,7 @@
 //!
 //! // In audio callback, get smoothed value each sample
 //! for _ in 0..480 { // 10ms at 48kHz
-//!     let smoothed_gain = gain.next();
+//!     let smoothed_gain = gain.advance();
 //!     // Use smoothed_gain for processing...
 //! }
 //! ```
@@ -126,7 +126,7 @@ impl SmoothedParam {
     ///
     /// Call this once per sample in your audio processing loop.
     #[inline]
-    pub fn next(&mut self) -> f32 {
+    pub fn advance(&mut self) -> f32 {
         // One-pole lowpass: y[n] = y[n-1] + coeff * (target - y[n-1])
         // Equivalent to: y[n] = (1-coeff) * y[n-1] + coeff * target
         self.current = self.current + self.coeff * (self.target - self.current);
@@ -275,7 +275,7 @@ impl LinearSmoothedParam {
 
     /// Get next smoothed value.
     #[inline]
-    pub fn next(&mut self) -> f32 {
+    pub fn advance(&mut self) -> f32 {
         if self.samples_remaining > 0 {
             self.current += self.increment;
             self.samples_remaining -= 1;
@@ -329,7 +329,7 @@ mod tests {
         param.set_smoothing_time_ms(0.0); // No smoothing
 
         param.set_target(0.5);
-        let val = param.next();
+        let val = param.advance();
         assert!((val - 0.5).abs() < 1e-6, "Should snap instantly");
     }
 
@@ -340,7 +340,7 @@ mod tests {
 
         // Run for 50ms (5x the time constant) - should be very close
         for _ in 0..(48000 * 50 / 1000) {
-            param.next();
+            param.advance();
         }
 
         assert!(
@@ -358,7 +358,7 @@ mod tests {
         // After one time constant (~10ms), should be about 63% of the way
         let samples_for_time_constant = (48000.0 * 0.010) as usize;
         for _ in 0..samples_for_time_constant {
-            param.next();
+            param.advance();
         }
 
         // One-pole reaches ~63.2% after one time constant
@@ -379,7 +379,7 @@ mod tests {
         // Run for exactly 10ms
         let samples = (48000.0 * 0.010) as usize;
         for _ in 0..samples {
-            param.next();
+            param.advance();
         }
 
         assert!(
@@ -398,7 +398,7 @@ mod tests {
         // After 5ms, should be halfway
         let samples = (48000.0 * 0.005) as usize;
         for _ in 0..samples {
-            param.next();
+            param.advance();
         }
 
         assert!(

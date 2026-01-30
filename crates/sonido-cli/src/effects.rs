@@ -220,21 +220,6 @@ pub fn available_effects() -> Vec<EffectInfo> {
     ]
 }
 
-/// Create an effect by name with default parameters.
-pub fn create_effect(name: &str, sample_rate: f32) -> Result<Box<dyn Effect + Send>, EffectError> {
-    match name.to_lowercase().as_str() {
-        "distortion" => Ok(Box::new(Distortion::new(sample_rate))),
-        "compressor" => Ok(Box::new(Compressor::new(sample_rate))),
-        "chorus" => Ok(Box::new(Chorus::new(sample_rate))),
-        "delay" => Ok(Box::new(Delay::new(sample_rate))),
-        "filter" | "lowpass" => Ok(Box::new(LowPassFilter::new(sample_rate))),
-        "multivibrato" | "vibrato" => Ok(Box::new(MultiVibrato::new(sample_rate))),
-        "tape" | "tapesaturation" => Ok(Box::new(TapeSaturation::new(sample_rate))),
-        "preamp" | "cleanpreamp" => Ok(Box::new(CleanPreamp::new())),
-        _ => Err(EffectError::UnknownEffect(name.to_string())),
-    }
-}
-
 /// Create an effect with custom parameters.
 pub fn create_effect_with_params(
     name: &str,
@@ -471,11 +456,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_create_effect() {
-        let effect = create_effect("distortion", 48000.0);
+    fn test_create_effect_with_params() {
+        let params = HashMap::new();
+        let effect = create_effect_with_params("distortion", 48000.0, &params);
         assert!(effect.is_ok());
 
-        let effect = create_effect("unknown", 48000.0);
+        let effect = create_effect_with_params("unknown", 48000.0, &params);
         assert!(effect.is_err());
     }
 

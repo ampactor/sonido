@@ -1,0 +1,21 @@
+name = "Tape Delay"
+description = "Warm analog-style tape echo"
+
+[[effects]]
+type = "tape"
+[effects.params]
+drive = "4"
+saturation = "0.4"
+
+[[effects]]
+type = "delay"
+[effects.params]
+time = "375"
+feedback = "0.45"
+mix = "0.4"
+
+[[effects]]
+type = "filter"
+[effects.params]
+cutoff = "6000"
+resonance = "0.5"

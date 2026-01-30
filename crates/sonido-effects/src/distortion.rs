@@ -144,9 +144,9 @@ impl Distortion {
 
 impl Effect for Distortion {
     fn process(&mut self, input: f32) -> f32 {
-        let drive = self.drive.next();
-        let level = self.level.next();
-        let tone_coeff = self.tone_coeff.next();
+        let drive = self.drive.advance();
+        let level = self.level.advance();
+        let tone_coeff = self.tone_coeff.advance();
 
         let driven = input * drive;
         let shaped = self.apply_waveshape(driven);
