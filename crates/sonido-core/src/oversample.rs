@@ -213,8 +213,10 @@ impl<const FACTOR: usize, E: Effect> Effect for Oversampled<FACTOR, E> {
 //
 // Lowpass FIR filter coefficients for anti-aliasing during downsampling.
 // Generated using windowed-sinc with Kaiser window.
+// Note: Precision is intentional for DSP accuracy.
 
 /// 2× oversampling filter coefficients (cutoff = 0.4 × Nyquist)
+#[allow(clippy::excessive_precision)]
 #[rustfmt::skip]
 static COEFFS_2X: [f32; FILTER_TAPS] = [
     -0.00152541,  0.00000000,  0.01309369,  0.00000000,
@@ -224,6 +226,7 @@ static COEFFS_2X: [f32; FILTER_TAPS] = [
 ];
 
 /// 4× oversampling filter coefficients (cutoff = 0.2 × Nyquist)
+#[allow(clippy::excessive_precision)]
 #[rustfmt::skip]
 static COEFFS_4X: [f32; FILTER_TAPS] = [
     0.0018645282, 0.0068257641, 0.0172712655, 0.0342604001,
@@ -233,6 +236,7 @@ static COEFFS_4X: [f32; FILTER_TAPS] = [
 ];
 
 /// 8× oversampling filter coefficients (cutoff = 0.1 × Nyquist)
+#[allow(clippy::excessive_precision)]
 #[rustfmt::skip]
 static COEFFS_8X: [f32; FILTER_TAPS] = [
     0.0048323092, 0.0131400047, 0.0264623493, 0.0438249658,

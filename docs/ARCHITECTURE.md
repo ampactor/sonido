@@ -35,10 +35,14 @@ The foundation crate providing DSP primitives. Designed for `no_std` environment
 **Key components:**
 - `Effect` trait: Object-safe interface all effects implement
 - `SmoothedParam`: Zipper-free parameter changes with exponential/linear smoothing
-- `DelayLine`: Sample-accurate delay buffer with fractional interpolation
+- `InterpolatedDelay` / `FixedDelayLine`: Delay buffers with fractional interpolation
 - `Biquad`: IIR filter building block for EQ, lowpass, highpass, etc.
-- `Lfo`: Low-frequency oscillator for modulation effects
-- `Oversampling`: 2x/4x oversampling for anti-aliasing in nonlinear effects
+- `StateVariableFilter`: Multi-output filter (LP, HP, BP simultaneously)
+- `CombFilter`: Comb filter with damping for reverb algorithms
+- `AllpassFilter`: Schroeder allpass for diffusion
+- `Lfo`: Low-frequency oscillator for modulation effects (5 waveforms)
+- `EnvelopeFollower`: Amplitude envelope detection for dynamics
+- `Oversampled`: Generic 2x/4x/8x oversampling wrapper for anti-aliasing
 
 ### sonido-effects
 
@@ -53,6 +57,7 @@ Audio effect implementations built on sonido-core. Also `no_std` compatible.
 - `MultiVibrato`: 10-unit tape wow/flutter simulation
 - `TapeSaturation`: Tape-style saturation with HF rolloff
 - `CleanPreamp`: Simple gain stage
+- `Reverb`: Freeverb-style algorithmic reverb with 8 combs + 4 allpasses
 
 ### sonido-analysis
 

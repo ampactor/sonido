@@ -1,4 +1,32 @@
-//! Dynamics compressor with envelope follower and gain reduction.
+//! Dynamics compressor with soft-knee characteristics.
+//!
+//! A feed-forward compressor that reduces dynamic range by attenuating
+//! signals above a threshold.
+//!
+//! # Signal Flow
+//!
+//! ```text
+//! Input → Envelope Follower → Gain Computer → Gain Reduction → Output
+//!                                    ↓
+//!                              Makeup Gain
+//! ```
+//!
+//! # Parameters
+//!
+//! | Parameter | Range | Description |
+//! |-----------|-------|-------------|
+//! | Threshold | -40 to 0 dB | Level where compression begins |
+//! | Ratio | 1:1 to 20:1 | Compression strength (∞:1 = limiter) |
+//! | Attack | 0.1-100 ms | How fast gain reduction engages |
+//! | Release | 10-1000 ms | How fast gain reduction releases |
+//! | Makeup | 0-20 dB | Output level compensation |
+//!
+//! # Tips
+//!
+//! - **Fast attack** (< 5ms): Catches transients, can sound "squashed"
+//! - **Slow attack** (> 20ms): Lets transients through, more natural
+//! - **Fast release** (< 100ms): Pumping effect, good for drums
+//! - **Slow release** (> 200ms): Smooth, transparent compression
 
 use sonido_core::{Effect, SmoothedParam, EnvelopeFollower};
 use libm::{log10f, powf};
@@ -118,6 +146,7 @@ impl Compressor {
 }
 
 impl Effect for Compressor {
+    #[inline]
     fn process(&mut self, input: f32) -> f32 {
         let envelope = self.envelope_follower.process(input);
         let envelope_db = linear_to_db(envelope);

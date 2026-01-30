@@ -143,7 +143,8 @@ impl Lfo {
             LfoWaveform::SampleAndHold => {
                 // New random value when phase wraps
                 if self.phase < self.prev_phase {
-                    // Simple pseudo-random using phase
+                    // Simple pseudo-random using phase (hash-like magic numbers)
+                    #[allow(clippy::excessive_precision)]
                     let x = sinf(self.phase * 12345.6789) * 43758.5453;
                     self.sh_value = (x - floorf(x)) * 2.0 - 1.0;
                 }
@@ -174,6 +175,7 @@ impl Lfo {
 }
 
 #[cfg(test)]
+#[allow(clippy::manual_range_contains)] // Manual range checks are more readable in assertions
 mod tests {
     use super::*;
 

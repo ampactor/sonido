@@ -137,6 +137,7 @@ impl MultiVibrato {
 }
 
 impl Effect for MultiVibrato {
+    #[inline]
     fn process(&mut self, input: f32) -> f32 {
         // Process through all vibratos and average
         let mut wet = 0.0f32;

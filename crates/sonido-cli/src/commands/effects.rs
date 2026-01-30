@@ -1,5 +1,7 @@
 //! Effect listing and information command.
 
+#![allow(clippy::print_literal)] // Table headers use literal strings intentionally
+
 use crate::effects::available_effects;
 use clap::Args;
 

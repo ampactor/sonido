@@ -200,6 +200,51 @@ sonido process in.wav out.wav --effect preamp --param gain=6
 
 ---
 
+## reverb
+
+Freeverb-style algorithmic reverb with 8 parallel comb filters and 4 series allpass filters.
+
+| Parameter | Description | Default | Range |
+|-----------|-------------|---------|-------|
+| `room_size` | Room size (affects early reflection density) | 0.5 | 0-1 |
+| `decay` | Decay time (reverb tail length) | 0.5 | 0-1 |
+| `damping` | HF damping (0=bright, 1=dark) | 0.5 | 0-1 |
+| `predelay` | Pre-delay time in ms | 10.0 | 0-100 |
+| `mix` | Wet/dry mix (0-1) | 0.5 | 0-1 |
+| `type` | Reverb type preset | room | room, hall |
+
+### Reverb Types
+
+- **room**: Small room with short decay (room_size=0.4, decay=0.5, damping=0.5, predelay=10ms)
+- **hall**: Large hall with long decay (room_size=0.8, decay=0.8, damping=0.3, predelay=25ms)
+
+### Tips
+
+- **Small room**: room_size=0.3, decay=0.4, damping=0.6 - Tight, intimate sound
+- **Medium room**: room_size=0.5, decay=0.6, damping=0.4 - Balanced, natural
+- **Large hall**: room_size=0.8, decay=0.85, damping=0.25 - Spacious, epic
+- **Dark reverb**: damping=0.7-0.9 - Muffled, vintage sound
+- **Bright reverb**: damping=0.1-0.3 - Shimmery, modern sound
+- **Pre-delay**: 10-30ms for clarity, keeps source separate from reverb
+
+### Example
+
+```bash
+# Room reverb
+sonido process in.wav out.wav --effect reverb \
+    --param room_size=0.5 --param decay=0.6 --param mix=0.4
+
+# Hall reverb preset
+sonido process in.wav out.wav --effect reverb \
+    --param type=hall --param mix=0.5
+
+# Custom dark hall
+sonido process in.wav out.wav --effect reverb \
+    --param room_size=0.8 --param decay=0.9 --param damping=0.7 --param predelay=25
+```
+
+---
+
 ## Effect Chains
 
 ### Chain Syntax
@@ -228,4 +273,14 @@ effect1:param1=value1,param2=value2|effect2:param=value
 **Lo-Fi**
 ```bash
 --chain "tape:drive=8,saturation=0.6|filter:cutoff=4000|multivibrato:depth=0.3"
+```
+
+**Ambient Wash**
+```bash
+--chain "delay:time=400,feedback=0.5,mix=0.3|reverb:decay=0.9,room_size=0.8,mix=0.6"
+```
+
+**Guitar Hall**
+```bash
+--chain "distortion:drive=10|compressor:threshold=-18|reverb:type=hall,mix=0.4"
 ```

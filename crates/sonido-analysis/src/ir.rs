@@ -99,7 +99,7 @@ impl SineSweep {
 
         // Multiply in frequency domain
         for (r, i) in response_complex.iter_mut().zip(inverse_complex.iter()) {
-            *r = *r * *i;
+            *r *= *i;
         }
 
         // IFFT

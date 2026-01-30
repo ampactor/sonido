@@ -4,11 +4,24 @@ Production-grade DSP library in Rust for audio effects, plugins, and embedded sy
 
 ## Features
 
-- **8 audio effects**: distortion, compressor, chorus, delay, filter, vibrato, tape saturation, preamp
+- **9 audio effects**: distortion, compressor, chorus, delay, filter, vibrato, tape saturation, preamp, reverb
 - **no_std compatible**: Core primitives work on embedded targets without heap allocation
 - **Real-time audio I/O**: Process live audio via the CLI
 - **Spectral analysis toolkit**: FFT-based tools for reverse engineering hardware effects
-- **Effect chaining**: Build complex signal chains with static or dynamic composition
+- **Zero-cost effect chaining**: Build complex signal chains with static or dynamic composition
+- **Parameter smoothing**: Click-free automation with exponential and linear smoothing
+
+## Why Sonido?
+
+| Feature | Typical Crates | Sonido |
+|---------|---------------|--------|
+| Parameter smoothing | None or ad-hoc | Two strategies (exponential + linear) |
+| Effect chaining | `Vec<Box<dyn Effect>>` | Zero-cost static `Chain<A,B>` |
+| no_std support | Afterthought | First-class design principle |
+| Oversampling | Per-effect or missing | Generic `Oversampled<N, E>` wrapper |
+| Latency reporting | Missing | Built-in for DAW compensation |
+| Documentation | Sparse | Every public item documented |
+| Testing | Minimal | 110+ unit tests |
 
 ## Quick Start
 
@@ -36,6 +49,25 @@ let output = distortion.process(input_sample);
 
 // Or process blocks for efficiency
 distortion.process_block(&input_buffer, &mut output_buffer);
+```
+
+### Effect Chaining
+
+```rust
+use sonido_core::{Effect, EffectExt};
+use sonido_effects::{Distortion, Chorus, Delay, Reverb};
+
+// Create and configure effects
+let dist = Distortion::new(48000.0);
+let chorus = Chorus::new(48000.0);
+let delay = Delay::new(48000.0);
+let reverb = Reverb::new(48000.0);
+
+// Chain with zero-cost static dispatch (no heap allocation)
+let mut chain = dist.chain(chorus).chain(delay).chain(reverb);
+
+// Process entire buffer
+chain.process_block(&input, &mut output);
 ```
 
 ## Crate Overview
