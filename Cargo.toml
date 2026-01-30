@@ -6,6 +6,7 @@ members = [
     "crates/sonido-analysis",
     "crates/sonido-io",
     "crates/sonido-cli",
+    "crates/sonido-gui",
 ]
 
 [workspace.package]

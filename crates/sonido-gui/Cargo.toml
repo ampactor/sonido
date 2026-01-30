@@ -1,0 +1,45 @@
+[package]
+name = "sonido-gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Professional GUI for the Sonido DSP framework"
+
+[[bin]]
+name = "sonido-gui"
+path = "src/main.rs"
+
+[dependencies]
+# GUI framework
+eframe = "0.31"
+egui = "0.31"
+egui_extras = "0.31"
+
+# Audio (workspace)
+cpal.workspace = true
+sonido-core = { path = "../sonido-core", features = ["std"] }
+sonido-effects = { path = "../sonido-effects", features = ["std"] }
+sonido-io = { path = "../sonido-io" }
+
+# Thread-safety
+crossbeam-channel = "0.5"
+parking_lot = "0.12"
+
+# Presets
+serde.workspace = true
+serde_json = "1.0"
+dirs = "5.0"
+
+# CLI args
+clap.workspace = true
+
+# Error handling
+thiserror.workspace = true
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+[features]
+default = []
