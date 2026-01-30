@@ -125,6 +125,7 @@ impl TapeSaturation {
 }
 
 impl Effect for TapeSaturation {
+    #[inline]
     fn process(&mut self, input: f32) -> f32 {
         // Apply saturation
         let saturated = self.saturate(input);

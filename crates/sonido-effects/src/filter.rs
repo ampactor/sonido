@@ -65,6 +65,7 @@ impl LowPassFilter {
 }
 
 impl Effect for LowPassFilter {
+    #[inline]
     fn process(&mut self, input: f32) -> f32 {
         self.cutoff.advance();
         self.q.advance();

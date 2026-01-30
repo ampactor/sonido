@@ -1,7 +1,27 @@
-//! Delay line implementations
+//! Delay line implementations for time-based effects.
 //!
-//! Circular buffer-based delay lines with various interpolation methods.
-//! Essential for delay effects, reverbs, chorus, flangers, and more.
+//! Provides circular buffer-based delay lines with interpolation support.
+//! These are fundamental building blocks for many audio effects.
+//!
+//! # Types
+//!
+//! - [`InterpolatedDelay`] - Heap-allocated, variable-length delay with interpolation
+//! - [`FixedDelayLine`] - Stack-allocated, compile-time fixed length
+//!
+//! # Use Cases
+//!
+//! | Effect | Delay Range | Modulation |
+//! |--------|-------------|------------|
+//! | Flanger | 1-10ms | Yes (LFO) |
+//! | Chorus | 10-30ms | Yes (LFO) |
+//! | Slapback | 50-150ms | No |
+//! | Echo/Delay | 100-2000ms | Optional |
+//! | Reverb (comb) | 20-100ms | No |
+//!
+//! # Interpolation
+//!
+//! For modulated delays (chorus, flanger), use [`InterpolatedDelay::read`]
+//! with fractional delay times to avoid zipper noise and aliasing.
 
 #[cfg(not(feature = "std"))]
 extern crate alloc;

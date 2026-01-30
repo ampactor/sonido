@@ -3,7 +3,7 @@
 use sonido_core::Effect;
 use sonido_effects::{
     Chorus, CleanPreamp, Compressor, Delay, Distortion, LowPassFilter, MultiVibrato,
-    TapeSaturation, WaveShape,
+    Reverb, ReverbType, TapeSaturation, WaveShape,
 };
 use std::collections::HashMap;
 
@@ -217,6 +217,48 @@ pub fn available_effects() -> Vec<EffectInfo> {
                 },
             ],
         },
+        EffectInfo {
+            name: "reverb",
+            description: "Freeverb-style algorithmic reverb",
+            parameters: &[
+                ParameterInfo {
+                    name: "room_size",
+                    description: "Room size (0-1)",
+                    default: "0.5",
+                    range: "0-1",
+                },
+                ParameterInfo {
+                    name: "decay",
+                    description: "Decay time (0-1)",
+                    default: "0.5",
+                    range: "0-1",
+                },
+                ParameterInfo {
+                    name: "damping",
+                    description: "HF damping (0-1, 0=bright, 1=dark)",
+                    default: "0.5",
+                    range: "0-1",
+                },
+                ParameterInfo {
+                    name: "predelay",
+                    description: "Pre-delay in ms",
+                    default: "10.0",
+                    range: "0-100",
+                },
+                ParameterInfo {
+                    name: "mix",
+                    description: "Wet/dry mix (0-1)",
+                    default: "0.5",
+                    range: "0-1",
+                },
+                ParameterInfo {
+                    name: "type",
+                    description: "Reverb type preset",
+                    default: "room",
+                    range: "room|hall",
+                },
+            ],
+        },
     ]
 }
 
@@ -360,6 +402,26 @@ pub fn create_effect_with_params(
             }
             Ok(Box::new(effect))
         }
+        "reverb" => {
+            let mut effect = Reverb::new(sample_rate);
+            for (key, value) in params {
+                match key.as_str() {
+                    "room_size" | "room" | "size" => effect.set_room_size(parse_f32(key, value)?),
+                    "decay" => effect.set_decay(parse_f32(key, value)?),
+                    "damping" | "damp" => effect.set_damping(parse_f32(key, value)?),
+                    "predelay" | "pre" => effect.set_predelay_ms(parse_f32(key, value)?),
+                    "mix" => effect.set_mix(parse_f32(key, value)?),
+                    "type" | "preset" => effect.set_reverb_type(parse_reverb_type(value)?),
+                    _ => {
+                        return Err(EffectError::UnknownParameter {
+                            effect: name.to_string(),
+                            param: key.to_string(),
+                        })
+                    }
+                }
+            }
+            Ok(Box::new(effect))
+        }
         _ => Err(EffectError::UnknownEffect(name.to_string())),
     }
 }
@@ -451,6 +513,20 @@ fn parse_waveshape(value: &str) -> Result<WaveShape, EffectError> {
     }
 }
 
+fn parse_reverb_type(value: &str) -> Result<ReverbType, EffectError> {
+    match value.to_lowercase().as_str() {
+        "room" => Ok(ReverbType::Room),
+        "hall" => Ok(ReverbType::Hall),
+        _ => Err(EffectError::InvalidValue {
+            param: "type".to_string(),
+            message: format!(
+                "'{}' is not a valid reverb type (use: room, hall)",
+                value
+            ),
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -492,5 +568,29 @@ mod tests {
         let chain = parse_chain("distortion", 48000.0);
         assert!(chain.is_ok());
         assert_eq!(chain.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_create_reverb() {
+        let params = HashMap::new();
+        let effect = create_effect_with_params("reverb", 48000.0, &params);
+        assert!(effect.is_ok());
+
+        // Test with parameters
+        let mut params = HashMap::new();
+        params.insert("decay".to_string(), "0.8".to_string());
+        params.insert("room_size".to_string(), "0.7".to_string());
+        params.insert("damping".to_string(), "0.3".to_string());
+        params.insert("mix".to_string(), "0.5".to_string());
+        params.insert("type".to_string(), "hall".to_string());
+        let effect = create_effect_with_params("reverb", 48000.0, &params);
+        assert!(effect.is_ok());
+    }
+
+    #[test]
+    fn test_parse_chain_with_reverb() {
+        let chain = parse_chain("delay:time=300|reverb:decay=0.9,mix=0.6", 48000.0);
+        assert!(chain.is_ok());
+        assert_eq!(chain.unwrap().len(), 2);
     }
 }

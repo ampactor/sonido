@@ -78,6 +78,7 @@ impl Chorus {
 }
 
 impl Effect for Chorus {
+    #[inline]
     fn process(&mut self, input: f32) -> f32 {
         let rate = self.rate.advance();
         let depth = self.depth.advance();

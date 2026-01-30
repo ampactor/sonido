@@ -1,9 +1,28 @@
 //! Audio I/O layer for the Sonido DSP framework.
 //!
 //! This crate provides:
-//! - WAV file reading and writing via [`wav`]
-//! - Real-time audio streaming via [`stream`]
-//! - Effect chain processing via [`engine`]
+//!
+//! - **WAV file I/O**: [`read_wav`] and [`write_wav`] for loading/saving audio files
+//! - **Real-time streaming**: [`AudioStream`] for live audio input/output
+//! - **Effect processing**: [`ProcessingEngine`] for applying effect chains to audio
+//!
+//! ## Quick Start
+//!
+//! ```rust,ignore
+//! use sonido_io::{read_wav, write_wav, ProcessingEngine};
+//! use sonido_effects::Reverb;
+//!
+//! // Load audio file
+//! let (samples, spec) = read_wav("input.wav")?;
+//!
+//! // Process with effects
+//! let mut engine = ProcessingEngine::new(spec.sample_rate as f32);
+//! engine.add_effect(Box::new(Reverb::new(spec.sample_rate as f32)));
+//! let processed = engine.process_buffer(&samples);
+//!
+//! // Save result
+//! write_wav("output.wav", &processed, spec)?;
+//! ```
 
 mod wav;
 mod stream;

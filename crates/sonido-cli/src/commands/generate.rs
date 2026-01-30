@@ -247,7 +247,7 @@ pub fn run(args: GenerateArgs) -> anyhow::Result<()> {
 fn rand_f32() -> f32 {
     use std::cell::Cell;
     thread_local! {
-        static STATE: Cell<u32> = Cell::new(0x12345678);
+        static STATE: Cell<u32> = const { Cell::new(0x12345678) };
     }
 
     STATE.with(|state| {

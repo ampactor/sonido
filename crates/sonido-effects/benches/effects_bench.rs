@@ -6,7 +6,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion, Benchmark
 use sonido_core::{Effect, EffectExt};
 use sonido_effects::{
     Distortion, Compressor, Chorus, Delay, LowPassFilter,
-    MultiVibrato, TapeSaturation, CleanPreamp,
+    MultiVibrato, TapeSaturation, CleanPreamp, Reverb,
 };
 
 const SAMPLE_RATE: f32 = 48000.0;
@@ -104,6 +104,16 @@ fn bench_clean_preamp(c: &mut Criterion) {
     bench_effect(c, "CleanPreamp", effect);
 }
 
+fn bench_reverb(c: &mut Criterion) {
+    let mut effect = Reverb::new(SAMPLE_RATE);
+    effect.set_room_size(0.7);
+    effect.set_decay(0.8);
+    effect.set_damping(0.3);
+    effect.set_predelay_ms(15.0);
+    effect.set_mix(0.5);
+    bench_effect(c, "Reverb", effect);
+}
+
 fn bench_effect_chain(c: &mut Criterion) {
     let mut group = c.benchmark_group("EffectChain");
 
@@ -165,6 +175,7 @@ criterion_group!(
     bench_multi_vibrato,
     bench_tape_saturation,
     bench_clean_preamp,
+    bench_reverb,
     bench_effect_chain,
 );
 

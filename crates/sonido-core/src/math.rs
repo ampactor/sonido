@@ -1,9 +1,29 @@
 //! Mathematical utility functions for DSP.
 //!
-//! Provides common DSP math operations optimized for real-time audio:
-//! - dB/linear conversions
-//! - Fast approximations (tanh, etc.)
-//! - Clipping functions
+//! Provides common DSP math operations optimized for real-time audio processing.
+//! All functions are designed to be allocation-free and suitable for `no_std`.
+//!
+//! # Level Conversions
+//!
+//! - [`db_to_linear`] / [`linear_to_db`] - Convert between dB and linear gain
+//!
+//! # Waveshaping / Clipping
+//!
+//! Different clipping functions produce different harmonic characteristics:
+//!
+//! | Function | Character | Harmonics | Use Case |
+//! |----------|-----------|-----------|----------|
+//! | [`soft_clip`] | Smooth, warm | Odd | Tube amp simulation |
+//! | [`hard_clip`] | Harsh, buzzy | Odd (many) | Transistor fuzz |
+//! | [`foldback`] | Complex, synthy | Even + Odd | Synth distortion |
+//! | [`asymmetric_clip`] | Warm, tube-like | Even + Odd | Vintage amps |
+//!
+//! # Utilities
+//!
+//! - [`lerp`] - Linear interpolation
+//! - [`clamp`] - Value limiting
+//! - [`hz_to_omega`] - Frequency to angular frequency
+//! - [`ms_to_samples`] / [`samples_to_ms`] - Time conversions
 
 use libm::{expf, logf, tanhf};
 

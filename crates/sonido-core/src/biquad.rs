@@ -40,7 +40,7 @@ pub struct Biquad {
 impl Biquad {
     /// Creates a new biquad with passthrough coefficients.
     ///
-    /// Initial state: y[n] = x[n] (no filtering)
+    /// Initial state: `y[n] = x[n]` (no filtering)
     pub fn new() -> Self {
         Self {
             b0: 1.0,

@@ -69,6 +69,7 @@ impl Delay {
 }
 
 impl Effect for Delay {
+    #[inline]
     fn process(&mut self, input: f32) -> f32 {
         let delay_samples = self.delay_time.advance();
         let feedback = self.feedback.advance();

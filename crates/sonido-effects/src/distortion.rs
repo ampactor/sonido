@@ -1,7 +1,28 @@
 //! Distortion effects with multiple waveshaping algorithms.
 //!
 //! This module provides classic distortion/overdrive effects suitable for
-//! guitar and synthesizer processing.
+//! guitar, synthesizer, and general audio processing.
+//!
+//! # Signal Flow
+//!
+//! ```text
+//! Input → Drive (gain) → Waveshaper → Tone Filter → Output Level
+//! ```
+//!
+//! # Waveshaping Algorithms
+//!
+//! | Algorithm | Character | Harmonics | Best For |
+//! |-----------|-----------|-----------|----------|
+//! | [`WaveShape::SoftClip`] | Smooth, warm | Odd | Tube overdrive |
+//! | [`WaveShape::HardClip`] | Aggressive | Odd (many) | Fuzz, transistor |
+//! | [`WaveShape::Foldback`] | Complex, buzzy | Even + Odd | Synth, experimental |
+//! | [`WaveShape::Asymmetric`] | Rich, warm | Even + Odd | Vintage tube amp |
+//!
+//! # Parameters
+//!
+//! - **Drive** (0-40 dB): Input gain before waveshaping. Higher = more distortion.
+//! - **Tone** (500-10000 Hz): One-pole lowpass to tame harsh highs.
+//! - **Level** (-20-0 dB): Output level compensation.
 
 use sonido_core::{Effect, SmoothedParam, db_to_linear, linear_to_db, soft_clip, hard_clip, foldback, asymmetric_clip};
 use libm::expf;
@@ -143,6 +164,7 @@ impl Distortion {
 }
 
 impl Effect for Distortion {
+    #[inline]
     fn process(&mut self, input: f32) -> f32 {
         let drive = self.drive.advance();
         let level = self.level.advance();

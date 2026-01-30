@@ -1,31 +1,79 @@
-//! Sonido Effects - Audio effect implementations
+//! Sonido Effects - Production-ready audio effect implementations
 //!
-//! This crate provides production-ready audio effects built on sonido-core:
+//! This crate provides a comprehensive suite of audio effects built on `sonido-core`,
+//! suitable for real-time audio processing, plugins, and embedded systems.
 //!
-//! - [`Distortion`] - Waveshaping distortion with multiple algorithms
-//! - [`Compressor`] - Dynamics compressor with soft knee
-//! - [`Chorus`] - Classic dual-voice chorus
-//! - [`Delay`] - Tape-style feedback delay
-//! - [`LowPassFilter`] - Biquad-based lowpass filter
-//! - [`MultiVibrato`] - 10-unit tape wow/flutter simulation
-//! - [`TapeSaturation`] - Tape warmth and HF rolloff
-//! - [`CleanPreamp`] - High-headroom preamp stage
+//! # Effect Categories
 //!
-//! ## Example
+//! ## Dynamics & Gain
+//!
+//! - [`Compressor`] - Soft-knee dynamics compressor with attack/release controls
+//! - [`CleanPreamp`] - High-headroom gain stage with soft limiting
+//!
+//! ## Distortion & Saturation
+//!
+//! - [`Distortion`] - Waveshaping distortion with 4 algorithms (soft clip, hard clip, foldback, asymmetric)
+//! - [`TapeSaturation`] - Analog tape warmth with asymmetric saturation and HF rolloff
+//!
+//! ## Modulation
+//!
+//! - [`Chorus`] - Classic dual-voice stereo chorus
+//! - [`MultiVibrato`] - 10-unit tape wow/flutter simulation (original algorithm)
+//!
+//! ## Time-Based
+//!
+//! - [`Delay`] - Tape-style feedback delay with interpolation
+//! - [`Reverb`] - Freeverb-style algorithmic reverb (8 combs + 4 allpasses)
+//!
+//! ## Filters
+//!
+//! - [`LowPassFilter`] - Resonant biquad lowpass filter
+//!
+//! # Common Patterns
+//!
+//! All effects implement the [`Effect`](sonido_core::Effect) trait and follow these patterns:
+//!
+//! - Constructor: `Effect::new(sample_rate)` - Creates with default parameters
+//! - Parameters: `set_xxx()` / `xxx()` - Setters and getters with smoothing
+//! - Processing: `process(sample)` or `process_block(&input, &mut output)`
+//!
+//! # Example: Effect Chain
 //!
 //! ```rust,ignore
 //! use sonido_core::{Effect, EffectExt};
-//! use sonido_effects::{Distortion, Chorus, Delay};
+//! use sonido_effects::{Distortion, Chorus, Delay, Reverb};
 //!
+//! // Create effects
 //! let mut dist = Distortion::new(48000.0);
-//! dist.set_drive_db(20.0);
+//! dist.set_drive_db(15.0);
+//! dist.set_tone_hz(4000.0);
 //!
-//! let chorus = Chorus::new(48000.0);
-//! let delay = Delay::new(48000.0);
+//! let mut chorus = Chorus::new(48000.0);
+//! chorus.set_depth(0.6);
 //!
-//! // Chain effects together
-//! let mut chain = dist.chain(chorus).chain(delay);
-//! let output = chain.process(input);
+//! let mut delay = Delay::new(48000.0);
+//! delay.set_delay_time_ms(375.0); // Dotted eighth at 120 BPM
+//! delay.set_feedback(0.4);
+//!
+//! let reverb = Reverb::new(48000.0);
+//!
+//! // Chain with zero-cost static dispatch
+//! let mut chain = dist.chain(chorus).chain(delay).chain(reverb);
+//!
+//! // Process audio
+//! for sample in audio_buffer.iter_mut() {
+//!     *sample = chain.process(*sample);
+//! }
+//! ```
+//!
+//! # no_std Support
+//!
+//! This crate is `no_std` compatible for embedded audio applications.
+//! Disable the default `std` feature in your `Cargo.toml`:
+//!
+//! ```toml
+//! [dependencies]
+//! sonido-effects = { version = "0.1", default-features = false }
 //! ```
 
 #![cfg_attr(not(feature = "std"), no_std)]
@@ -41,6 +89,7 @@ pub mod filter;
 pub mod multi_vibrato;
 pub mod tape_saturation;
 pub mod preamp;
+pub mod reverb;
 
 // Re-export main types at crate root
 pub use distortion::{Distortion, WaveShape};
@@ -51,3 +100,4 @@ pub use filter::LowPassFilter;
 pub use multi_vibrato::MultiVibrato;
 pub use tape_saturation::TapeSaturation;
 pub use preamp::CleanPreamp;
+pub use reverb::{Reverb, ReverbType};
