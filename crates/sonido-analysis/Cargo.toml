@@ -17,3 +17,8 @@ sonido-core = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
 tempfile = "3"
+criterion = { workspace = true }
+
+[[bench]]
+name = "analysis_bench"
+harness = false

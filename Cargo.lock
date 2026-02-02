@@ -3785,6 +3785,7 @@ dependencies = [
 name = "sonido-analysis"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "rustfft",
  "sonido-core",
  "tempfile",
@@ -3809,6 +3810,7 @@ dependencies = [
  "sonido-core",
  "sonido-effects",
  "sonido-io",
+ "sonido-synth",
  "thiserror 2.0.18",
  "toml",
 ]
@@ -3841,6 +3843,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "libm",
+ "sonido-analysis",
  "sonido-core",
 ]
 
@@ -3897,6 +3900,7 @@ dependencies = [
 name = "sonido-synth"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "libm",
  "sonido-core",
 ]
