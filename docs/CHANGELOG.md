@@ -115,6 +115,30 @@ CLI-first configuration and preset management.
   - Amplitude envelope output (normalized 0 to 1)
   - Optional pre-filtering with bandpass
 
+**New Generate Subcommands (Synthesis):**
+- `generate osc` - Oscillator waveform generation with PolyBLEP anti-aliasing
+  - Waveforms: sine, triangle, saw, square, noise
+  - Configurable pulse width for pulse waves
+- `generate chord` - Polyphonic chord generation
+  - MIDI note input (e.g., "60,64,67" for C major)
+  - Configurable waveform, filter cutoff, attack/release
+  - Uses `PolyphonicSynth` from sonido-synth
+- `generate adsr` - ADSR envelope test tone generation
+  - Configurable attack, decay, sustain, release
+  - Visualize envelope shapes with audio output
+
+**New Analyze Subcommands:**
+- `analyze imd` - Intermodulation Distortion analysis
+  - Two-tone test analysis
+  - Second-order products (f1+f2, f2-f1)
+  - Third-order products (2f1-f2, 2f2-f1)
+  - JSON output with IMD percentages
+- `analyze cqt` - Constant-Q Transform analysis
+  - Logarithmic frequency resolution (equal bins per octave)
+  - MIDI note and musical note name output
+  - Optional chromagram (pitch class profile)
+  - Configurable bins per octave (12=semitone, 24=quarter-tone)
+
 **Other CLI Additions:**
 - `tui` command for interactive terminal UI
 - `presets` command for preset management
@@ -239,6 +263,14 @@ Six new effects expanding the modulation, dynamics, and filter categories:
 - Preset system with save/load functionality
 - Audio device selection with hot-swap support
 - CPU usage monitoring and performance metrics
+
+**New Effect Panels (Phase 2):**
+- Tremolo panel with rate, depth, and waveform selector (sine, triangle, square, S&H)
+- Flanger panel with rate, depth, feedback, and mix controls
+- Phaser panel with rate, depth, feedback, mix, and stage selector (2-12 stages)
+- Gate panel with threshold, attack, release, and hold time
+- Wah panel with frequency, resonance, sensitivity, and mode selector (auto/manual)
+- Parametric EQ panel with 3-band controls (frequency, gain, Q per band)
 
 #### sonido-effects
 - `Reverb` effect: Freeverb-style algorithmic reverb with 8 parallel comb filters and 4 series allpass filters

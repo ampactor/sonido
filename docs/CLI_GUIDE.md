@@ -21,11 +21,13 @@ cargo build --release -p sonido-cli
 |---------|-------------|
 | `process` | Process audio files through effects |
 | `realtime` | Real-time audio processing |
-| `generate` | Generate test signals |
-| `analyze` | Spectral analysis |
+| `generate` | Generate test signals and synthesis |
+| `analyze` | Spectral and audio analysis |
 | `compare` | A/B audio comparison |
 | `devices` | List audio devices |
 | `effects` | List available effects |
+| `presets` | Manage effect presets |
+| `tui` | Interactive terminal UI |
 
 ---
 
@@ -255,6 +257,95 @@ sonido generate silence <OUTPUT> [OPTIONS]
 
 ```bash
 sonido generate silence silence.wav --duration 2.0
+```
+
+#### osc
+
+Generate an oscillator waveform using PolyBLEP anti-aliasing. Produces cleaner waveforms than simple mathematical generation.
+
+```bash
+sonido generate osc <OUTPUT> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--freq <HZ>` | Frequency (default: 440) |
+| `--waveform <TYPE>` | Waveform: sine, triangle, saw, square, noise (default: sine) |
+| `--duration <SEC>` | Duration in seconds (default: 1.0) |
+| `--sample-rate <N>` | Sample rate (default: 48000) |
+| `--amplitude <N>` | Amplitude 0-1 (default: 0.8) |
+| `--pulse-width <N>` | Pulse width 0-1 for pulse wave (default: 0.5) |
+
+```bash
+# Generate a saw wave
+sonido generate osc saw.wav --freq 220 --waveform saw --duration 2.0
+
+# Generate a square wave with custom pulse width
+sonido generate osc pulse.wav --freq 440 --waveform square --pulse-width 0.25
+```
+
+#### chord
+
+Generate a chord using the polyphonic synthesizer with ADSR envelope.
+
+```bash
+sonido generate chord <OUTPUT> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--notes <MIDI>` | Comma-separated MIDI notes (e.g., "60,64,67" for C major) |
+| `--duration <SEC>` | Duration in seconds (default: 2.0) |
+| `--sample-rate <N>` | Sample rate (default: 48000) |
+| `--amplitude <N>` | Amplitude 0-1 (default: 0.5) |
+| `--waveform <TYPE>` | Waveform: sine, triangle, saw, square (default: saw) |
+| `--filter-cutoff <HZ>` | Filter cutoff frequency (default: 2000) |
+| `--attack <MS>` | Envelope attack time (default: 10) |
+| `--release <MS>` | Envelope release time (default: 500) |
+
+```bash
+# Generate C major chord
+sonido generate chord cmajor.wav --notes "60,64,67" --duration 3.0
+
+# Generate Am7 with custom envelope
+sonido generate chord am7.wav --notes "57,60,64,67" --waveform saw --attack 50 --release 1000
+
+# Generate power chord with filtered saw
+sonido generate chord power.wav --notes "40,47" --filter-cutoff 1500 --duration 2.0
+```
+
+Common MIDI note values:
+- C4 = 60, D4 = 62, E4 = 64, F4 = 65, G4 = 67, A4 = 69, B4 = 71
+- C3 = 48, C5 = 72
+
+#### adsr
+
+Generate a test tone with configurable ADSR envelope for visualizing envelope shapes.
+
+```bash
+sonido generate adsr <OUTPUT> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--attack <MS>` | Attack time in milliseconds (default: 50) |
+| `--decay <MS>` | Decay time in milliseconds (default: 100) |
+| `--sustain <N>` | Sustain level 0-1 (default: 0.7) |
+| `--release <MS>` | Release time in milliseconds (default: 200) |
+| `--freq <HZ>` | Test tone frequency (default: 440) |
+| `--gate-duration <SEC>` | Gate on duration before release (default: 1.0) |
+| `--sample-rate <N>` | Sample rate (default: 48000) |
+| `--amplitude <N>` | Amplitude 0-1 (default: 0.8) |
+
+```bash
+# Standard ADSR test
+sonido generate adsr envelope.wav --attack 50 --decay 100 --sustain 0.7 --release 200
+
+# Pad-style long envelope
+sonido generate adsr pad.wav --attack 500 --decay 200 --sustain 0.8 --release 2000 --gate-duration 3.0
+
+# Pluck-style fast envelope
+sonido generate adsr pluck.wav --attack 1 --decay 50 --sustain 0.0 --release 100
 ```
 
 ---
@@ -512,6 +603,78 @@ sonido analyze hilbert eeg.wav \
 
 The phase output is normalized to [-1, 1] (representing [-pi, pi] radians).
 The amplitude output is normalized to [0, 1].
+
+#### imd
+
+Analyze Intermodulation Distortion (IMD) using a two-tone test signal.
+
+```bash
+sonido analyze imd <INPUT> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--freq1 <HZ>` | First tone frequency (required) |
+| `--freq2 <HZ>` | Second tone frequency (required) |
+| `--fft-size <N>` | FFT size (default: 8192) |
+| `-o, --output <FILE>` | Output JSON file |
+
+IMD analysis measures distortion products created when two tones interact in a nonlinear system:
+
+- **Second-order products**: f1+f2, f2-f1
+- **Third-order products**: 2f1-f2, 2f2-f1, 2f1+f2, 2f2+f1
+
+```bash
+# Generate two-tone test signal first
+sonido generate tone tone1.wav --freq 1000 --duration 2.0
+sonido generate tone tone2.wav --freq 1200 --duration 2.0
+# (mix them externally or use a stereo file)
+
+# Analyze IMD
+sonido analyze imd two_tone_output.wav --freq1 1000 --freq2 1200 --output imd.json
+```
+
+Output includes:
+- Fundamental amplitudes
+- Second-order IMD products and ratios
+- Third-order IMD products and ratios
+- Total IMD percentage
+
+#### cqt
+
+Constant-Q Transform analysis with logarithmic frequency resolution. Useful for musical pitch analysis where you need equal resolution per octave.
+
+```bash
+sonido analyze cqt <INPUT> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--min-freq <HZ>` | Minimum frequency (default: 32.7, C1) |
+| `--max-freq <HZ>` | Maximum frequency (default: Nyquist/2) |
+| `--bins-per-octave <N>` | Bins per octave (default: 12 for semitone resolution) |
+| `--peaks <N>` | Show top N peaks (default: 10) |
+| `--chromagram` | Also compute pitch class profile |
+| `-o, --output <FILE>` | Output CSV file |
+
+```bash
+# Analyze pitch content of a recording
+sonido analyze cqt recording.wav --peaks 10
+
+# Quarter-tone resolution (24 bins per octave)
+sonido analyze cqt microtonal.wav --bins-per-octave 24
+
+# Guitar range analysis with chromagram
+sonido analyze cqt guitar.wav --min-freq 82.4 --max-freq 1320 --chromagram
+
+# Export to CSV for visualization
+sonido analyze cqt music.wav --output cqt.csv
+```
+
+Output includes:
+- Frequency peaks with MIDI note numbers and note names
+- Magnitude in dB
+- Chromagram showing pitch class distribution (with `--chromagram`)
 
 ---
 
