@@ -98,7 +98,7 @@ fn bench_tape_saturation(c: &mut Criterion) {
 }
 
 fn bench_clean_preamp(c: &mut Criterion) {
-    let mut effect = CleanPreamp::new();
+    let mut effect = CleanPreamp::new(SAMPLE_RATE);
     effect.set_gain_db(12.0);
     effect.set_output_db(-6.0);
     bench_effect(c, "CleanPreamp", effect);
@@ -119,7 +119,7 @@ fn bench_effect_chain(c: &mut Criterion) {
 
     // Typical guitar chain: preamp -> distortion -> chorus -> delay
     let preamp = {
-        let mut p = CleanPreamp::new();
+        let mut p = CleanPreamp::new(SAMPLE_RATE);
         p.set_gain_db(6.0);
         p
     };

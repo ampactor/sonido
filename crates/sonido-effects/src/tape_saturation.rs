@@ -3,7 +3,7 @@
 //! J37/Kramer MPX inspired tape warmth with soft saturation,
 //! even harmonic enhancement, and high frequency rolloff.
 
-use sonido_core::Effect;
+use sonido_core::{Effect, SmoothedParam, ParameterInfo, ParamDescriptor, ParamUnit, db_to_linear, linear_to_db};
 use libm::expf;
 use core::f32::consts::PI;
 
@@ -25,12 +25,12 @@ use core::f32::consts::PI;
 /// ```
 pub struct TapeSaturation {
     sample_rate: f32,
-    /// Input gain (drive)
-    drive: f32,
-    /// Output level
-    output_gain: f32,
-    /// Saturation amount (0.0 - 1.0)
-    saturation: f32,
+    /// Input gain (drive) with smoothing
+    drive: SmoothedParam,
+    /// Output level with smoothing
+    output_gain: SmoothedParam,
+    /// Saturation amount (0.0 - 1.0) with smoothing
+    saturation: SmoothedParam,
     /// High frequency rolloff state (one-pole)
     hf_state: f32,
     hf_coeff: f32,
@@ -49,9 +49,9 @@ impl TapeSaturation {
     pub fn new(sample_rate: f32) -> Self {
         let mut ts = Self {
             sample_rate,
-            drive: 1.0,
-            output_gain: 1.0,
-            saturation: 0.5,
+            drive: SmoothedParam::with_config(1.0, sample_rate, 10.0),
+            output_gain: SmoothedParam::with_config(1.0, sample_rate, 10.0),
+            saturation: SmoothedParam::with_config(0.5, sample_rate, 10.0),
             hf_state: 0.0,
             hf_coeff: 0.0,
             bias: 0.0,
@@ -62,32 +62,32 @@ impl TapeSaturation {
 
     /// Set input drive (1.0 = unity, higher = more saturation)
     pub fn set_drive(&mut self, drive: f32) {
-        self.drive = drive.clamp(0.1, 10.0);
+        self.drive.set_target(drive.clamp(0.1, 10.0));
     }
 
-    /// Get current drive
+    /// Get current drive target
     pub fn drive(&self) -> f32 {
-        self.drive
+        self.drive.target()
     }
 
     /// Set output gain
     pub fn set_output(&mut self, gain: f32) {
-        self.output_gain = gain.clamp(0.0, 2.0);
+        self.output_gain.set_target(gain.clamp(0.0, 2.0));
     }
 
-    /// Get current output gain
+    /// Get current output gain target
     pub fn output(&self) -> f32 {
-        self.output_gain
+        self.output_gain.target()
     }
 
     /// Set saturation amount (0.0 - 1.0)
     pub fn set_saturation(&mut self, sat: f32) {
-        self.saturation = sat.clamp(0.0, 1.0);
+        self.saturation.set_target(sat.clamp(0.0, 1.0));
     }
 
-    /// Get current saturation
+    /// Get current saturation target
     pub fn saturation(&self) -> f32 {
-        self.saturation
+        self.saturation.target()
     }
 
     /// Set high frequency rolloff point in Hz
@@ -108,8 +108,8 @@ impl TapeSaturation {
 
     /// Tape saturation transfer function
     #[inline]
-    fn saturate(&self, x: f32) -> f32 {
-        let driven = x * self.drive + self.bias;
+    fn saturate(&self, x: f32, drive: f32, saturation: f32) -> f32 {
+        let driven = x * drive + self.bias;
 
         // Soft saturation with asymmetry for even harmonics
         let positive = if driven > 0.0 {
@@ -120,25 +120,32 @@ impl TapeSaturation {
 
         // Blend clean and saturated based on saturation amount
         let clean = driven.clamp(-1.0, 1.0);
-        clean * (1.0 - self.saturation) + positive * self.saturation
+        clean * (1.0 - saturation) + positive * saturation
     }
 }
 
 impl Effect for TapeSaturation {
     #[inline]
     fn process(&mut self, input: f32) -> f32 {
+        let drive = self.drive.advance();
+        let output_gain = self.output_gain.advance();
+        let saturation = self.saturation.advance();
+
         // Apply saturation
-        let saturated = self.saturate(input);
+        let saturated = self.saturate(input, drive, saturation);
 
         // High frequency rolloff (one-pole lowpass)
         self.hf_state = saturated + self.hf_coeff * (self.hf_state - saturated);
 
         // Output
-        self.hf_state * self.output_gain
+        self.hf_state * output_gain
     }
 
     fn reset(&mut self) {
         self.hf_state = 0.0;
+        self.drive.snap_to_target();
+        self.output_gain.snap_to_target();
+        self.saturation.snap_to_target();
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
@@ -150,6 +157,55 @@ impl Effect for TapeSaturation {
         };
         self.sample_rate = sample_rate;
         self.set_hf_rolloff(old_freq);
+        self.drive.set_sample_rate(sample_rate);
+        self.output_gain.set_sample_rate(sample_rate);
+        self.saturation.set_sample_rate(sample_rate);
+    }
+}
+
+impl ParameterInfo for TapeSaturation {
+    fn param_count(&self) -> usize {
+        2
+    }
+
+    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
+        match index {
+            0 => Some(ParamDescriptor {
+                name: "Drive",
+                short_name: "Drive",
+                unit: ParamUnit::Decibels,
+                min: 0.0,
+                max: 24.0,
+                default: 6.0,
+                step: 0.5,
+            }),
+            1 => Some(ParamDescriptor {
+                name: "Saturation",
+                short_name: "Sat",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+                step: 1.0,
+            }),
+            _ => None,
+        }
+    }
+
+    fn get_param(&self, index: usize) -> f32 {
+        match index {
+            0 => linear_to_db(self.drive.target()),
+            1 => self.saturation.target() * 100.0,
+            _ => 0.0,
+        }
+    }
+
+    fn set_param(&mut self, index: usize, value: f32) {
+        match index {
+            0 => self.set_drive(db_to_linear(value.clamp(0.0, 24.0))),
+            1 => self.set_saturation(value / 100.0),
+            _ => {}
+        }
     }
 }
 
@@ -161,6 +217,7 @@ mod tests {
     fn test_tape_saturation_basic() {
         let mut tape = TapeSaturation::new(48000.0);
         tape.set_drive(2.0);
+        tape.reset(); // Snap to target for test
 
         for _ in 0..100 {
             let output = tape.process(0.5);
@@ -202,5 +259,28 @@ mod tests {
 
         tape.reset();
         assert_eq!(tape.hf_state, 0.0);
+    }
+
+    #[test]
+    fn test_tape_saturation_smoothing() {
+        let mut tape = TapeSaturation::new(48000.0);
+        tape.set_drive(1.0);
+        tape.reset();
+
+        // Set new drive target
+        tape.set_drive(5.0);
+
+        // First sample should not be at full drive yet
+        let first = tape.process(0.5);
+
+        // Process more samples to let smoothing settle
+        for _ in 0..1000 {
+            tape.process(0.5);
+        }
+
+        let settled = tape.process(0.5);
+
+        // Settled value should be different (more saturated with higher drive)
+        assert!(settled != first, "Smoothing should gradually change drive");
     }
 }

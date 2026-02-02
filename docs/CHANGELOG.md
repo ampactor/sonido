@@ -8,12 +8,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+#### sonido-registry (NEW CRATE)
+- Central effect registry for discovering and instantiating effects by name
+- `EffectRegistry` with factory pattern for runtime effect creation
+- `EffectDescriptor` with metadata (id, name, description, category, param_count)
+- `EffectCategory` enum for organizing effects (Dynamics, Distortion, Modulation, TimeBased, Filter, Utility)
+- `EffectWithParams` helper trait for accessing ParameterInfo through boxed effects
+- `no_std` compatible with optional `std` feature
+
+#### sonido-core
+- `ParameterInfo` trait for runtime parameter introspection
+- `ParamDescriptor` struct with name, short_name, unit, min, max, default, step
+- `ParamUnit` enum (Decibels, Hertz, Milliseconds, Percent, Ratio, None)
+- Helper methods: `clamp()`, `normalize()`, `denormalize()` on ParamDescriptor
+
+#### sonido-effects
+- All 9 effects now implement `ParameterInfo` trait
+- `CleanPreamp`: Added SmoothedParam for gain and output parameters
+- `TapeSaturation`: Added SmoothedParam for drive, saturation, and output_gain
+- `MultiVibrato`: Added SmoothedParam for depth_scale parameter
+
+#### sonido-cli
+- Shared `preset` module consolidating preset handling across commands
+
+### Changed
+- `CleanPreamp::new()` now requires sample_rate parameter
+- CLI effects.rs updated to use new effect constructors
+
+### Previously Added
 - Root README.md with project overview
 - Documentation in `docs/` directory
 - Preset files in `presets/` directory
 - Makefile for common tasks
 - Demo script at `scripts/demo.sh`
 - LICENSE-MIT and LICENSE-APACHE files
+
+#### sonido-gui
+- Professional egui-based DSP effect processor GUI
+- Real-time waveform visualization (input/output)
+- Effect chain management with drag-and-drop
+- Preset system with save/load functionality
+- Audio device selection with hot-swap support
+- CPU usage monitoring and performance metrics
+
+#### sonido-effects
+- `Reverb` effect: Freeverb-style algorithmic reverb with 8 parallel comb filters and 4 series allpass filters
+- `CombFilter` primitive for building reverbs and delays
+- `AllpassFilter` primitive for diffusion networks
+
+#### sonido-core
+- `CombFilter` delay-based comb filter
+- `AllpassFilter` for reverb diffusion
 
 ### Changed
 - Renamed `next()` to `advance()` in SmoothedParam, LinearSmoothedParam, and Lfo to avoid clippy warnings about iterator naming

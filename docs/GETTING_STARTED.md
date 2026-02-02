@@ -29,6 +29,43 @@ cd sonido
 cargo install --path crates/sonido-cli
 ```
 
+## Quick Start Options
+
+### GUI (Graphical Interface)
+
+For a visual, interactive experience:
+
+```bash
+# Run the GUI application
+cargo run -p sonido-gui
+
+# Or install and run
+cargo install --path crates/sonido-gui
+sonido-gui
+```
+
+See [GUI.md](GUI.md) for detailed GUI documentation.
+
+### Demo Script
+
+Generate test audio and hear effects in action:
+
+```bash
+make demo
+```
+
+This generates a sweep signal and processes it through various effect chains.
+
+### Example Code
+
+Run the chain demo example:
+
+```bash
+cargo run -p sonido-effects --example chain_demo
+```
+
+---
+
 ## Your First Effect
 
 Let's create a simple distortion effect:
@@ -78,7 +115,7 @@ fn main() {
     let sample_rate = 48000.0;
 
     // Create effects
-    let mut preamp = CleanPreamp::new();
+    let mut preamp = CleanPreamp::new(sample_rate);
     preamp.set_gain_db(6.0);  // Boost input
 
     let mut distortion = Distortion::new(sample_rate);
@@ -224,6 +261,7 @@ fn process_audio(filter: &mut LowPassFilter) {
 
 ## Next Steps
 
+- See [GUI.md](GUI.md) for graphical interface documentation
 - See [Effects Reference](EFFECTS_REFERENCE.md) for all effects and their parameters
 - See [CLI Guide](CLI_GUIDE.md) for detailed CLI usage
 - See [Architecture](ARCHITECTURE.md) for understanding the codebase

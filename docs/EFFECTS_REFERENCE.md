@@ -2,6 +2,22 @@
 
 Complete parameter reference for all Sonido effects.
 
+## Effect Aliases
+
+Some effects have alternate names for convenience:
+
+| Primary Name | Alias | Notes |
+|-------------|-------|-------|
+| `filter` | `lowpass` | Resonant lowpass filter |
+| `multivibrato` | `vibrato` | 10-unit tape wow/flutter |
+
+Both names work interchangeably in the CLI:
+
+```bash
+sonido process in.wav out.wav --effect filter --param cutoff=2000
+sonido process in.wav out.wav --effect lowpass --param cutoff=2000  # Same effect
+```
+
 ## distortion
 
 Waveshaping distortion with multiple modes.
@@ -110,7 +126,7 @@ sonido process in.wav out.wav --effect delay \
 
 ## filter
 
-Resonant lowpass filter (2-pole).
+Resonant lowpass filter (2-pole). Also available as `lowpass`.
 
 | Parameter | Description | Default | Range |
 |-----------|-------------|---------|-------|
@@ -134,7 +150,7 @@ sonido process in.wav out.wav --effect filter \
 
 ## multivibrato
 
-10-unit tape wow/flutter vibrato.
+10-unit tape wow/flutter vibrato. Also available as `vibrato`.
 
 Simulates the complex pitch modulation of analog tape machines with 10 independent modulation units at different rates.
 

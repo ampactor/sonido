@@ -2,6 +2,7 @@
 
 mod commands;
 mod effects;
+mod preset;
 
 use clap::{Parser, Subcommand};
 

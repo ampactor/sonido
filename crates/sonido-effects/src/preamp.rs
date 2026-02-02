@@ -3,7 +3,7 @@
 //! High-headroom, zero-latency preamp that handles hot signals
 //! without clipping until you want it to.
 
-use sonido_core::Effect;
+use sonido_core::{Effect, SmoothedParam, ParameterInfo, ParamDescriptor, ParamUnit, db_to_linear, linear_to_db};
 use libm::{powf, tanhf};
 
 /// Clean preamp stage
@@ -14,7 +14,7 @@ use libm::{powf, tanhf};
 /// use sonido_effects::CleanPreamp;
 /// use sonido_core::Effect;
 ///
-/// let mut preamp = CleanPreamp::new();
+/// let mut preamp = CleanPreamp::new(48000.0);
 /// preamp.set_gain_db(12.0);
 /// preamp.set_output_db(-6.0);
 ///
@@ -22,48 +22,51 @@ use libm::{powf, tanhf};
 /// let output = preamp.process(input);
 /// ```
 pub struct CleanPreamp {
-    /// Input gain
-    gain: f32,
-    /// Output level
-    output: f32,
+    /// Input gain with smoothing
+    gain: SmoothedParam,
+    /// Output level with smoothing
+    output: SmoothedParam,
     /// Headroom in dB before clipping
     headroom_db: f32,
+    /// Sample rate
+    sample_rate: f32,
 }
 
 impl Default for CleanPreamp {
     fn default() -> Self {
-        Self {
-            gain: 1.0,
-            output: 1.0,
-            headroom_db: 20.0, // +20dB headroom
-        }
+        Self::new(48000.0)
     }
 }
 
 impl CleanPreamp {
     /// Create new clean preamp
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(sample_rate: f32) -> Self {
+        Self {
+            gain: SmoothedParam::with_config(1.0, sample_rate, 10.0),
+            output: SmoothedParam::with_config(1.0, sample_rate, 10.0),
+            headroom_db: 20.0, // +20dB headroom
+            sample_rate,
+        }
     }
 
     /// Set gain in dB
     pub fn set_gain_db(&mut self, db: f32) {
-        self.gain = powf(10.0, db / 20.0);
+        self.gain.set_target(db_to_linear(db));
     }
 
     /// Get current gain in dB
     pub fn gain_db(&self) -> f32 {
-        20.0 * libm::log10f(self.gain)
+        linear_to_db(self.gain.target())
     }
 
     /// Set output in dB
     pub fn set_output_db(&mut self, db: f32) {
-        self.output = powf(10.0, db / 20.0);
+        self.output.set_target(db_to_linear(db));
     }
 
     /// Get current output in dB
     pub fn output_db(&self) -> f32 {
-        20.0 * libm::log10f(self.output)
+        linear_to_db(self.output.target())
     }
 
     /// Set headroom in dB
@@ -80,8 +83,11 @@ impl CleanPreamp {
 impl Effect for CleanPreamp {
     #[inline]
     fn process(&mut self, input: f32) -> f32 {
+        let gain = self.gain.advance();
+        let output_level = self.output.advance();
+
         // Simple gain stage - clean until clipping threshold
-        let gained = input * self.gain;
+        let gained = input * gain;
         let threshold = powf(10.0, self.headroom_db / 20.0);
 
         // Soft clip only at extreme levels
@@ -91,15 +97,57 @@ impl Effect for CleanPreamp {
             gained
         };
 
-        output * self.output
+        output * output_level
     }
 
-    fn reset(&mut self) {}
+    fn reset(&mut self) {
+        self.gain.snap_to_target();
+        self.output.snap_to_target();
+    }
 
-    fn set_sample_rate(&mut self, _sample_rate: f32) {}
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.sample_rate = sample_rate;
+        self.gain.set_sample_rate(sample_rate);
+        self.output.set_sample_rate(sample_rate);
+    }
 
     fn latency_samples(&self) -> usize {
         0 // Zero latency
+    }
+}
+
+impl ParameterInfo for CleanPreamp {
+    fn param_count(&self) -> usize {
+        1
+    }
+
+    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
+        match index {
+            0 => Some(ParamDescriptor {
+                name: "Gain",
+                short_name: "Gain",
+                unit: ParamUnit::Decibels,
+                min: -20.0,
+                max: 20.0,
+                default: 0.0,
+                step: 0.5,
+            }),
+            _ => None,
+        }
+    }
+
+    fn get_param(&self, index: usize) -> f32 {
+        match index {
+            0 => self.gain_db(),
+            _ => 0.0,
+        }
+    }
+
+    fn set_param(&mut self, index: usize, value: f32) {
+        match index {
+            0 => self.set_gain_db(value.clamp(-20.0, 20.0)),
+            _ => {}
+        }
     }
 }
 
@@ -109,9 +157,10 @@ mod tests {
 
     #[test]
     fn test_preamp_unity() {
-        let mut preamp = CleanPreamp::new();
+        let mut preamp = CleanPreamp::new(48000.0);
         preamp.set_gain_db(0.0);
         preamp.set_output_db(0.0);
+        preamp.reset(); // Snap to target for test
 
         let output = preamp.process(0.5);
         assert!((output - 0.5).abs() < 0.01);
@@ -119,9 +168,10 @@ mod tests {
 
     #[test]
     fn test_preamp_gain() {
-        let mut preamp = CleanPreamp::new();
+        let mut preamp = CleanPreamp::new(48000.0);
         preamp.set_gain_db(6.0); // ~2x gain
         preamp.set_output_db(0.0);
+        preamp.reset(); // Snap to target for test
 
         let output = preamp.process(0.25);
         assert!((output - 0.5).abs() < 0.05, "Expected ~0.5, got {}", output);
@@ -129,9 +179,10 @@ mod tests {
 
     #[test]
     fn test_preamp_soft_clip() {
-        let mut preamp = CleanPreamp::new();
+        let mut preamp = CleanPreamp::new(48000.0);
         preamp.set_gain_db(40.0); // Heavy gain
         preamp.set_headroom_db(6.0); // Low headroom
+        preamp.reset(); // Snap to target for test
 
         // Should soft clip, not hard clip
         let output = preamp.process(0.5);
@@ -141,7 +192,30 @@ mod tests {
 
     #[test]
     fn test_preamp_zero_latency() {
-        let preamp = CleanPreamp::new();
+        let preamp = CleanPreamp::new(48000.0);
         assert_eq!(preamp.latency_samples(), 0);
+    }
+
+    #[test]
+    fn test_preamp_smoothing() {
+        let mut preamp = CleanPreamp::new(48000.0);
+        preamp.set_gain_db(0.0);
+        preamp.reset();
+
+        // Set new gain target
+        preamp.set_gain_db(12.0);
+
+        // First sample should not be at full gain yet
+        let first = preamp.process(0.5);
+
+        // Process more samples to let smoothing settle
+        for _ in 0..1000 {
+            preamp.process(0.5);
+        }
+
+        let settled = preamp.process(0.5);
+
+        // Settled value should be higher than first (more gain applied)
+        assert!(settled > first, "Smoothing should gradually increase gain");
     }
 }

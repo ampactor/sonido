@@ -3,27 +3,35 @@
 ## Crate Diagram
 
 ```
-                    ┌─────────────────┐
-                    │   sonido-cli    │
-                    │  (binary crate) │
-                    └────────┬────────┘
-                             │
-         ┌───────────────────┼───────────────────┐
-         │                   │                   │
-         ▼                   ▼                   ▼
-┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-│   sonido-io     │ │ sonido-effects  │ │ sonido-analysis │
-│  (audio I/O)    │ │   (effects)     │ │    (FFT/IR)     │
-└────────┬────────┘ └────────┬────────┘ └────────┬────────┘
-         │                   │                   │
-         └───────────────────┼───────────────────┘
-                             │
-                             ▼
-                    ┌─────────────────┐
-                    │   sonido-core   │
-                    │  (primitives)   │
-                    │    [no_std]     │
-                    └─────────────────┘
+          ┌─────────────────┐         ┌─────────────────┐
+          │   sonido-cli    │         │   sonido-gui    │
+          │  (binary crate) │         │  (egui app)     │
+          └────────┬────────┘         └────────┬────────┘
+                   │                           │
+                   └───────────┬───────────────┘
+                               │
+                               ▼
+                      ┌─────────────────┐
+                      │ sonido-registry │
+                      │(effect factory) │
+                      └────────┬────────┘
+                               │
+         ┌─────────────────────┼─────────────────────┐
+         │                     │                     │
+         ▼                     ▼                     ▼
+┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
+│   sonido-io     │   │ sonido-effects  │   │ sonido-analysis │
+│  (audio I/O)    │   │   (effects)     │   │    (FFT/IR)     │
+└────────┬────────┘   └────────┬────────┘   └────────┬────────┘
+         │                     │                     │
+         └─────────────────────┼─────────────────────┘
+                               │
+                               ▼
+                      ┌─────────────────┐
+                      │   sonido-core   │
+                      │  (primitives)   │
+                      │    [no_std]     │
+                      └─────────────────┘
 ```
 
 ## Crate Responsibilities
@@ -78,6 +86,25 @@ Audio I/O layer using cpal and hound.
 - `AudioStream`: Real-time audio streaming
 - `ProcessingEngine`: Block-based effect chain runner
 
+### sonido-registry
+
+Central registry for discovering and instantiating effects. Provides a unified
+API for CLI, GUI, and future hardware targets.
+
+**Key components:**
+- `EffectRegistry`: Factory for creating effects by name
+- `EffectDescriptor`: Metadata (id, name, description, category, param_count)
+- `EffectCategory`: Effect categorization (Dynamics, Distortion, Modulation, etc.)
+- `EffectWithParams`: Helper trait for accessing ParameterInfo through boxed effects
+
+**Usage:**
+```rust
+use sonido_registry::EffectRegistry;
+
+let registry = EffectRegistry::new();
+let mut effect = registry.create("distortion", 48000.0).unwrap();
+```
+
 ### sonido-cli
 
 Command-line interface tying everything together.
@@ -90,6 +117,25 @@ Command-line interface tying everything together.
 - `compare`: A/B audio comparison
 - `devices`: Audio device management
 - `effects`: List available effects
+
+### sonido-gui
+
+Real-time audio effects processor with professional GUI built on egui.
+
+**Key modules:**
+- `app.rs`: Main application state, UI layout, audio thread management
+- `audio_bridge.rs`: Lock-free communication between UI and audio thread
+- `chain_view.rs`: Drag-and-drop effect chain builder
+- `preset_manager.rs`: Preset save/load with categories
+- `effects_ui/`: Per-effect parameter panels (knobs, sliders)
+- `widgets/`: Custom UI components (Knob, LevelMeter)
+- `theme.rs`: Dark theme configuration
+
+**Architecture:**
+- UI thread: egui rendering at 60fps
+- Audio thread: Real-time processing via cpal
+- Communication: `crossbeam-channel` + atomic params for lock-free updates
+- Metering: Peak/RMS levels with configurable decay
 
 ## Data Flow
 
@@ -116,6 +162,31 @@ Command-line interface tying everything together.
 └──────────┘    └──────────────┘    └────────────────┘    └──────────┘
 ```
 
+### GUI Processing
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                          UI Thread (egui)                           │
+│  ┌──────────┐   ┌──────────────┐   ┌─────────────┐                 │
+│  │ Knob/    │──▶│ SharedParams │──▶│ PresetMgr   │                 │
+│  │ Controls │   │ (atomics)    │   │ (save/load) │                 │
+│  └──────────┘   └──────┬───────┘   └─────────────┘                 │
+│                        │                                            │
+│  ┌──────────┐          │                                            │
+│  │ Meters   │◀─────────┼───────────────────────────────────────┐   │
+│  └──────────┘          │                                       │   │
+└────────────────────────┼───────────────────────────────────────┼───┘
+                         │ atomic reads                          │
+                         ▼                                       │
+┌────────────────────────────────────────────────────────────────┼───┐
+│                       Audio Thread                             │   │
+│  ┌──────────┐   ┌────────────────┐   ┌──────────┐              │   │
+│  │ cpal     │──▶│ Effect Chain   │──▶│ cpal     │──────────────┘   │
+│  │ input    │   │ (process)      │   │ output   │  metering data   │
+│  └──────────┘   └────────────────┘   └──────────┘                  │
+└────────────────────────────────────────────────────────────────────┘
+```
+
 ## Effect Trait
 
 All effects implement the `Effect` trait:
@@ -138,6 +209,42 @@ pub trait Effect {
     fn latency_samples(&self) -> usize;
 }
 ```
+
+## ParameterInfo Trait
+
+All effects implement the `ParameterInfo` trait for runtime parameter discovery:
+
+```rust
+pub trait ParameterInfo {
+    /// Returns the number of parameters this effect has.
+    fn param_count(&self) -> usize;
+
+    /// Returns descriptor for parameter at index.
+    fn param_info(&self, index: usize) -> Option<ParamDescriptor>;
+
+    /// Gets current value of parameter at index.
+    fn get_param(&self, index: usize) -> f32;
+
+    /// Sets value of parameter at index.
+    fn set_param(&mut self, index: usize, value: f32);
+}
+
+pub struct ParamDescriptor {
+    pub name: &'static str,       // "Delay Time"
+    pub short_name: &'static str, // "Time" (max 8 chars for hardware)
+    pub unit: ParamUnit,          // Milliseconds, Decibels, etc.
+    pub min: f32,
+    pub max: f32,
+    pub default: f32,
+    pub step: f32,                // Encoder increment
+}
+```
+
+This enables:
+- **Hardware menus**: Enumerate parameters for 128x64 OLED displays
+- **Plugin automation**: Expose parameters to DAW hosts
+- **Preset systems**: Save/restore parameter state by index
+- **Dynamic UIs**: Auto-generate parameter controls
 
 ## no_std Compatibility
 

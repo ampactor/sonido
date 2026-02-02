@@ -1,0 +1,19 @@
+[package]
+name = "sonido-registry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Effect registry and factory for sonido audio effects"
+keywords = ["dsp", "audio", "effects", "registry", "factory"]
+categories = ["multimedia::audio"]
+
+[features]
+default = ["std"]
+std = ["sonido-core/std", "sonido-effects/std"]
+
+[dependencies]
+sonido-core = { workspace = true }
+sonido-effects = { workspace = true }
+
+[dev-dependencies]

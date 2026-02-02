@@ -3,7 +3,7 @@
 //! A Freeverb-style reverb using parallel comb filters and series allpass
 //! filters. Suitable for room and hall simulations.
 
-use sonido_core::{Effect, SmoothedParam, InterpolatedDelay, CombFilter, AllpassFilter};
+use sonido_core::{Effect, SmoothedParam, InterpolatedDelay, CombFilter, AllpassFilter, ParameterInfo, ParamDescriptor, ParamUnit};
 
 /// Freeverb comb filter delay times (at 44.1kHz reference).
 /// These are mutually prime to avoid resonances.
@@ -349,6 +349,85 @@ impl Effect for Reverb {
     fn latency_samples(&self) -> usize {
         // Report pre-delay as latency
         self.predelay_samples.get() as usize
+    }
+}
+
+impl ParameterInfo for Reverb {
+    fn param_count(&self) -> usize {
+        5
+    }
+
+    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
+        match index {
+            0 => Some(ParamDescriptor {
+                name: "Room Size",
+                short_name: "Room",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+                step: 1.0,
+            }),
+            1 => Some(ParamDescriptor {
+                name: "Decay",
+                short_name: "Decay",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+                step: 1.0,
+            }),
+            2 => Some(ParamDescriptor {
+                name: "Damping",
+                short_name: "Damping",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+                step: 1.0,
+            }),
+            3 => Some(ParamDescriptor {
+                name: "Pre-Delay",
+                short_name: "PreDly",
+                unit: ParamUnit::Milliseconds,
+                min: 0.0,
+                max: 100.0,
+                default: 10.0,
+                step: 1.0,
+            }),
+            4 => Some(ParamDescriptor {
+                name: "Mix",
+                short_name: "Mix",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+                step: 1.0,
+            }),
+            _ => None,
+        }
+    }
+
+    fn get_param(&self, index: usize) -> f32 {
+        match index {
+            0 => self.room_size() * 100.0,
+            1 => self.decay() * 100.0,
+            2 => self.damping() * 100.0,
+            3 => self.predelay_ms(),
+            4 => self.mix() * 100.0,
+            _ => 0.0,
+        }
+    }
+
+    fn set_param(&mut self, index: usize, value: f32) {
+        match index {
+            0 => self.set_room_size(value / 100.0),
+            1 => self.set_decay(value / 100.0),
+            2 => self.set_damping(value / 100.0),
+            3 => self.set_predelay_ms(value),
+            4 => self.set_mix(value / 100.0),
+            _ => {}
+        }
     }
 }
 

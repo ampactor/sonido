@@ -24,7 +24,7 @@
 //! - **Tone** (500-10000 Hz): One-pole lowpass to tame harsh highs.
 //! - **Level** (-20-0 dB): Output level compensation.
 
-use sonido_core::{Effect, SmoothedParam, db_to_linear, linear_to_db, soft_clip, hard_clip, foldback, asymmetric_clip};
+use sonido_core::{Effect, SmoothedParam, ParameterInfo, ParamDescriptor, ParamUnit, db_to_linear, linear_to_db, soft_clip, hard_clip, foldback, asymmetric_clip};
 use libm::expf;
 
 /// Waveshaping algorithm selection.
@@ -190,6 +190,82 @@ impl Effect for Distortion {
         self.drive.snap_to_target();
         self.level.snap_to_target();
         self.tone_coeff.snap_to_target();
+    }
+}
+
+impl ParameterInfo for Distortion {
+    fn param_count(&self) -> usize {
+        4
+    }
+
+    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
+        match index {
+            0 => Some(ParamDescriptor {
+                name: "Drive",
+                short_name: "Drive",
+                unit: ParamUnit::Decibels,
+                min: 0.0,
+                max: 40.0,
+                default: 12.0,
+                step: 0.5,
+            }),
+            1 => Some(ParamDescriptor {
+                name: "Tone",
+                short_name: "Tone",
+                unit: ParamUnit::Hertz,
+                min: 500.0,
+                max: 10000.0,
+                default: 4000.0,
+                step: 100.0,
+            }),
+            2 => Some(ParamDescriptor {
+                name: "Level",
+                short_name: "Level",
+                unit: ParamUnit::Decibels,
+                min: -20.0,
+                max: 0.0,
+                default: -6.0,
+                step: 0.5,
+            }),
+            3 => Some(ParamDescriptor {
+                name: "Waveshape",
+                short_name: "Shape",
+                unit: ParamUnit::None,
+                min: 0.0,
+                max: 3.0,
+                default: 0.0,
+                step: 1.0,
+            }),
+            _ => None,
+        }
+    }
+
+    fn get_param(&self, index: usize) -> f32 {
+        match index {
+            0 => self.drive_db(),
+            1 => self.tone_hz(),
+            2 => self.level_db(),
+            3 => self.waveshape as u8 as f32,
+            _ => 0.0,
+        }
+    }
+
+    fn set_param(&mut self, index: usize, value: f32) {
+        match index {
+            0 => self.set_drive_db(value.clamp(0.0, 40.0)),
+            1 => self.set_tone_hz(value.clamp(500.0, 10000.0)),
+            2 => self.set_level_db(value.clamp(-20.0, 0.0)),
+            3 => {
+                let shape = match value as u8 {
+                    0 => WaveShape::SoftClip,
+                    1 => WaveShape::HardClip,
+                    2 => WaveShape::Foldback,
+                    _ => WaveShape::Asymmetric,
+                };
+                self.set_waveshape(shape);
+            }
+            _ => {}
+        }
     }
 }
 

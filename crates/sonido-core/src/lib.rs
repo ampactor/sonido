@@ -87,6 +87,7 @@ extern crate alloc;
 
 pub mod effect;
 pub mod param;
+pub mod param_info;
 pub mod math;
 pub mod biquad;
 pub mod svf;
@@ -109,3 +110,4 @@ pub use envelope::EnvelopeFollower;
 pub use oversample::{Oversampled, MAX_OVERSAMPLE_FACTOR};
 pub use comb::CombFilter;
 pub use allpass::AllpassFilter;
+pub use param_info::{ParameterInfo, ParamDescriptor, ParamUnit};

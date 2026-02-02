@@ -1,6 +1,7 @@
 //! File-based effect processing command.
 
 use crate::effects::{create_effect_with_params, parse_chain};
+use crate::preset::Preset;
 use clap::Args;
 use indicatif::{ProgressBar, ProgressStyle};
 use sonido_io::{read_wav, write_wav, ProcessingEngine, WavSpec};
@@ -172,29 +173,4 @@ fn linear_to_db(linear: f32) -> f32 {
     } else {
         20.0 * linear.log10()
     }
-}
-
-/// Preset file format.
-#[derive(Debug, serde::Deserialize)]
-struct Preset {
-    name: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    description: Option<String>,
-    #[serde(default = "default_sample_rate")]
-    #[allow(dead_code)]
-    sample_rate: u32,
-    effects: Vec<EffectConfig>,
-}
-
-fn default_sample_rate() -> u32 {
-    48000
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct EffectConfig {
-    #[serde(rename = "type")]
-    effect_type: String,
-    #[serde(default)]
-    params: HashMap<String, String>,
 }
