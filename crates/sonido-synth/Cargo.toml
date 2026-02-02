@@ -1,0 +1,19 @@
+[package]
+name = "sonido-synth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Synthesis engine for sonido - oscillators, envelopes, and voice management"
+keywords = ["dsp", "audio", "synthesizer", "no_std"]
+categories = ["multimedia::audio", "no-std"]
+
+[features]
+default = ["std"]
+std = ["sonido-core/std"]
+
+[dependencies]
+sonido-core = { path = "../sonido-core", default-features = false }
+libm = { workspace = true }
+
+[dev-dependencies]
