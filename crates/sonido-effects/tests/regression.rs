@@ -208,11 +208,12 @@ fn test_chorus_regression() {
 #[test]
 fn test_delay_regression() {
     let mut effect = Delay::new(SAMPLE_RATE);
-    effect.set_delay_time_ms(100.0);
+    effect.set_delay_time_ms(20.0); // Short delay to fit within test duration
     effect.set_feedback(0.5);
     effect.set_mix(0.5);
 
-    let input = generate_impulse(TEST_DURATION_SAMPLES);
+    // Use test signal instead of impulse for better spectral comparison
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
     run_regression_test("delay", effect, &input).expect("Delay regression test failed");
 }
 
