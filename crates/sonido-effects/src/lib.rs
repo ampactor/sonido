@@ -8,6 +8,7 @@
 //! ## Dynamics & Gain
 //!
 //! - [`Compressor`] - Soft-knee dynamics compressor with attack/release controls
+//! - [`Gate`] - Noise gate with threshold, attack, release, and hold
 //! - [`CleanPreamp`] - High-headroom gain stage with soft limiting
 //!
 //! ## Distortion & Saturation
@@ -18,6 +19,9 @@
 //! ## Modulation
 //!
 //! - [`Chorus`] - Classic dual-voice stereo chorus
+//! - [`Flanger`] - Classic flanger with modulated short delay
+//! - [`Phaser`] - Multi-stage allpass phaser with LFO modulation
+//! - [`Tremolo`] - Amplitude modulation with multiple waveforms
 //! - [`MultiVibrato`] - 10-unit tape wow/flutter simulation (original algorithm)
 //!
 //! ## Time-Based
@@ -86,10 +90,16 @@ pub mod compressor;
 pub mod chorus;
 pub mod delay;
 pub mod filter;
+pub mod flanger;
 pub mod multi_vibrato;
+pub mod phaser;
 pub mod tape_saturation;
 pub mod preamp;
 pub mod reverb;
+pub mod tremolo;
+pub mod gate;
+pub mod wah;
+pub mod parametric_eq;
 
 // Re-export main types at crate root
 pub use distortion::{Distortion, WaveShape};
@@ -97,7 +107,13 @@ pub use compressor::Compressor;
 pub use chorus::Chorus;
 pub use delay::Delay;
 pub use filter::LowPassFilter;
+pub use flanger::Flanger;
 pub use multi_vibrato::MultiVibrato;
+pub use phaser::Phaser;
 pub use tape_saturation::TapeSaturation;
 pub use preamp::CleanPreamp;
 pub use reverb::{Reverb, ReverbType};
+pub use tremolo::{Tremolo, TremoloWaveform};
+pub use gate::Gate;
+pub use wah::{Wah, WahMode};
+pub use parametric_eq::ParametricEq;

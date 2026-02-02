@@ -4,6 +4,7 @@
 //! filters. Suitable for room and hall simulations.
 
 use sonido_core::{Effect, SmoothedParam, InterpolatedDelay, CombFilter, AllpassFilter, ParameterInfo, ParamDescriptor, ParamUnit};
+use libm::{roundf, ceilf};
 
 /// Freeverb comb filter delay times (at 44.1kHz reference).
 /// These are mutually prime to avoid resonances.
@@ -20,7 +21,7 @@ const MAX_PREDELAY_MS: f32 = 100.0;
 
 /// Scale delay times from reference rate to target rate.
 fn scale_to_rate(samples: usize, target_rate: f32) -> usize {
-    ((samples as f32 * target_rate / REFERENCE_RATE).round() as usize).max(1)
+    (roundf(samples as f32 * target_rate / REFERENCE_RATE) as usize).max(1)
 }
 
 /// Reverb type presets.
@@ -115,7 +116,7 @@ impl Reverb {
         });
 
         // Pre-delay: up to 100ms
-        let max_predelay = (MAX_PREDELAY_MS / 1000.0 * sample_rate).ceil() as usize;
+        let max_predelay = ceilf(MAX_PREDELAY_MS / 1000.0 * sample_rate) as usize;
         let predelay_line = InterpolatedDelay::new(max_predelay.max(1));
 
         // Default to Room preset
@@ -312,7 +313,7 @@ impl Effect for Reverb {
             ap
         });
 
-        let max_predelay = (MAX_PREDELAY_MS / 1000.0 * sample_rate).ceil() as usize;
+        let max_predelay = ceilf(MAX_PREDELAY_MS / 1000.0 * sample_rate) as usize;
         self.predelay_line = InterpolatedDelay::new(max_predelay.max(1));
 
         // Update parameter sample rates

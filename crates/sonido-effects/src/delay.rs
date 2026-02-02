@@ -1,6 +1,7 @@
 //! Classic delay effect with feedback control.
 
 use sonido_core::{Effect, SmoothedParam, InterpolatedDelay, ParameterInfo, ParamDescriptor, ParamUnit};
+use libm::ceilf;
 
 /// Classic delay effect with feedback.
 ///
@@ -36,7 +37,7 @@ impl Delay {
 
     /// Create a new delay with custom maximum delay time.
     pub fn with_max_delay_ms(sample_rate: f32, max_delay_ms: f32) -> Self {
-        let max_delay_samples = ((max_delay_ms / 1000.0) * sample_rate).ceil() as usize;
+        let max_delay_samples = ceilf((max_delay_ms / 1000.0) * sample_rate) as usize;
         let max_delay_samples_f32 = max_delay_samples as f32;
         let default_delay_samples = ((500.0 / 1000.0) * sample_rate).min(max_delay_samples_f32);
 

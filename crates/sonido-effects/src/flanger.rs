@@ -1,0 +1,356 @@
+//! Classic flanger effect with modulated short delay.
+//!
+//! A flanger creates a characteristic "whooshing" or "jet plane" sound
+//! by mixing the input signal with a short, modulated delay. The delay
+//! time sweeps between approximately 1-10ms, creating comb filtering
+//! effects that sweep through the frequency spectrum.
+
+use sonido_core::{Effect, SmoothedParam, InterpolatedDelay, Lfo, ParameterInfo, ParamDescriptor, ParamUnit};
+use libm::ceilf;
+
+/// Flanger effect with LFO-modulated delay.
+///
+/// # Parameters
+///
+/// - **rate**: LFO speed (0.05-5 Hz)
+/// - **depth**: Delay modulation amount (0-100%)
+/// - **feedback**: Regeneration amount (0-95%)
+/// - **mix**: Wet/dry balance (0-100%)
+///
+/// # Example
+///
+/// ```rust
+/// use sonido_effects::Flanger;
+/// use sonido_core::Effect;
+///
+/// let mut flanger = Flanger::new(44100.0);
+/// flanger.set_rate(0.5);
+/// flanger.set_depth(0.8);
+/// flanger.set_feedback(0.7);
+/// flanger.set_mix(0.5);
+///
+/// let input = 0.5;
+/// let output = flanger.process(input);
+/// ```
+#[derive(Debug, Clone)]
+pub struct Flanger {
+    delay: InterpolatedDelay,
+    lfo: Lfo,
+    rate: SmoothedParam,
+    depth: SmoothedParam,
+    feedback: SmoothedParam,
+    mix: SmoothedParam,
+    sample_rate: f32,
+    /// Base delay in samples (5ms)
+    base_delay_samples: f32,
+    /// Maximum modulation depth in samples (5ms)
+    max_mod_samples: f32,
+    /// Feedback sample for regeneration
+    feedback_sample: f32,
+}
+
+impl Flanger {
+    /// Base delay time in milliseconds.
+    const BASE_DELAY_MS: f32 = 5.0;
+    /// Maximum modulation depth in milliseconds.
+    const MAX_MOD_MS: f32 = 5.0;
+    /// Minimum delay time in milliseconds.
+    const MIN_DELAY_MS: f32 = 1.0;
+
+    /// Create a new flanger effect.
+    pub fn new(sample_rate: f32) -> Self {
+        // Maximum delay = base + max mod = 10ms
+        let max_delay_ms = Self::BASE_DELAY_MS + Self::MAX_MOD_MS;
+        let max_delay_samples = ceilf((max_delay_ms / 1000.0) * sample_rate) as usize + 1;
+
+        let base_delay_samples = (Self::BASE_DELAY_MS / 1000.0) * sample_rate;
+        let max_mod_samples = (Self::MAX_MOD_MS / 1000.0) * sample_rate;
+
+        Self {
+            delay: InterpolatedDelay::new(max_delay_samples),
+            lfo: Lfo::new(sample_rate, 0.5),
+            rate: SmoothedParam::with_config(0.5, sample_rate, 10.0),
+            depth: SmoothedParam::with_config(0.5, sample_rate, 10.0),
+            feedback: SmoothedParam::with_config(0.5, sample_rate, 10.0),
+            mix: SmoothedParam::with_config(0.5, sample_rate, 10.0),
+            sample_rate,
+            base_delay_samples,
+            max_mod_samples,
+            feedback_sample: 0.0,
+        }
+    }
+
+    /// Set LFO rate in Hz (0.05-5 Hz).
+    pub fn set_rate(&mut self, rate_hz: f32) {
+        self.rate.set_target(rate_hz.clamp(0.05, 5.0));
+    }
+
+    /// Get current LFO rate in Hz.
+    pub fn rate(&self) -> f32 {
+        self.rate.target()
+    }
+
+    /// Set modulation depth (0-1).
+    pub fn set_depth(&mut self, depth: f32) {
+        self.depth.set_target(depth.clamp(0.0, 1.0));
+    }
+
+    /// Get current modulation depth.
+    pub fn depth(&self) -> f32 {
+        self.depth.target()
+    }
+
+    /// Set feedback amount (0-0.95).
+    pub fn set_feedback(&mut self, feedback: f32) {
+        self.feedback.set_target(feedback.clamp(0.0, 0.95));
+    }
+
+    /// Get current feedback amount.
+    pub fn feedback(&self) -> f32 {
+        self.feedback.target()
+    }
+
+    /// Set wet/dry mix (0-1).
+    pub fn set_mix(&mut self, mix: f32) {
+        self.mix.set_target(mix.clamp(0.0, 1.0));
+    }
+
+    /// Get current wet/dry mix.
+    pub fn mix(&self) -> f32 {
+        self.mix.target()
+    }
+}
+
+impl Effect for Flanger {
+    #[inline]
+    fn process(&mut self, input: f32) -> f32 {
+        let rate = self.rate.advance();
+        let depth = self.depth.advance();
+        let feedback = self.feedback.advance();
+        let mix = self.mix.advance();
+
+        // Update LFO frequency
+        self.lfo.set_frequency(rate);
+
+        // LFO output is in range [-1, 1], convert to [0, 1] for delay modulation
+        let lfo_value = self.lfo.advance_unipolar();
+
+        // Calculate delay time: base delay + modulation
+        // When depth=1 and lfo=0: delay = base - max_mod = 0 (clamped to min)
+        // When depth=1 and lfo=1: delay = base + max_mod = 10ms
+        let mod_amount = (lfo_value * 2.0 - 1.0) * depth * self.max_mod_samples;
+        let delay_samples = (self.base_delay_samples + mod_amount).max(
+            (Self::MIN_DELAY_MS / 1000.0) * self.sample_rate
+        );
+
+        // Read from delay line
+        let delayed = self.delay.read(delay_samples);
+
+        // Write input + feedback to delay line
+        let delay_input = input + self.feedback_sample * feedback;
+        self.delay.write(delay_input);
+
+        // Store for next iteration
+        self.feedback_sample = delayed;
+
+        // Mix dry and wet signals
+        input * (1.0 - mix) + delayed * mix
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.sample_rate = sample_rate;
+
+        self.base_delay_samples = (Self::BASE_DELAY_MS / 1000.0) * sample_rate;
+        self.max_mod_samples = (Self::MAX_MOD_MS / 1000.0) * sample_rate;
+
+        self.lfo.set_sample_rate(sample_rate);
+        self.rate.set_sample_rate(sample_rate);
+        self.depth.set_sample_rate(sample_rate);
+        self.feedback.set_sample_rate(sample_rate);
+        self.mix.set_sample_rate(sample_rate);
+    }
+
+    fn reset(&mut self) {
+        self.delay.clear();
+        self.lfo.reset();
+        self.feedback_sample = 0.0;
+    }
+}
+
+impl ParameterInfo for Flanger {
+    fn param_count(&self) -> usize {
+        4
+    }
+
+    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
+        match index {
+            0 => Some(ParamDescriptor {
+                name: "Rate",
+                short_name: "Rate",
+                unit: ParamUnit::Hertz,
+                min: 0.05,
+                max: 5.0,
+                default: 0.5,
+                step: 0.05,
+            }),
+            1 => Some(ParamDescriptor {
+                name: "Depth",
+                short_name: "Depth",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+                step: 1.0,
+            }),
+            2 => Some(ParamDescriptor {
+                name: "Feedback",
+                short_name: "Fdbk",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 95.0,
+                default: 50.0,
+                step: 1.0,
+            }),
+            3 => Some(ParamDescriptor {
+                name: "Mix",
+                short_name: "Mix",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+                step: 1.0,
+            }),
+            _ => None,
+        }
+    }
+
+    fn get_param(&self, index: usize) -> f32 {
+        match index {
+            0 => self.rate.target(),
+            1 => self.depth.target() * 100.0,
+            2 => self.feedback.target() * 100.0,
+            3 => self.mix.target() * 100.0,
+            _ => 0.0,
+        }
+    }
+
+    fn set_param(&mut self, index: usize, value: f32) {
+        match index {
+            0 => self.set_rate(value),
+            1 => self.set_depth(value / 100.0),
+            2 => self.set_feedback(value / 100.0),
+            3 => self.set_mix(value / 100.0),
+            _ => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_flanger_basic() {
+        let mut flanger = Flanger::new(44100.0);
+        flanger.set_mix(1.0);
+
+        for _ in 0..1000 {
+            let output = flanger.process(0.5);
+            assert!(output.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_flanger_bypass() {
+        let mut flanger = Flanger::new(44100.0);
+        flanger.set_mix(0.0);
+
+        // Let smoothing settle
+        for _ in 0..1000 {
+            flanger.process(1.0);
+        }
+
+        let output = flanger.process(0.5);
+        assert!((output - 0.5).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_flanger_feedback_stability() {
+        let mut flanger = Flanger::new(44100.0);
+        flanger.set_feedback(0.95);
+        flanger.set_mix(1.0);
+
+        // Process many samples to check for instability
+        for _ in 0..10000 {
+            let output = flanger.process(0.1);
+            assert!(output.is_finite());
+            assert!(output.abs() < 10.0, "Output exceeded bounds: {}", output);
+        }
+    }
+
+    #[test]
+    fn test_flanger_reset() {
+        let mut flanger = Flanger::new(44100.0);
+        flanger.set_feedback(0.8);
+        flanger.set_mix(1.0);
+
+        // Fill with signal
+        for _ in 0..500 {
+            flanger.process(1.0);
+        }
+
+        flanger.reset();
+
+        // After reset, processing zeros should decay quickly
+        let output = flanger.process(0.0);
+        assert!(output.abs() < 0.01, "Should be silent after reset, got {}", output);
+    }
+
+    #[test]
+    fn test_flanger_parameter_info() {
+        let flanger = Flanger::new(44100.0);
+
+        assert_eq!(flanger.param_count(), 4);
+
+        let rate_info = flanger.param_info(0).unwrap();
+        assert_eq!(rate_info.name, "Rate");
+        assert_eq!(rate_info.min, 0.05);
+        assert_eq!(rate_info.max, 5.0);
+
+        let depth_info = flanger.param_info(1).unwrap();
+        assert_eq!(depth_info.name, "Depth");
+
+        let feedback_info = flanger.param_info(2).unwrap();
+        assert_eq!(feedback_info.name, "Feedback");
+        assert_eq!(feedback_info.max, 95.0);
+    }
+
+    #[test]
+    fn test_flanger_parameter_get_set() {
+        let mut flanger = Flanger::new(44100.0);
+
+        flanger.set_param(0, 2.0);
+        assert!((flanger.get_param(0) - 2.0).abs() < 0.01);
+
+        flanger.set_param(1, 75.0);
+        assert!((flanger.get_param(1) - 75.0).abs() < 0.01);
+
+        flanger.set_param(2, 80.0);
+        assert!((flanger.get_param(2) - 80.0).abs() < 0.01);
+
+        flanger.set_param(3, 60.0);
+        assert!((flanger.get_param(3) - 60.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_flanger_rate_range() {
+        let mut flanger = Flanger::new(44100.0);
+
+        // Test clamping
+        flanger.set_rate(0.01);
+        assert!((flanger.rate() - 0.05).abs() < 0.001);
+
+        flanger.set_rate(10.0);
+        assert!((flanger.rate() - 5.0).abs() < 0.001);
+    }
+}

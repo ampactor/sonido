@@ -55,8 +55,9 @@ use alloc::{boxed::Box, vec::Vec};
 
 use sonido_core::{Effect, ParameterInfo, ParamDescriptor};
 use sonido_effects::{
-    Distortion, Compressor, Chorus, Delay, LowPassFilter,
-    MultiVibrato, TapeSaturation, CleanPreamp, Reverb,
+    Distortion, Compressor, Chorus, Delay, Flanger, LowPassFilter,
+    MultiVibrato, Phaser, TapeSaturation, CleanPreamp, Reverb, Tremolo, Gate,
+    Wah, ParametricEq,
 };
 
 /// Category of audio effect for organization and filtering.
@@ -188,6 +189,30 @@ impl EffectRegistry {
             |sr| Box::new(Chorus::new(sr)),
         );
 
+        // Flanger
+        self.register(
+            EffectDescriptor {
+                id: "flanger",
+                name: "Flanger",
+                description: "Classic flanger with modulated short delay",
+                category: EffectCategory::Modulation,
+                param_count: 4,
+            },
+            |sr| Box::new(Flanger::new(sr)),
+        );
+
+        // Phaser
+        self.register(
+            EffectDescriptor {
+                id: "phaser",
+                name: "Phaser",
+                description: "Multi-stage allpass phaser with LFO",
+                category: EffectCategory::Modulation,
+                param_count: 5,
+            },
+            |sr| Box::new(Phaser::new(sr)),
+        );
+
         // Delay
         self.register(
             EffectDescriptor {
@@ -258,6 +283,54 @@ impl EffectRegistry {
                 param_count: 5,
             },
             |sr| Box::new(Reverb::new(sr)),
+        );
+
+        // Tremolo
+        self.register(
+            EffectDescriptor {
+                id: "tremolo",
+                name: "Tremolo",
+                description: "Amplitude modulation with multiple waveforms",
+                category: EffectCategory::Modulation,
+                param_count: 3,
+            },
+            |sr| Box::new(Tremolo::new(sr)),
+        );
+
+        // Gate
+        self.register(
+            EffectDescriptor {
+                id: "gate",
+                name: "Noise Gate",
+                description: "Noise gate with threshold and hold",
+                category: EffectCategory::Dynamics,
+                param_count: 4,
+            },
+            |sr| Box::new(Gate::new(sr)),
+        );
+
+        // Wah
+        self.register(
+            EffectDescriptor {
+                id: "wah",
+                name: "Wah",
+                description: "Auto-wah and manual wah with envelope follower",
+                category: EffectCategory::Filter,
+                param_count: 4,
+            },
+            |sr| Box::new(Wah::new(sr)),
+        );
+
+        // Parametric EQ
+        self.register(
+            EffectDescriptor {
+                id: "eq",
+                name: "Parametric EQ",
+                description: "3-band parametric equalizer with frequency, gain, and Q",
+                category: EffectCategory::Filter,
+                param_count: 9,
+            },
+            |sr| Box::new(ParametricEq::new(sr)),
         );
     }
 
@@ -354,14 +427,14 @@ mod tests {
     #[test]
     fn test_registry_creation() {
         let registry = EffectRegistry::new();
-        assert_eq!(registry.len(), 9);
+        assert_eq!(registry.len(), 15);
     }
 
     #[test]
     fn test_all_effects() {
         let registry = EffectRegistry::new();
         let effects = registry.all_effects();
-        assert_eq!(effects.len(), 9);
+        assert_eq!(effects.len(), 15);
     }
 
     #[test]
@@ -393,16 +466,19 @@ mod tests {
         let registry = EffectRegistry::new();
 
         let modulation = registry.effects_in_category(EffectCategory::Modulation);
-        assert_eq!(modulation.len(), 2); // Chorus and MultiVibrato
+        assert_eq!(modulation.len(), 5); // Chorus, Flanger, Phaser, MultiVibrato, Tremolo
 
         let dynamics = registry.effects_in_category(EffectCategory::Dynamics);
-        assert_eq!(dynamics.len(), 1); // Compressor
+        assert_eq!(dynamics.len(), 2); // Compressor, Gate
 
         let distortion = registry.effects_in_category(EffectCategory::Distortion);
         assert_eq!(distortion.len(), 2); // Distortion and Tape
 
         let time_based = registry.effects_in_category(EffectCategory::TimeBased);
         assert_eq!(time_based.len(), 2); // Delay and Reverb
+
+        let filter = registry.effects_in_category(EffectCategory::Filter);
+        assert_eq!(filter.len(), 3); // LowPass, Wah, ParametricEQ
     }
 
     #[test]
