@@ -1,0 +1,139 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build (${{ matrix.artifact }})
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: sonido-linux-x64
+            cli_binary: sonido
+            gui_binary: sonido-gui
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: sonido-macos-x64
+            cli_binary: sonido
+            gui_binary: sonido-gui
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: sonido-macos-arm64
+            cli_binary: sonido
+            gui_binary: sonido-gui
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: sonido-windows-x64
+            cli_binary: sonido.exe
+            gui_binary: sonido-gui.exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-release-
+
+      - name: Build CLI
+        run: cargo build --release --target ${{ matrix.target }} -p sonido-cli
+
+      - name: Build GUI
+        run: cargo build --release --target ${{ matrix.target }} -p sonido-gui
+
+      - name: Export factory presets
+        run: cargo run -p sonido-cli -- presets export-factory ./dist-presets
+
+      - name: Create release directory (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p ${{ matrix.artifact }}
+          cp target/${{ matrix.target }}/release/${{ matrix.cli_binary }} ${{ matrix.artifact }}/
+          cp target/${{ matrix.target }}/release/${{ matrix.gui_binary }} ${{ matrix.artifact }}/
+          cp -r dist-presets ${{ matrix.artifact }}/presets
+          cp README.md ${{ matrix.artifact }}/
+          cp LICENSE* ${{ matrix.artifact }}/ 2>/dev/null || true
+          cp CHANGELOG.md ${{ matrix.artifact }}/ 2>/dev/null || true
+
+      - name: Create release directory (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path ${{ matrix.artifact }}
+          Copy-Item target/${{ matrix.target }}/release/${{ matrix.cli_binary }} ${{ matrix.artifact }}/
+          Copy-Item target/${{ matrix.target }}/release/${{ matrix.gui_binary }} ${{ matrix.artifact }}/
+          Copy-Item -Recurse dist-presets ${{ matrix.artifact }}/presets
+          Copy-Item README.md ${{ matrix.artifact }}/
+          if (Test-Path LICENSE*) { Copy-Item LICENSE* ${{ matrix.artifact }}/ }
+          if (Test-Path CHANGELOG.md) { Copy-Item CHANGELOG.md ${{ matrix.artifact }}/ }
+
+      - name: Create archive (Unix)
+        if: runner.os != 'Windows'
+        run: tar -czvf ${{ matrix.artifact }}.tar.gz ${{ matrix.artifact }}
+
+      - name: Create archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path ${{ matrix.artifact }} -DestinationPath ${{ matrix.artifact }}.zip
+
+      - name: Upload artifact (Unix)
+        if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.tar.gz
+
+      - name: Upload artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.zip
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/**/*.tar.gz
+            artifacts/**/*.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
