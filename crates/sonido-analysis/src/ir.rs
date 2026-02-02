@@ -146,6 +146,231 @@ pub fn white_noise(length: usize, amplitude: f32) -> Vec<f32> {
         .collect()
 }
 
+/// Trim an impulse response to its significant portion
+///
+/// Removes leading silence and trailing decay below threshold.
+///
+/// # Arguments
+/// * `ir` - Impulse response samples
+/// * `start_threshold_db` - Threshold for detecting IR start (relative to peak)
+/// * `end_threshold_db` - Threshold for detecting IR end (relative to peak)
+///
+/// # Returns
+/// Tuple of (trimmed_ir, start_sample, end_sample)
+pub fn trim_ir(ir: &[f32], start_threshold_db: f32, end_threshold_db: f32) -> (Vec<f32>, usize, usize) {
+    if ir.is_empty() {
+        return (Vec::new(), 0, 0);
+    }
+
+    // Find peak amplitude
+    let peak = ir.iter().map(|&x| x.abs()).fold(0.0f32, f32::max);
+    if peak < 1e-10 {
+        return (Vec::new(), 0, 0);
+    }
+
+    // Convert thresholds to linear
+    let start_thresh_linear = peak * 10.0f32.powf(start_threshold_db / 20.0);
+    let end_thresh_linear = peak * 10.0f32.powf(end_threshold_db / 20.0);
+
+    // Find start (first sample above threshold)
+    let start = ir
+        .iter()
+        .position(|&x| x.abs() > start_thresh_linear)
+        .unwrap_or(0);
+
+    // Find end (last sample above threshold)
+    let end = ir
+        .iter()
+        .rposition(|&x| x.abs() > end_thresh_linear)
+        .unwrap_or(ir.len() - 1)
+        + 1;
+
+    if end <= start {
+        return (Vec::new(), start, start);
+    }
+
+    (ir[start..end].to_vec(), start, end)
+}
+
+/// Compute the Energy Decay Curve (Schroeder integration)
+///
+/// The EDC shows how energy decays over time, useful for RT60 estimation.
+/// Computed by reverse-integrating the squared impulse response.
+///
+/// # Arguments
+/// * `ir` - Impulse response samples
+///
+/// # Returns
+/// Energy decay curve in dB (normalized to 0 dB at start)
+pub fn energy_decay_curve(ir: &[f32]) -> Vec<f32> {
+    if ir.is_empty() {
+        return Vec::new();
+    }
+
+    // Compute squared samples
+    let squared: Vec<f32> = ir.iter().map(|&x| x * x).collect();
+
+    // Reverse cumulative sum (Schroeder integration)
+    let mut edc = Vec::with_capacity(ir.len());
+    let mut sum = 0.0f32;
+
+    for &s in squared.iter().rev() {
+        sum += s;
+        edc.push(sum);
+    }
+
+    edc.reverse();
+
+    // Normalize to 0 dB at start and convert to dB
+    let max_energy = edc[0].max(1e-10);
+    edc.iter()
+        .map(|&e| 10.0 * (e / max_energy).max(1e-10).log10())
+        .collect()
+}
+
+/// RT60 estimation result
+#[derive(Debug, Clone, Copy)]
+pub struct Rt60Estimate {
+    /// RT60 in seconds (extrapolated from decay slope)
+    pub rt60_seconds: f32,
+    /// T20 (time to decay 20 dB, from -5 to -25 dB)
+    pub t20_seconds: f32,
+    /// T30 (time to decay 30 dB, from -5 to -35 dB)
+    pub t30_seconds: f32,
+    /// Early Decay Time (time to decay 10 dB, from 0 to -10 dB)
+    pub edt_seconds: f32,
+    /// Correlation coefficient of the linear fit (1.0 = perfect fit)
+    pub correlation: f32,
+}
+
+/// Estimate RT60 (reverberation time) from an impulse response
+///
+/// Uses the Schroeder method with linear regression on the EDC.
+///
+/// # Arguments
+/// * `ir` - Impulse response samples
+/// * `sample_rate` - Sample rate in Hz
+///
+/// # Returns
+/// RT60 estimate with multiple decay metrics
+pub fn estimate_rt60(ir: &[f32], sample_rate: f32) -> Option<Rt60Estimate> {
+    if ir.is_empty() {
+        return None;
+    }
+
+    let edc = energy_decay_curve(ir);
+    if edc.is_empty() {
+        return None;
+    }
+
+    // Find EDT (0 to -10 dB)
+    let edt_seconds = find_decay_time(&edc, 0.0, -10.0, sample_rate);
+
+    // Find T20 (-5 to -25 dB) - used for RT60 extrapolation
+    let t20_seconds = find_decay_time(&edc, -5.0, -25.0, sample_rate);
+
+    // Find T30 (-5 to -35 dB) - more accurate if noise floor allows
+    let t30_seconds = find_decay_time(&edc, -5.0, -35.0, sample_rate);
+
+    // Extrapolate RT60 from T20 (multiply by 3)
+    let rt60_from_t20 = t20_seconds * 3.0;
+    let rt60_from_t30 = t30_seconds * 2.0;
+
+    // Use T30 if available, otherwise T20
+    let rt60_seconds = if t30_seconds > 0.0 && (rt60_from_t30 - rt60_from_t20).abs() / rt60_from_t20 < 0.3 {
+        rt60_from_t30
+    } else {
+        rt60_from_t20
+    };
+
+    // Calculate correlation from the -5 to -25 dB region
+    let correlation = calculate_edc_correlation(&edc, -5.0, -25.0);
+
+    Some(Rt60Estimate {
+        rt60_seconds,
+        t20_seconds,
+        t30_seconds,
+        edt_seconds,
+        correlation,
+    })
+}
+
+/// Find decay time between two dB levels
+fn find_decay_time(edc: &[f32], start_db: f32, end_db: f32, sample_rate: f32) -> f32 {
+    // Find indices for start and end levels
+    let start_idx = edc.iter().position(|&e| e <= start_db);
+    let end_idx = edc.iter().position(|&e| e <= end_db);
+
+    match (start_idx, end_idx) {
+        (Some(s), Some(e)) if e > s => {
+            // Linear regression for more accurate timing
+            let mut sum_x = 0.0f32;
+            let mut sum_y = 0.0f32;
+            let mut sum_xy = 0.0f32;
+            let mut sum_xx = 0.0f32;
+
+            for (i, &val) in edc[s..=e].iter().enumerate() {
+                let x = i as f32;
+                let y = val;
+                sum_x += x;
+                sum_y += y;
+                sum_xy += x * y;
+                sum_xx += x * x;
+            }
+
+            let n_points = (e - s + 1) as f32;
+            let slope = (n_points * sum_xy - sum_x * sum_y) / (n_points * sum_xx - sum_x * sum_x);
+
+            if slope < 0.0 {
+                // Time to decay from start_db to end_db
+                let db_range = start_db - end_db;
+                let samples = db_range / (-slope);
+                samples / sample_rate
+            } else {
+                0.0
+            }
+        }
+        _ => 0.0,
+    }
+}
+
+/// Calculate correlation coefficient for EDC linearity
+fn calculate_edc_correlation(edc: &[f32], start_db: f32, end_db: f32) -> f32 {
+    let start_idx = edc.iter().position(|&e| e <= start_db);
+    let end_idx = edc.iter().position(|&e| e <= end_db);
+
+    match (start_idx, end_idx) {
+        (Some(s), Some(e)) if e > s => {
+            let n = (e - s + 1) as f32;
+            let mut sum_x = 0.0f32;
+            let mut sum_y = 0.0f32;
+            let mut sum_xy = 0.0f32;
+            let mut sum_xx = 0.0f32;
+            let mut sum_yy = 0.0f32;
+
+            for (i, &val) in edc[s..=e].iter().enumerate() {
+                let x = i as f32;
+                let y = val;
+                sum_x += x;
+                sum_y += y;
+                sum_xy += x * y;
+                sum_xx += x * x;
+                sum_yy += y * y;
+            }
+
+            let numerator = n * sum_xy - sum_x * sum_y;
+            let denominator = ((n * sum_xx - sum_x * sum_x) * (n * sum_yy - sum_y * sum_y)).sqrt();
+
+            if denominator > 0.0 {
+                (numerator / denominator).abs()
+            } else {
+                0.0
+            }
+        }
+        _ => 0.0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,5 +399,135 @@ mod tests {
         let imp = impulse(100);
         assert_eq!(imp[0], 1.0);
         assert!(imp[1..].iter().all(|&x| x == 0.0));
+    }
+
+    #[test]
+    fn test_trim_ir_basic() {
+        // Create an IR with leading silence and trailing decay
+        let mut ir = vec![0.0; 100];
+        ir[20] = 1.0; // Peak
+        ir[21] = 0.5;
+        ir[22] = 0.25;
+        ir[23] = 0.1;
+        ir[24] = 0.05;
+        // Rest is silence
+
+        let (trimmed, start, end) = trim_ir(&ir, -20.0, -40.0);
+
+        assert!(start >= 20, "Should start at or after the peak");
+        assert!(end <= 30, "Should end after the decay");
+        assert!(!trimmed.is_empty(), "Trimmed IR should not be empty");
+    }
+
+    #[test]
+    fn test_trim_ir_empty() {
+        let ir: Vec<f32> = vec![];
+        let (trimmed, start, end) = trim_ir(&ir, -20.0, -60.0);
+        assert!(trimmed.is_empty());
+        assert_eq!(start, 0);
+        assert_eq!(end, 0);
+    }
+
+    #[test]
+    fn test_trim_ir_silence() {
+        let ir = vec![0.0; 100];
+        let (trimmed, _, _) = trim_ir(&ir, -20.0, -60.0);
+        assert!(trimmed.is_empty());
+    }
+
+    #[test]
+    fn test_energy_decay_curve() {
+        // Create exponentially decaying IR
+        let sample_rate = 48000.0;
+        let decay_time = 0.5; // 500ms
+        let ir: Vec<f32> = (0..24000)
+            .map(|i| {
+                let t = i as f32 / sample_rate;
+                (-t / decay_time * 6.91).exp() // 6.91 = ln(1000) for 60dB decay
+            })
+            .collect();
+
+        let edc = energy_decay_curve(&ir);
+
+        assert_eq!(edc.len(), ir.len());
+        assert!((edc[0] - 0.0).abs() < 0.1, "EDC should start at 0 dB");
+
+        // EDC should be monotonically decreasing
+        for i in 1..edc.len() {
+            assert!(
+                edc[i] <= edc[i - 1] + 0.01,
+                "EDC should be monotonically decreasing"
+            );
+        }
+    }
+
+    #[test]
+    fn test_energy_decay_curve_empty() {
+        let ir: Vec<f32> = vec![];
+        let edc = energy_decay_curve(&ir);
+        assert!(edc.is_empty());
+    }
+
+    #[test]
+    fn test_estimate_rt60_exponential_decay() {
+        // Create an exponentially decaying IR with known RT60
+        let sample_rate = 48000.0;
+        let target_rt60 = 1.0; // 1 second RT60
+        let decay_constant = target_rt60 / 6.91; // time constant for 60dB decay
+
+        let ir: Vec<f32> = (0..96000) // 2 seconds
+            .map(|i| {
+                let t = i as f32 / sample_rate;
+                (-t / decay_constant).exp()
+            })
+            .collect();
+
+        let result = estimate_rt60(&ir, sample_rate);
+        assert!(result.is_some(), "Should successfully estimate RT60");
+
+        let rt60 = result.unwrap();
+        assert!(
+            (rt60.rt60_seconds - target_rt60).abs() < 0.2,
+            "RT60 should be close to {} s, got {} s",
+            target_rt60,
+            rt60.rt60_seconds
+        );
+        assert!(
+            rt60.correlation > 0.9,
+            "Correlation should be high for exponential decay, got {}",
+            rt60.correlation
+        );
+    }
+
+    #[test]
+    fn test_estimate_rt60_empty() {
+        let ir: Vec<f32> = vec![];
+        let result = estimate_rt60(&ir, 48000.0);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_rt60_metrics() {
+        let sample_rate = 48000.0;
+        let target_rt60 = 0.5;
+        let decay_constant = target_rt60 / 6.91;
+
+        let ir: Vec<f32> = (0..48000)
+            .map(|i| {
+                let t = i as f32 / sample_rate;
+                (-t / decay_constant).exp()
+            })
+            .collect();
+
+        let result = estimate_rt60(&ir, sample_rate).unwrap();
+
+        // EDT should be approximately RT60/6 for exponential decay
+        assert!(result.edt_seconds > 0.0, "EDT should be positive");
+
+        // T20 should be approximately RT60/3
+        assert!(result.t20_seconds > 0.0, "T20 should be positive");
+
+        // T30 should be approximately RT60/2
+        assert!(result.t30_seconds > 0.0, "T30 should be positive");
     }
 }

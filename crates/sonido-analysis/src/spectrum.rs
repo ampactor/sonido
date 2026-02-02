@@ -1,6 +1,7 @@
 //! Spectral analysis utilities
 
 use crate::fft::{Fft, Window};
+use rustfft::num_complex::Complex;
 
 /// Compute magnitude spectrum from time-domain signal
 pub fn magnitude_spectrum(signal: &[f32], fft_size: usize, window: Window) -> Vec<f32> {
@@ -111,6 +112,265 @@ pub fn spectral_rolloff(spectrum: &[f32], sample_rate: f32, rolloff_percent: f32
     sample_rate / 2.0 // Nyquist
 }
 
+/// Welch's method for power spectral density estimation
+///
+/// Computes PSD by averaging periodograms of overlapping windowed segments.
+/// This reduces variance compared to a single periodogram.
+///
+/// # Arguments
+/// * `signal` - Input time-domain signal
+/// * `sample_rate` - Sample rate in Hz
+/// * `segment_size` - Size of each segment (should be power of 2)
+/// * `overlap` - Overlap fraction between segments (0.0 to 1.0, typically 0.5)
+/// * `window` - Window function to apply
+///
+/// # Returns
+/// Tuple of (frequencies, power_spectral_density) where PSD is in dB
+pub fn welch_psd(
+    signal: &[f32],
+    sample_rate: f32,
+    segment_size: usize,
+    overlap: f32,
+    window: Window,
+) -> (Vec<f32>, Vec<f32>) {
+    let overlap = overlap.clamp(0.0, 0.99);
+    let hop_size = ((1.0 - overlap) * segment_size as f32) as usize;
+    let hop_size = hop_size.max(1);
+
+    let fft = Fft::new(segment_size);
+    let window_coeffs = window.coefficients(segment_size);
+
+    // Window normalization factor (for power preservation)
+    let window_power: f32 = window_coeffs.iter().map(|w| w * w).sum::<f32>() / segment_size as f32;
+
+    let num_bins = segment_size / 2 + 1;
+    let mut psd_accum = vec![0.0_f64; num_bins];
+    let mut segment_count = 0;
+
+    // Process overlapping segments
+    let mut offset = 0;
+    while offset + segment_size <= signal.len() {
+        // Extract and window segment
+        let mut segment: Vec<f32> = signal[offset..offset + segment_size].to_vec();
+        for (s, w) in segment.iter_mut().zip(window_coeffs.iter()) {
+            *s *= w;
+        }
+
+        // Compute FFT
+        let spectrum = fft.forward(&segment);
+
+        // Accumulate power (magnitude squared)
+        for (i, c) in spectrum.iter().enumerate() {
+            let power = (c.re * c.re + c.im * c.im) as f64;
+            psd_accum[i] += power;
+        }
+
+        segment_count += 1;
+        offset += hop_size;
+    }
+
+    // Handle case with no complete segments
+    if segment_count == 0 {
+        // Process partial signal
+        let mut segment = signal.to_vec();
+        segment.resize(segment_size, 0.0);
+        for (s, w) in segment.iter_mut().zip(window_coeffs.iter()) {
+            *s *= w;
+        }
+        let spectrum = fft.forward(&segment);
+        for (i, c) in spectrum.iter().enumerate() {
+            let power = (c.re * c.re + c.im * c.im) as f64;
+            psd_accum[i] += power;
+        }
+        segment_count = 1;
+    }
+
+    // Average and normalize
+    let scale = 2.0 / (segment_count as f64 * segment_size as f64 * window_power as f64);
+    let psd_db: Vec<f32> = psd_accum
+        .iter()
+        .map(|&p| {
+            let psd_normalized = p * scale;
+            10.0 * (psd_normalized.max(1e-20) as f32).log10()
+        })
+        .collect();
+
+    // Compute frequency bins
+    let bin_width = sample_rate / segment_size as f32;
+    let frequencies: Vec<f32> = (0..num_bins).map(|i| i as f32 * bin_width).collect();
+
+    (frequencies, psd_db)
+}
+
+/// Cross-spectral density estimation using Welch's method
+///
+/// Computes the cross-spectral density between two signals.
+///
+/// # Returns
+/// Tuple of (frequencies, cross_spectral_density_magnitude, phase)
+pub fn cross_spectral_density(
+    signal_a: &[f32],
+    signal_b: &[f32],
+    sample_rate: f32,
+    segment_size: usize,
+    overlap: f32,
+    window: Window,
+) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+    let overlap = overlap.clamp(0.0, 0.99);
+    let hop_size = ((1.0 - overlap) * segment_size as f32) as usize;
+    let hop_size = hop_size.max(1);
+
+    let len = signal_a.len().min(signal_b.len());
+    let fft = Fft::new(segment_size);
+    let window_coeffs = window.coefficients(segment_size);
+
+    let num_bins = segment_size / 2 + 1;
+    let mut csd_accum: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); num_bins];
+    let mut segment_count = 0;
+
+    let mut offset = 0;
+    while offset + segment_size <= len {
+        // Window both segments
+        let mut seg_a: Vec<f32> = signal_a[offset..offset + segment_size].to_vec();
+        let mut seg_b: Vec<f32> = signal_b[offset..offset + segment_size].to_vec();
+
+        for (s, w) in seg_a.iter_mut().zip(window_coeffs.iter()) {
+            *s *= w;
+        }
+        for (s, w) in seg_b.iter_mut().zip(window_coeffs.iter()) {
+            *s *= w;
+        }
+
+        let spec_a = fft.forward(&seg_a);
+        let spec_b = fft.forward(&seg_b);
+
+        // Accumulate cross-spectrum: conj(A) * B
+        for (i, (a, b)) in spec_a.iter().zip(spec_b.iter()).enumerate() {
+            let conj_a = Complex::new(a.re, -a.im);
+            let cross = Complex::new(
+                (conj_a.re * b.re - conj_a.im * b.im) as f64,
+                (conj_a.re * b.im + conj_a.im * b.re) as f64,
+            );
+            csd_accum[i] += cross;
+        }
+
+        segment_count += 1;
+        offset += hop_size;
+    }
+
+    if segment_count == 0 {
+        segment_count = 1;
+    }
+
+    // Extract magnitude and phase
+    let scale = 1.0 / segment_count as f64;
+    let magnitude: Vec<f32> = csd_accum
+        .iter()
+        .map(|c| {
+            let scaled = c * scale;
+            (scaled.re * scaled.re + scaled.im * scaled.im).sqrt() as f32
+        })
+        .collect();
+
+    let phase: Vec<f32> = csd_accum
+        .iter()
+        .map(|c| (c.im.atan2(c.re)) as f32)
+        .collect();
+
+    let bin_width = sample_rate / segment_size as f32;
+    let frequencies: Vec<f32> = (0..num_bins).map(|i| i as f32 * bin_width).collect();
+
+    (frequencies, magnitude, phase)
+}
+
+/// Coherence estimation using Welch's method
+///
+/// Computes magnitude-squared coherence between two signals.
+/// Values range from 0 (no correlation) to 1 (perfectly correlated).
+///
+/// # Returns
+/// Tuple of (frequencies, coherence)
+pub fn coherence(
+    signal_a: &[f32],
+    signal_b: &[f32],
+    sample_rate: f32,
+    segment_size: usize,
+    overlap: f32,
+    window: Window,
+) -> (Vec<f32>, Vec<f32>) {
+    let overlap = overlap.clamp(0.0, 0.99);
+    let hop_size = ((1.0 - overlap) * segment_size as f32) as usize;
+    let hop_size = hop_size.max(1);
+
+    let len = signal_a.len().min(signal_b.len());
+    let fft = Fft::new(segment_size);
+    let window_coeffs = window.coefficients(segment_size);
+
+    let num_bins = segment_size / 2 + 1;
+    let mut psd_a_accum = vec![0.0_f64; num_bins];
+    let mut psd_b_accum = vec![0.0_f64; num_bins];
+    let mut csd_accum: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); num_bins];
+    let mut segment_count = 0;
+
+    let mut offset = 0;
+    while offset + segment_size <= len {
+        let mut seg_a: Vec<f32> = signal_a[offset..offset + segment_size].to_vec();
+        let mut seg_b: Vec<f32> = signal_b[offset..offset + segment_size].to_vec();
+
+        for (s, w) in seg_a.iter_mut().zip(window_coeffs.iter()) {
+            *s *= w;
+        }
+        for (s, w) in seg_b.iter_mut().zip(window_coeffs.iter()) {
+            *s *= w;
+        }
+
+        let spec_a = fft.forward(&seg_a);
+        let spec_b = fft.forward(&seg_b);
+
+        for (i, (a, b)) in spec_a.iter().zip(spec_b.iter()).enumerate() {
+            psd_a_accum[i] += (a.re * a.re + a.im * a.im) as f64;
+            psd_b_accum[i] += (b.re * b.re + b.im * b.im) as f64;
+
+            let conj_a = Complex::new(a.re, -a.im);
+            let cross = Complex::new(
+                (conj_a.re * b.re - conj_a.im * b.im) as f64,
+                (conj_a.re * b.im + conj_a.im * b.re) as f64,
+            );
+            csd_accum[i] += cross;
+        }
+
+        segment_count += 1;
+        offset += hop_size;
+    }
+
+    if segment_count == 0 {
+        let frequencies: Vec<f32> = (0..num_bins)
+            .map(|i| i as f32 * sample_rate / segment_size as f32)
+            .collect();
+        return (frequencies, vec![0.0; num_bins]);
+    }
+
+    // Coherence = |Cxy|^2 / (Pxx * Pyy)
+    let coh: Vec<f32> = csd_accum
+        .iter()
+        .zip(psd_a_accum.iter().zip(psd_b_accum.iter()))
+        .map(|(cxy, (&pxx, &pyy))| {
+            let cxy_mag_sq = cxy.re * cxy.re + cxy.im * cxy.im;
+            let denom = pxx * pyy;
+            if denom > 1e-20 {
+                (cxy_mag_sq / denom) as f32
+            } else {
+                0.0
+            }
+        })
+        .collect();
+
+    let bin_width = sample_rate / segment_size as f32;
+    let frequencies: Vec<f32> = (0..num_bins).map(|i| i as f32 * bin_width).collect();
+
+    (frequencies, coh)
+}
+
 /// Find peak frequencies in spectrum
 ///
 /// Returns (frequency, magnitude) pairs for local maxima above threshold
@@ -192,5 +452,95 @@ mod tests {
 
         // Tonal should have low flatness
         assert!(tonal_flatness < 0.3, "Tonal flatness should be low: {}", tonal_flatness);
+    }
+
+    #[test]
+    fn test_welch_psd_pure_tone() {
+        let sample_rate = 44100.0;
+        let freq = 1000.0;
+        let duration = 1.0;
+        let num_samples = (sample_rate * duration) as usize;
+
+        // Generate pure tone
+        let signal: Vec<f32> = (0..num_samples)
+            .map(|i| (2.0 * PI * freq * i as f32 / sample_rate).sin())
+            .collect();
+
+        let (frequencies, psd) = welch_psd(&signal, sample_rate, 4096, 0.5, Window::Hann);
+
+        // Find peak bin
+        let peak_idx = psd
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .unwrap()
+            .0;
+
+        let peak_freq = frequencies[peak_idx];
+
+        // Peak should be near 1000 Hz
+        assert!(
+            (peak_freq - freq).abs() < 20.0,
+            "Peak frequency {} should be near {} Hz",
+            peak_freq,
+            freq
+        );
+    }
+
+    #[test]
+    fn test_welch_psd_returns_correct_length() {
+        let signal = vec![0.5; 8192];
+        let (frequencies, psd) = welch_psd(&signal, 44100.0, 1024, 0.5, Window::Hann);
+
+        // Should return segment_size/2 + 1 bins
+        assert_eq!(frequencies.len(), 513);
+        assert_eq!(psd.len(), 513);
+    }
+
+    #[test]
+    fn test_coherence_identical_signals() {
+        let sample_rate = 44100.0;
+        let signal: Vec<f32> = (0..8192)
+            .map(|i| (2.0 * PI * 440.0 * i as f32 / sample_rate).sin())
+            .collect();
+
+        let (_, coh) = coherence(&signal, &signal, sample_rate, 1024, 0.5, Window::Hann);
+
+        // Identical signals should have coherence = 1
+        let avg_coh: f32 = coh.iter().sum::<f32>() / coh.len() as f32;
+        assert!(
+            avg_coh > 0.95,
+            "Identical signals should have high coherence, got {}",
+            avg_coh
+        );
+    }
+
+    #[test]
+    fn test_cross_spectral_density() {
+        let sample_rate = 44100.0;
+        let freq = 1000.0;
+        let signal: Vec<f32> = (0..8192)
+            .map(|i| (2.0 * PI * freq * i as f32 / sample_rate).sin())
+            .collect();
+
+        let (frequencies, magnitude, _phase) =
+            cross_spectral_density(&signal, &signal, sample_rate, 1024, 0.5, Window::Hann);
+
+        // Find peak
+        let peak_idx = magnitude
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .unwrap()
+            .0;
+
+        let peak_freq = frequencies[peak_idx];
+
+        assert!(
+            (peak_freq - freq).abs() < 50.0,
+            "CSD peak {} should be near {} Hz",
+            peak_freq,
+            freq
+        );
     }
 }
