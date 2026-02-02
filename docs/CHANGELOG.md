@@ -9,6 +9,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Phase 2: New Guitar Effects
+
+Six new effects expanding the modulation, dynamics, and filter categories:
+
+**Modulation Effects**
+- `Tremolo`: Amplitude modulation with sine, triangle, square, and sample-hold waveforms (rate 0.5-20 Hz, depth 0-100%)
+- `Flanger`: Classic flanger with modulated short delay (1-10ms range), feedback control, and LFO modulation
+- `Phaser`: Multi-stage allpass phaser with 2-12 configurable stages, LFO modulation, and resonance control
+
+**Dynamics Effects**
+- `Gate`: Noise gate with threshold, attack, release, and hold time parameters for clean signal gating
+
+**Filter Effects**
+- `Wah`: Auto-wah (envelope follower) and manual wah modes using StateVariableFilter in bandpass mode with high Q for classic wah tone
+- `ParametricEq`: 3-band parametric equalizer with independent frequency, gain, and Q controls per band using RBJ cookbook peaking EQ coefficients
+
+#### sonido-core
+- `peaking_eq_coefficients()`: RBJ Audio EQ Cookbook peaking EQ filter coefficients for parametric equalizers
+
+#### sonido-registry
+- Registered all 6 new effects with descriptors and factory functions
+- Updated effect count to 15 total effects
+
+#### sonido-cli
+- CLI support for all 6 new effects with full parameter parsing
+- Wah mode parsing (auto/manual)
+- Tremolo waveform parsing (sine, triangle, square, samplehold)
+- Short parameter aliases for EQ (lf/lg/lq, mf/mg/mq, hf/hg/hq)
+
+#### Documentation
+- Updated EFFECTS_REFERENCE.md with parameter tables for all 6 new effects
+- Added example effect chains using new Phase 2 effects
+
+---
+
 #### sonido-registry (NEW CRATE)
 - Central effect registry for discovering and instantiating effects by name
 - `EffectRegistry` with factory pattern for runtime effect creation
@@ -35,6 +70,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `CleanPreamp::new()` now requires sample_rate parameter
 - CLI effects.rs updated to use new effect constructors
+
+### Fixed
+- no_std compatibility: replaced `f32::ceil()`, `f32::round()`, `f32::ln()` with libm functions in chorus, delay, reverb, and tape_saturation
+- Test modules in gate.rs and wah.rs now correctly import Vec from alloc in no_std mode
 
 ### Previously Added
 - Root README.md with project overview

@@ -219,6 +219,40 @@ pub fn notch_coefficients(frequency: f32, q: f32, sample_rate: f32) -> (f32, f32
     (b0, b1, b2, a0, a1, a2)
 }
 
+/// Calculates peaking EQ filter coefficients using the RBJ cookbook formula.
+///
+/// A peaking EQ boosts or cuts around a center frequency with a specified bandwidth.
+/// Used for parametric equalizers.
+///
+/// # Arguments
+///
+/// * `frequency` - Center frequency in Hz
+/// * `q` - Q factor (bandwidth = frequency / Q)
+/// * `gain_db` - Gain in decibels (positive = boost, negative = cut)
+/// * `sample_rate` - Sample rate in Hz
+///
+/// # Returns
+///
+/// (b0, b1, b2, a0, a1, a2) coefficients
+pub fn peaking_eq_coefficients(frequency: f32, q: f32, gain_db: f32, sample_rate: f32) -> (f32, f32, f32, f32, f32, f32) {
+    use libm::powf;
+
+    let a = powf(10.0, gain_db / 40.0); // sqrt(10^(dB/20))
+    let omega = 2.0 * PI * frequency / sample_rate;
+    let cos_omega = cosf(omega);
+    let sin_omega = sinf(omega);
+    let alpha = sin_omega / (2.0 * q);
+
+    let b0 = 1.0 + alpha * a;
+    let b1 = -2.0 * cos_omega;
+    let b2 = 1.0 - alpha * a;
+    let a0 = 1.0 + alpha / a;
+    let a1 = -2.0 * cos_omega;
+    let a2 = 1.0 - alpha / a;
+
+    (b0, b1, b2, a0, a1, a2)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,5 +357,43 @@ mod tests {
         assert!(a0.is_finite());
         assert!(a1.is_finite());
         assert!(a2.is_finite());
+    }
+
+    #[test]
+    fn test_peaking_eq_coefficients() {
+        // Test boost
+        let (b0, b1, b2, a0, a1, a2) = peaking_eq_coefficients(1000.0, 1.0, 6.0, 44100.0);
+
+        assert!(b0.is_finite());
+        assert!(b1.is_finite());
+        assert!(b2.is_finite());
+        assert!(a0.is_finite());
+        assert!(a1.is_finite());
+        assert!(a2.is_finite());
+
+        // Test cut
+        let (b0, b1, b2, a0, a1, a2) = peaking_eq_coefficients(1000.0, 1.0, -6.0, 44100.0);
+
+        assert!(b0.is_finite());
+        assert!(b1.is_finite());
+        assert!(b2.is_finite());
+        assert!(a0.is_finite());
+        assert!(a1.is_finite());
+        assert!(a2.is_finite());
+    }
+
+    #[test]
+    fn test_peaking_eq_unity_at_zero_gain() {
+        let mut biquad = Biquad::new();
+        let (b0, b1, b2, a0, a1, a2) = peaking_eq_coefficients(1000.0, 1.0, 0.0, 44100.0);
+        biquad.set_coefficients(b0, b1, b2, a0, a1, a2);
+
+        // At 0dB gain, DC should pass through unchanged
+        let mut output = 0.0;
+        for _ in 0..1000 {
+            output = biquad.process(1.0);
+        }
+
+        assert!((output - 1.0).abs() < 0.05, "DC should pass at 0dB gain, got {}", output);
     }
 }

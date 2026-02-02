@@ -1,0 +1,483 @@
+//! Classic phaser effect with cascaded allpass filters.
+//!
+//! A phaser creates a characteristic "swooshing" sound by mixing the input
+//! with a phase-shifted version of itself. The phase shift is created by
+//! cascading multiple allpass filters, whose frequencies are modulated by an LFO.
+//! This creates notches in the frequency spectrum that sweep up and down.
+
+use sonido_core::{Effect, SmoothedParam, Lfo, ParameterInfo, ParamDescriptor, ParamUnit};
+use core::f32::consts::PI;
+use libm::tanf;
+
+/// Maximum number of allpass stages.
+const MAX_STAGES: usize = 12;
+
+/// Phaser effect with LFO-modulated allpass filters.
+///
+/// # Parameters
+///
+/// - **rate**: LFO speed (0.05-5 Hz)
+/// - **depth**: Frequency sweep range (0-100%)
+/// - **stages**: Number of allpass stages (2-12)
+/// - **feedback**: Resonance/regeneration (0-95%)
+/// - **mix**: Wet/dry balance (0-100%)
+///
+/// # Algorithm
+///
+/// The phaser uses cascaded first-order allpass filters. Each allpass filter
+/// contributes a 180-degree phase shift at its center frequency. When the
+/// phase-shifted signal is mixed with the original, notches appear at
+/// frequencies where the phase difference is 180 degrees.
+///
+/// # Example
+///
+/// ```rust
+/// use sonido_effects::Phaser;
+/// use sonido_core::Effect;
+///
+/// let mut phaser = Phaser::new(44100.0);
+/// phaser.set_rate(0.3);
+/// phaser.set_depth(0.8);
+/// phaser.set_stages(6);
+/// phaser.set_feedback(0.7);
+/// phaser.set_mix(0.5);
+///
+/// let input = 0.5;
+/// let output = phaser.process(input);
+/// ```
+#[derive(Debug, Clone)]
+pub struct Phaser {
+    /// Allpass filter stages
+    allpass: [FirstOrderAllpass; MAX_STAGES],
+    /// LFO for modulation
+    lfo: Lfo,
+    /// LFO rate parameter
+    rate: SmoothedParam,
+    /// Modulation depth parameter
+    depth: SmoothedParam,
+    /// Feedback amount parameter
+    feedback: SmoothedParam,
+    /// Wet/dry mix parameter
+    mix: SmoothedParam,
+    /// Number of active stages (2-12)
+    stages: usize,
+    /// Sample rate
+    sample_rate: f32,
+    /// Feedback sample for resonance
+    feedback_sample: f32,
+    /// Minimum center frequency (Hz)
+    min_freq: f32,
+    /// Maximum center frequency (Hz)
+    max_freq: f32,
+}
+
+/// Simple first-order allpass filter for phaser.
+///
+/// Uses the structure:
+/// y[n] = a * x[n] + x[n-1] - a * y[n-1]
+///
+/// where `a = (tan(pi*fc/fs) - 1) / (tan(pi*fc/fs) + 1)`
+#[derive(Debug, Clone, Copy, Default)]
+struct FirstOrderAllpass {
+    /// Allpass coefficient
+    a: f32,
+    /// Previous input sample
+    x1: f32,
+    /// Previous output sample
+    y1: f32,
+}
+
+impl FirstOrderAllpass {
+    /// Create a new first-order allpass filter.
+    fn new() -> Self {
+        Self {
+            a: 0.0,
+            x1: 0.0,
+            y1: 0.0,
+        }
+    }
+
+    /// Set the center frequency.
+    #[inline]
+    fn set_frequency(&mut self, freq: f32, sample_rate: f32) {
+        // Clamp frequency to valid range (10 Hz to Nyquist/2)
+        let freq = freq.clamp(10.0, sample_rate * 0.4);
+        let tan_val = tanf(PI * freq / sample_rate);
+        self.a = (tan_val - 1.0) / (tan_val + 1.0);
+    }
+
+    /// Process a single sample.
+    #[inline]
+    fn process(&mut self, input: f32) -> f32 {
+        let output = self.a * input + self.x1 - self.a * self.y1;
+        self.x1 = input;
+        self.y1 = output;
+        output
+    }
+
+    /// Clear filter state.
+    fn clear(&mut self) {
+        self.x1 = 0.0;
+        self.y1 = 0.0;
+    }
+}
+
+impl Phaser {
+    /// Minimum center frequency for sweep (Hz).
+    const MIN_FREQ: f32 = 200.0;
+    /// Maximum center frequency for sweep (Hz).
+    const MAX_FREQ: f32 = 4000.0;
+
+    /// Create a new phaser effect.
+    pub fn new(sample_rate: f32) -> Self {
+        Self {
+            allpass: [FirstOrderAllpass::new(); MAX_STAGES],
+            lfo: Lfo::new(sample_rate, 0.3),
+            rate: SmoothedParam::with_config(0.3, sample_rate, 10.0),
+            depth: SmoothedParam::with_config(0.5, sample_rate, 10.0),
+            feedback: SmoothedParam::with_config(0.5, sample_rate, 10.0),
+            mix: SmoothedParam::with_config(0.5, sample_rate, 10.0),
+            stages: 6,
+            sample_rate,
+            feedback_sample: 0.0,
+            min_freq: Self::MIN_FREQ,
+            max_freq: Self::MAX_FREQ,
+        }
+    }
+
+    /// Set LFO rate in Hz (0.05-5 Hz).
+    pub fn set_rate(&mut self, rate_hz: f32) {
+        self.rate.set_target(rate_hz.clamp(0.05, 5.0));
+    }
+
+    /// Get current LFO rate in Hz.
+    pub fn rate(&self) -> f32 {
+        self.rate.target()
+    }
+
+    /// Set modulation depth (0-1).
+    pub fn set_depth(&mut self, depth: f32) {
+        self.depth.set_target(depth.clamp(0.0, 1.0));
+    }
+
+    /// Get current modulation depth.
+    pub fn depth(&self) -> f32 {
+        self.depth.target()
+    }
+
+    /// Set number of allpass stages (2-12).
+    pub fn set_stages(&mut self, stages: usize) {
+        self.stages = stages.clamp(2, MAX_STAGES);
+    }
+
+    /// Get current number of stages.
+    pub fn stages(&self) -> usize {
+        self.stages
+    }
+
+    /// Set feedback amount (0-0.95).
+    pub fn set_feedback(&mut self, feedback: f32) {
+        self.feedback.set_target(feedback.clamp(0.0, 0.95));
+    }
+
+    /// Get current feedback amount.
+    pub fn feedback(&self) -> f32 {
+        self.feedback.target()
+    }
+
+    /// Set wet/dry mix (0-1).
+    pub fn set_mix(&mut self, mix: f32) {
+        self.mix.set_target(mix.clamp(0.0, 1.0));
+    }
+
+    /// Get current wet/dry mix.
+    pub fn mix(&self) -> f32 {
+        self.mix.target()
+    }
+}
+
+impl Effect for Phaser {
+    #[inline]
+    fn process(&mut self, input: f32) -> f32 {
+        let rate = self.rate.advance();
+        let depth = self.depth.advance();
+        let feedback = self.feedback.advance();
+        let mix = self.mix.advance();
+
+        // Update LFO frequency
+        self.lfo.set_frequency(rate);
+
+        // LFO output is in range [0, 1] for unipolar
+        let lfo_value = self.lfo.advance_unipolar();
+
+        // Calculate center frequency using exponential mapping for natural sweep
+        // freq = min_freq * (max_freq/min_freq)^(lfo * depth)
+        let freq_ratio = self.max_freq / self.min_freq;
+        let center_freq = self.min_freq * libm::powf(freq_ratio, lfo_value * depth);
+
+        // Update allpass frequencies
+        for i in 0..self.stages {
+            // Slightly offset each stage for richer sound
+            let stage_offset = 1.0 + (i as f32 * 0.1);
+            let stage_freq = center_freq * stage_offset;
+            self.allpass[i].set_frequency(stage_freq, self.sample_rate);
+        }
+
+        // Add feedback to input
+        let input_with_feedback = input + self.feedback_sample * feedback;
+
+        // Process through allpass cascade
+        let mut wet = input_with_feedback;
+        for i in 0..self.stages {
+            wet = self.allpass[i].process(wet);
+        }
+
+        // Store for next iteration
+        self.feedback_sample = wet;
+
+        // Mix dry and wet signals
+        input * (1.0 - mix) + wet * mix
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.sample_rate = sample_rate;
+
+        self.lfo.set_sample_rate(sample_rate);
+        self.rate.set_sample_rate(sample_rate);
+        self.depth.set_sample_rate(sample_rate);
+        self.feedback.set_sample_rate(sample_rate);
+        self.mix.set_sample_rate(sample_rate);
+    }
+
+    fn reset(&mut self) {
+        for i in 0..MAX_STAGES {
+            self.allpass[i].clear();
+        }
+        self.lfo.reset();
+        self.feedback_sample = 0.0;
+    }
+}
+
+impl ParameterInfo for Phaser {
+    fn param_count(&self) -> usize {
+        5
+    }
+
+    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
+        match index {
+            0 => Some(ParamDescriptor {
+                name: "Rate",
+                short_name: "Rate",
+                unit: ParamUnit::Hertz,
+                min: 0.05,
+                max: 5.0,
+                default: 0.3,
+                step: 0.05,
+            }),
+            1 => Some(ParamDescriptor {
+                name: "Depth",
+                short_name: "Depth",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+                step: 1.0,
+            }),
+            2 => Some(ParamDescriptor {
+                name: "Stages",
+                short_name: "Stg",
+                unit: ParamUnit::None,
+                min: 2.0,
+                max: 12.0,
+                default: 6.0,
+                step: 2.0,
+            }),
+            3 => Some(ParamDescriptor {
+                name: "Feedback",
+                short_name: "Fdbk",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 95.0,
+                default: 50.0,
+                step: 1.0,
+            }),
+            4 => Some(ParamDescriptor {
+                name: "Mix",
+                short_name: "Mix",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+                step: 1.0,
+            }),
+            _ => None,
+        }
+    }
+
+    fn get_param(&self, index: usize) -> f32 {
+        match index {
+            0 => self.rate.target(),
+            1 => self.depth.target() * 100.0,
+            2 => self.stages as f32,
+            3 => self.feedback.target() * 100.0,
+            4 => self.mix.target() * 100.0,
+            _ => 0.0,
+        }
+    }
+
+    fn set_param(&mut self, index: usize, value: f32) {
+        match index {
+            0 => self.set_rate(value),
+            1 => self.set_depth(value / 100.0),
+            2 => self.set_stages(value as usize),
+            3 => self.set_feedback(value / 100.0),
+            4 => self.set_mix(value / 100.0),
+            _ => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_phaser_basic() {
+        let mut phaser = Phaser::new(44100.0);
+        phaser.set_mix(1.0);
+
+        for _ in 0..1000 {
+            let output = phaser.process(0.5);
+            assert!(output.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_phaser_bypass() {
+        let mut phaser = Phaser::new(44100.0);
+        phaser.set_mix(0.0);
+
+        // Let smoothing settle
+        for _ in 0..1000 {
+            phaser.process(1.0);
+        }
+
+        let output = phaser.process(0.5);
+        assert!((output - 0.5).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_phaser_feedback_stability() {
+        let mut phaser = Phaser::new(44100.0);
+        phaser.set_feedback(0.95);
+        phaser.set_mix(1.0);
+        phaser.set_stages(12);
+
+        // Process many samples to check for instability
+        for _ in 0..10000 {
+            let output = phaser.process(0.1);
+            assert!(output.is_finite());
+            assert!(output.abs() < 10.0, "Output exceeded bounds: {}", output);
+        }
+    }
+
+    #[test]
+    fn test_phaser_reset() {
+        let mut phaser = Phaser::new(44100.0);
+        phaser.set_feedback(0.8);
+        phaser.set_mix(1.0);
+
+        // Fill with signal
+        for _ in 0..500 {
+            phaser.process(1.0);
+        }
+
+        phaser.reset();
+
+        // After reset, processing zeros should give near-zero output
+        let output = phaser.process(0.0);
+        assert!(output.abs() < 0.01, "Should be silent after reset, got {}", output);
+    }
+
+    #[test]
+    fn test_phaser_parameter_info() {
+        let phaser = Phaser::new(44100.0);
+
+        assert_eq!(phaser.param_count(), 5);
+
+        let rate_info = phaser.param_info(0).unwrap();
+        assert_eq!(rate_info.name, "Rate");
+        assert_eq!(rate_info.min, 0.05);
+        assert_eq!(rate_info.max, 5.0);
+
+        let stages_info = phaser.param_info(2).unwrap();
+        assert_eq!(stages_info.name, "Stages");
+        assert_eq!(stages_info.min, 2.0);
+        assert_eq!(stages_info.max, 12.0);
+
+        let feedback_info = phaser.param_info(3).unwrap();
+        assert_eq!(feedback_info.name, "Feedback");
+        assert_eq!(feedback_info.max, 95.0);
+    }
+
+    #[test]
+    fn test_phaser_parameter_get_set() {
+        let mut phaser = Phaser::new(44100.0);
+
+        phaser.set_param(0, 2.0);
+        assert!((phaser.get_param(0) - 2.0).abs() < 0.01);
+
+        phaser.set_param(1, 75.0);
+        assert!((phaser.get_param(1) - 75.0).abs() < 0.01);
+
+        phaser.set_param(2, 8.0);
+        assert!((phaser.get_param(2) - 8.0).abs() < 0.01);
+
+        phaser.set_param(3, 80.0);
+        assert!((phaser.get_param(3) - 80.0).abs() < 0.01);
+
+        phaser.set_param(4, 60.0);
+        assert!((phaser.get_param(4) - 60.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_phaser_stages_range() {
+        let mut phaser = Phaser::new(44100.0);
+
+        phaser.set_stages(1);
+        assert_eq!(phaser.stages(), 2);
+
+        phaser.set_stages(20);
+        assert_eq!(phaser.stages(), 12);
+
+        phaser.set_stages(8);
+        assert_eq!(phaser.stages(), 8);
+    }
+
+    #[test]
+    fn test_phaser_rate_range() {
+        let mut phaser = Phaser::new(44100.0);
+
+        phaser.set_rate(0.01);
+        assert!((phaser.rate() - 0.05).abs() < 0.001);
+
+        phaser.set_rate(10.0);
+        assert!((phaser.rate() - 5.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_first_order_allpass() {
+        let mut allpass = FirstOrderAllpass::new();
+        allpass.set_frequency(1000.0, 44100.0);
+
+        // Process impulse
+        let first = allpass.process(1.0);
+        assert!(first.is_finite());
+
+        // Process more samples
+        for _ in 0..100 {
+            let out = allpass.process(0.0);
+            assert!(out.is_finite());
+        }
+    }
+}

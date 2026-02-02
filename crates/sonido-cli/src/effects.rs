@@ -2,8 +2,9 @@
 
 use sonido_core::Effect;
 use sonido_effects::{
-    Chorus, CleanPreamp, Compressor, Delay, Distortion, LowPassFilter, MultiVibrato,
-    Reverb, ReverbType, TapeSaturation, WaveShape,
+    Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, LowPassFilter, MultiVibrato,
+    Phaser, Reverb, ReverbType, TapeSaturation, WaveShape, Tremolo, TremoloWaveform, Gate,
+    Wah, WahMode, ParametricEq,
 };
 use std::collections::HashMap;
 
@@ -158,6 +159,72 @@ pub fn available_effects() -> Vec<EffectInfo> {
             ],
         },
         EffectInfo {
+            name: "flanger",
+            description: "Classic flanger with modulated short delay",
+            parameters: &[
+                ParameterInfo {
+                    name: "rate",
+                    description: "LFO rate in Hz",
+                    default: "0.5",
+                    range: "0.05-5",
+                },
+                ParameterInfo {
+                    name: "depth",
+                    description: "Modulation depth (0-1)",
+                    default: "0.5",
+                    range: "0-1",
+                },
+                ParameterInfo {
+                    name: "feedback",
+                    description: "Feedback amount (0-1)",
+                    default: "0.5",
+                    range: "0-0.95",
+                },
+                ParameterInfo {
+                    name: "mix",
+                    description: "Wet/dry mix (0-1)",
+                    default: "0.5",
+                    range: "0-1",
+                },
+            ],
+        },
+        EffectInfo {
+            name: "phaser",
+            description: "Multi-stage allpass phaser with LFO",
+            parameters: &[
+                ParameterInfo {
+                    name: "rate",
+                    description: "LFO rate in Hz",
+                    default: "0.3",
+                    range: "0.05-5",
+                },
+                ParameterInfo {
+                    name: "depth",
+                    description: "Frequency sweep range (0-1)",
+                    default: "0.5",
+                    range: "0-1",
+                },
+                ParameterInfo {
+                    name: "stages",
+                    description: "Number of allpass stages",
+                    default: "6",
+                    range: "2-12",
+                },
+                ParameterInfo {
+                    name: "feedback",
+                    description: "Feedback/resonance (0-1)",
+                    default: "0.5",
+                    range: "0-0.95",
+                },
+                ParameterInfo {
+                    name: "mix",
+                    description: "Wet/dry mix (0-1)",
+                    default: "0.5",
+                    range: "0-1",
+                },
+            ],
+        },
+        EffectInfo {
             name: "filter",
             description: "Resonant lowpass filter",
             parameters: &[
@@ -259,6 +326,150 @@ pub fn available_effects() -> Vec<EffectInfo> {
                 },
             ],
         },
+        EffectInfo {
+            name: "tremolo",
+            description: "Amplitude modulation with multiple waveforms",
+            parameters: &[
+                ParameterInfo {
+                    name: "rate",
+                    description: "LFO rate in Hz",
+                    default: "5.0",
+                    range: "0.5-20",
+                },
+                ParameterInfo {
+                    name: "depth",
+                    description: "Modulation depth (0-1)",
+                    default: "0.5",
+                    range: "0-1",
+                },
+                ParameterInfo {
+                    name: "waveform",
+                    description: "Waveform type",
+                    default: "sine",
+                    range: "sine|triangle|square|samplehold",
+                },
+            ],
+        },
+        EffectInfo {
+            name: "gate",
+            description: "Noise gate with threshold and hold",
+            parameters: &[
+                ParameterInfo {
+                    name: "threshold",
+                    description: "Threshold in dB",
+                    default: "-40.0",
+                    range: "-80-0",
+                },
+                ParameterInfo {
+                    name: "attack",
+                    description: "Attack time in ms",
+                    default: "1.0",
+                    range: "0.1-50",
+                },
+                ParameterInfo {
+                    name: "release",
+                    description: "Release time in ms",
+                    default: "100.0",
+                    range: "10-1000",
+                },
+                ParameterInfo {
+                    name: "hold",
+                    description: "Hold time in ms",
+                    default: "50.0",
+                    range: "0-500",
+                },
+            ],
+        },
+        EffectInfo {
+            name: "wah",
+            description: "Auto-wah and manual wah with envelope follower",
+            parameters: &[
+                ParameterInfo {
+                    name: "frequency",
+                    description: "Center frequency in Hz",
+                    default: "800.0",
+                    range: "200-2000",
+                },
+                ParameterInfo {
+                    name: "resonance",
+                    description: "Filter Q (sharpness)",
+                    default: "5.0",
+                    range: "1-10",
+                },
+                ParameterInfo {
+                    name: "sensitivity",
+                    description: "Envelope sensitivity (0-1)",
+                    default: "0.5",
+                    range: "0-1",
+                },
+                ParameterInfo {
+                    name: "mode",
+                    description: "Wah mode",
+                    default: "auto",
+                    range: "auto|manual",
+                },
+            ],
+        },
+        EffectInfo {
+            name: "eq",
+            description: "3-band parametric equalizer",
+            parameters: &[
+                ParameterInfo {
+                    name: "low_freq",
+                    description: "Low band frequency in Hz",
+                    default: "100.0",
+                    range: "20-500",
+                },
+                ParameterInfo {
+                    name: "low_gain",
+                    description: "Low band gain in dB",
+                    default: "0.0",
+                    range: "-12-12",
+                },
+                ParameterInfo {
+                    name: "low_q",
+                    description: "Low band Q",
+                    default: "1.0",
+                    range: "0.5-5",
+                },
+                ParameterInfo {
+                    name: "mid_freq",
+                    description: "Mid band frequency in Hz",
+                    default: "1000.0",
+                    range: "200-5000",
+                },
+                ParameterInfo {
+                    name: "mid_gain",
+                    description: "Mid band gain in dB",
+                    default: "0.0",
+                    range: "-12-12",
+                },
+                ParameterInfo {
+                    name: "mid_q",
+                    description: "Mid band Q",
+                    default: "1.0",
+                    range: "0.5-5",
+                },
+                ParameterInfo {
+                    name: "high_freq",
+                    description: "High band frequency in Hz",
+                    default: "5000.0",
+                    range: "1000-15000",
+                },
+                ParameterInfo {
+                    name: "high_gain",
+                    description: "High band gain in dB",
+                    default: "0.0",
+                    range: "-12-12",
+                },
+                ParameterInfo {
+                    name: "high_q",
+                    description: "High band Q",
+                    default: "1.0",
+                    range: "0.5-5",
+                },
+            ],
+        },
     ]
 }
 
@@ -329,6 +540,43 @@ pub fn create_effect_with_params(
                 match key.as_str() {
                     "time" => effect.set_delay_time_ms(parse_f32(key, value)?),
                     "feedback" => effect.set_feedback(parse_f32(key, value)?),
+                    "mix" => effect.set_mix(parse_f32(key, value)?),
+                    _ => {
+                        return Err(EffectError::UnknownParameter {
+                            effect: name.to_string(),
+                            param: key.to_string(),
+                        })
+                    }
+                }
+            }
+            Ok(Box::new(effect))
+        }
+        "flanger" => {
+            let mut effect = Flanger::new(sample_rate);
+            for (key, value) in params {
+                match key.as_str() {
+                    "rate" => effect.set_rate(parse_f32(key, value)?),
+                    "depth" => effect.set_depth(parse_f32(key, value)?),
+                    "feedback" | "fdbk" => effect.set_feedback(parse_f32(key, value)?),
+                    "mix" => effect.set_mix(parse_f32(key, value)?),
+                    _ => {
+                        return Err(EffectError::UnknownParameter {
+                            effect: name.to_string(),
+                            param: key.to_string(),
+                        })
+                    }
+                }
+            }
+            Ok(Box::new(effect))
+        }
+        "phaser" => {
+            let mut effect = Phaser::new(sample_rate);
+            for (key, value) in params {
+                match key.as_str() {
+                    "rate" => effect.set_rate(parse_f32(key, value)?),
+                    "depth" => effect.set_depth(parse_f32(key, value)?),
+                    "stages" | "stg" => effect.set_stages(parse_f32(key, value)? as usize),
+                    "feedback" | "fdbk" => effect.set_feedback(parse_f32(key, value)?),
                     "mix" => effect.set_mix(parse_f32(key, value)?),
                     _ => {
                         return Err(EffectError::UnknownParameter {
@@ -412,6 +660,82 @@ pub fn create_effect_with_params(
                     "predelay" | "pre" => effect.set_predelay_ms(parse_f32(key, value)?),
                     "mix" => effect.set_mix(parse_f32(key, value)?),
                     "type" | "preset" => effect.set_reverb_type(parse_reverb_type(value)?),
+                    _ => {
+                        return Err(EffectError::UnknownParameter {
+                            effect: name.to_string(),
+                            param: key.to_string(),
+                        })
+                    }
+                }
+            }
+            Ok(Box::new(effect))
+        }
+        "tremolo" => {
+            let mut effect = Tremolo::new(sample_rate);
+            for (key, value) in params {
+                match key.as_str() {
+                    "rate" => effect.set_rate(parse_f32(key, value)?),
+                    "depth" => effect.set_depth(parse_f32(key, value)?),
+                    "waveform" | "wave" => effect.set_waveform(parse_tremolo_waveform(value)?),
+                    _ => {
+                        return Err(EffectError::UnknownParameter {
+                            effect: name.to_string(),
+                            param: key.to_string(),
+                        })
+                    }
+                }
+            }
+            Ok(Box::new(effect))
+        }
+        "gate" | "noisegate" => {
+            let mut effect = Gate::new(sample_rate);
+            for (key, value) in params {
+                match key.as_str() {
+                    "threshold" | "thresh" => effect.set_threshold_db(parse_f32(key, value)?),
+                    "attack" | "atk" => effect.set_attack_ms(parse_f32(key, value)?),
+                    "release" | "rel" => effect.set_release_ms(parse_f32(key, value)?),
+                    "hold" => effect.set_hold_ms(parse_f32(key, value)?),
+                    _ => {
+                        return Err(EffectError::UnknownParameter {
+                            effect: name.to_string(),
+                            param: key.to_string(),
+                        })
+                    }
+                }
+            }
+            Ok(Box::new(effect))
+        }
+        "wah" | "autowah" => {
+            let mut effect = Wah::new(sample_rate);
+            for (key, value) in params {
+                match key.as_str() {
+                    "frequency" | "freq" => effect.set_frequency(parse_f32(key, value)?),
+                    "resonance" | "reso" | "q" => effect.set_resonance(parse_f32(key, value)?),
+                    "sensitivity" | "sens" => effect.set_sensitivity(parse_f32(key, value)?),
+                    "mode" => effect.set_mode(parse_wah_mode(value)?),
+                    _ => {
+                        return Err(EffectError::UnknownParameter {
+                            effect: name.to_string(),
+                            param: key.to_string(),
+                        })
+                    }
+                }
+            }
+            Ok(Box::new(effect))
+        }
+        "eq" | "parametriceq" | "peq" => {
+            let mut effect = ParametricEq::new(sample_rate);
+            for (key, value) in params {
+                match key.as_str() {
+                    "low_freq" | "lf" => effect.set_low_freq(parse_f32(key, value)?),
+                    "low_gain" | "lg" => effect.set_low_gain(parse_f32(key, value)?),
+                    "low_q" | "lq" => effect.set_low_q(parse_f32(key, value)?),
+                    "mid_freq" | "mf" => effect.set_mid_freq(parse_f32(key, value)?),
+                    "mid_gain" | "mg" => effect.set_mid_gain(parse_f32(key, value)?),
+                    "mid_q" | "mq" => effect.set_mid_q(parse_f32(key, value)?),
+                    "high_freq" | "hf" => effect.set_high_freq(parse_f32(key, value)?),
+                    "high_gain" | "hg" => effect.set_high_gain(parse_f32(key, value)?),
+                    "high_q" | "hq" => effect.set_high_q(parse_f32(key, value)?),
                     _ => {
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
@@ -521,6 +845,36 @@ fn parse_reverb_type(value: &str) -> Result<ReverbType, EffectError> {
             param: "type".to_string(),
             message: format!(
                 "'{}' is not a valid reverb type (use: room, hall)",
+                value
+            ),
+        }),
+    }
+}
+
+fn parse_tremolo_waveform(value: &str) -> Result<TremoloWaveform, EffectError> {
+    match value.to_lowercase().as_str() {
+        "sine" | "sin" => Ok(TremoloWaveform::Sine),
+        "triangle" | "tri" => Ok(TremoloWaveform::Triangle),
+        "square" | "sq" => Ok(TremoloWaveform::Square),
+        "samplehold" | "sh" | "sample_hold" | "s&h" => Ok(TremoloWaveform::SampleHold),
+        _ => Err(EffectError::InvalidValue {
+            param: "waveform".to_string(),
+            message: format!(
+                "'{}' is not a valid waveform (use: sine, triangle, square, samplehold)",
+                value
+            ),
+        }),
+    }
+}
+
+fn parse_wah_mode(value: &str) -> Result<WahMode, EffectError> {
+    match value.to_lowercase().as_str() {
+        "auto" | "0" => Ok(WahMode::Auto),
+        "manual" | "1" => Ok(WahMode::Manual),
+        _ => Err(EffectError::InvalidValue {
+            param: "mode".to_string(),
+            message: format!(
+                "'{}' is not a valid wah mode (use: auto, manual)",
                 value
             ),
         }),

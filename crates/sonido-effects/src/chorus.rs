@@ -1,6 +1,7 @@
 //! Classic chorus effect with dual voices.
 
 use sonido_core::{Effect, SmoothedParam, InterpolatedDelay, Lfo, ParameterInfo, ParamDescriptor, ParamUnit};
+use libm::ceilf;
 
 /// Chorus effect with dual voices.
 ///
@@ -41,7 +42,7 @@ impl Chorus {
 
         let base_delay_samples = (BASE_DELAY_MS / 1000.0) * sample_rate;
         let max_mod_samples = (MAX_MOD_MS / 1000.0) * sample_rate;
-        let max_delay_samples = ((MAX_DELAY_MS / 1000.0) * sample_rate).ceil() as usize;
+        let max_delay_samples = ceilf((MAX_DELAY_MS / 1000.0) * sample_rate) as usize;
 
         let lfo1 = Lfo::new(sample_rate, 1.0);
         let mut lfo2 = Lfo::new(sample_rate, 1.0);

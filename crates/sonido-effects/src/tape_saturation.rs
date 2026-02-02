@@ -4,7 +4,7 @@
 //! even harmonic enhancement, and high frequency rolloff.
 
 use sonido_core::{Effect, SmoothedParam, ParameterInfo, ParamDescriptor, ParamUnit, db_to_linear, linear_to_db};
-use libm::expf;
+use libm::{expf, logf};
 use core::f32::consts::PI;
 
 /// Tape saturation effect
@@ -151,7 +151,7 @@ impl Effect for TapeSaturation {
     fn set_sample_rate(&mut self, sample_rate: f32) {
         // Preserve HF rolloff frequency
         let old_freq = if self.hf_coeff > 0.0 && self.hf_coeff < 1.0 {
-            -self.sample_rate * self.hf_coeff.ln() / (2.0 * PI)
+            -self.sample_rate * logf(self.hf_coeff) / (2.0 * PI)
         } else {
             12000.0
         };

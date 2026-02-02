@@ -35,6 +35,7 @@ pub enum SvfOutput {
 ///
 /// let output = svf.process(0.5);
 /// ```
+#[derive(Debug, Clone)]
 pub struct StateVariableFilter {
     // Filter state
     ic1eq: f32,

@@ -10,6 +10,9 @@ Some effects have alternate names for convenience:
 |-------------|-------|-------|
 | `filter` | `lowpass` | Resonant lowpass filter |
 | `multivibrato` | `vibrato` | 10-unit tape wow/flutter |
+| `gate` | `noisegate` | Noise gate |
+| `wah` | `autowah` | Auto-wah/manual wah |
+| `eq` | `parametriceq`, `peq` | 3-band parametric EQ |
 
 Both names work interchangeably in the CLI:
 
@@ -261,6 +264,207 @@ sonido process in.wav out.wav --effect reverb \
 
 ---
 
+## tremolo
+
+Amplitude modulation with multiple waveforms.
+
+| Parameter | Description | Default | Range |
+|-----------|-------------|---------|-------|
+| `rate` | LFO rate in Hz | 5.0 | 0.5-20 |
+| `depth` | Modulation depth (0-1) | 0.5 | 0-1 |
+| `waveform` | Waveform type | sine | sine, triangle, square, samplehold |
+
+### Waveform Types
+
+- **sine**: Smooth, classic tremolo sound
+- **triangle**: Slightly more aggressive with linear ramps
+- **square**: Choppy, on/off effect (helicopter)
+- **samplehold**: Random stepped levels, creates rhythmic variations
+
+### Tips
+
+- **Subtle tremolo**: rate=4, depth=0.3 - Gentle pulsing
+- **Classic tremolo**: rate=6, depth=0.5 - Vintage amp sound
+- **Choppy tremolo**: rate=8, depth=0.8, waveform=square - Rhythmic gating
+
+### Example
+
+```bash
+sonido process in.wav out.wav --effect tremolo \
+    --param rate=6 --param depth=0.5 --param waveform=sine
+```
+
+---
+
+## gate
+
+Noise gate with threshold and hold.
+
+| Parameter | Description | Default | Range |
+|-----------|-------------|---------|-------|
+| `threshold` | Threshold in dB | -40.0 | -80 to 0 |
+| `attack` | Attack time in ms | 1.0 | 0.1-50 |
+| `release` | Release time in ms | 100.0 | 10-1000 |
+| `hold` | Hold time in ms | 50.0 | 0-500 |
+
+### Tips
+
+- **Quiet signals**: Set threshold just above the noise floor
+- **Fast attack** (0.5-2ms): Preserves transients
+- **Hold time**: Prevents rapid gate flutter on sustained notes
+- **Release**: Longer release (200-500ms) for smoother fade-out
+
+### Example
+
+```bash
+sonido process in.wav out.wav --effect gate \
+    --param threshold=-40 --param attack=1 --param release=100 --param hold=50
+```
+
+---
+
+## flanger
+
+Classic flanger with modulated short delay.
+
+| Parameter | Description | Default | Range |
+|-----------|-------------|---------|-------|
+| `rate` | LFO rate in Hz | 0.5 | 0.05-5 |
+| `depth` | Modulation depth (0-1) | 0.5 | 0-1 |
+| `feedback` | Feedback amount (0-1) | 0.5 | 0-0.95 |
+| `mix` | Wet/dry mix (0-1) | 0.5 | 0-1 |
+
+### Tips
+
+- **Subtle flanger**: rate=0.2, depth=0.3, feedback=0.3
+- **Classic flanger**: rate=0.5, depth=0.5, feedback=0.5
+- **Jet flanger**: rate=0.1, depth=0.8, feedback=0.8 - Slow, dramatic sweep
+- **Metallic**: high feedback (0.7+) creates resonant metallic tones
+
+### Example
+
+```bash
+sonido process in.wav out.wav --effect flanger \
+    --param rate=0.5 --param depth=0.6 --param feedback=0.5 --param mix=0.5
+```
+
+---
+
+## phaser
+
+Multi-stage allpass phaser with LFO modulation.
+
+| Parameter | Description | Default | Range |
+|-----------|-------------|---------|-------|
+| `rate` | LFO rate in Hz | 0.3 | 0.05-5 |
+| `depth` | Frequency sweep range (0-1) | 0.5 | 0-1 |
+| `stages` | Number of allpass stages | 6 | 2-12 |
+| `feedback` | Feedback/resonance (0-1) | 0.5 | 0-0.95 |
+| `mix` | Wet/dry mix (0-1) | 0.5 | 0-1 |
+
+### Tips
+
+- **Subtle phaser**: stages=4, depth=0.4, feedback=0.3
+- **Classic phaser**: stages=6, depth=0.5, feedback=0.5
+- **Deep phaser**: stages=8-12, depth=0.7, feedback=0.6
+- **More stages**: Creates more notches, thicker effect
+- **High feedback**: Resonant, almost filter-like
+
+### Example
+
+```bash
+sonido process in.wav out.wav --effect phaser \
+    --param rate=0.4 --param depth=0.6 --param stages=6 --param feedback=0.5
+```
+
+---
+
+## wah
+
+Auto-wah and manual wah with envelope follower. Also available as `autowah`.
+
+| Parameter | Description | Default | Range |
+|-----------|-------------|---------|-------|
+| `frequency` | Center frequency in Hz | 800.0 | 200-2000 |
+| `resonance` | Filter Q (sharpness) | 5.0 | 1-10 |
+| `sensitivity` | Envelope sensitivity (0-1) | 0.5 | 0-1 |
+| `mode` | Wah mode | auto | auto, manual |
+
+### Modes
+
+- **auto**: Envelope follower tracks input level, playing dynamics control wah sweep
+- **manual**: Frequency parameter directly controls wah position
+
+### Tips
+
+- **Classic auto-wah**: frequency=600, resonance=6, sensitivity=0.7
+- **Subtle envelope**: sensitivity=0.3-0.5 for gentle sweep
+- **Aggressive**: sensitivity=0.8-1.0 for full range sweep
+- **High Q** (8-10): Classic narrow wah tone
+- **Low Q** (2-4): Wider, smoother sweep
+
+### Example
+
+```bash
+# Auto-wah
+sonido process in.wav out.wav --effect wah \
+    --param frequency=700 --param resonance=6 --param sensitivity=0.7
+
+# Manual wah (fixed position)
+sonido process in.wav out.wav --effect wah \
+    --param frequency=1200 --param mode=manual
+```
+
+---
+
+## eq
+
+3-band parametric equalizer. Also available as `parametriceq` or `peq`.
+
+| Parameter | Description | Default | Range |
+|-----------|-------------|---------|-------|
+| `low_freq` | Low band frequency in Hz | 100.0 | 20-500 |
+| `low_gain` | Low band gain in dB | 0.0 | -12 to 12 |
+| `low_q` | Low band Q | 1.0 | 0.5-5 |
+| `mid_freq` | Mid band frequency in Hz | 1000.0 | 200-5000 |
+| `mid_gain` | Mid band gain in dB | 0.0 | -12 to 12 |
+| `mid_q` | Mid band Q | 1.0 | 0.5-5 |
+| `high_freq` | High band frequency in Hz | 5000.0 | 1000-15000 |
+| `high_gain` | High band gain in dB | 0.0 | -12 to 12 |
+| `high_q` | High band Q | 1.0 | 0.5-5 |
+
+### Tips
+
+- **Wide Q** (0.5-1): Gentle, musical boosts/cuts
+- **Narrow Q** (3-5): Surgical, precise adjustments
+- **Bass boost**: low_freq=80, low_gain=4, low_q=0.7
+- **Presence boost**: mid_freq=3000, mid_gain=3, mid_q=1.5
+- **Air/brilliance**: high_freq=10000, high_gain=3, high_q=0.7
+- **Mud cut**: mid_freq=300, mid_gain=-4, mid_q=1.5
+
+### Short Parameter Names
+
+For convenience, you can use abbreviated parameter names:
+- `lf`, `lg`, `lq` for low band
+- `mf`, `mg`, `mq` for mid band
+- `hf`, `hg`, `hq` for high band
+
+### Example
+
+```bash
+# Boost bass and highs (smiley face EQ)
+sonido process in.wav out.wav --effect eq \
+    --param low_freq=100 --param low_gain=4 \
+    --param high_freq=8000 --param high_gain=3
+
+# Cut mud, add presence
+sonido process in.wav out.wav --effect eq \
+    --param mf=300 --param mg=-4 --param mq=1.5 \
+    --param mf=3000 --param mg=2
+```
+
+---
+
 ## Effect Chains
 
 ### Chain Syntax
@@ -299,4 +503,29 @@ effect1:param1=value1,param2=value2|effect2:param=value
 **Guitar Hall**
 ```bash
 --chain "distortion:drive=10|compressor:threshold=-18|reverb:type=hall,mix=0.4"
+```
+
+**Funk Wah**
+```bash
+--chain "compressor:threshold=-15,ratio=4|wah:sensitivity=0.8,resonance=7"
+```
+
+**Clean Chorus with EQ**
+```bash
+--chain "eq:lf=80,lg=3,hf=6000,hg=2|chorus:rate=1,depth=0.5|reverb:mix=0.3"
+```
+
+**Gated Tremolo**
+```bash
+--chain "gate:threshold=-45|tremolo:rate=6,depth=0.7,waveform=square"
+```
+
+**80s Phaser Lead**
+```bash
+--chain "distortion:drive=8|phaser:rate=0.3,stages=8,feedback=0.6|delay:time=350,feedback=0.4"
+```
+
+**Jet Flanger**
+```bash
+--chain "compressor:threshold=-20|flanger:rate=0.1,depth=0.9,feedback=0.8"
 ```
