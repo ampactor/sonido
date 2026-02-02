@@ -1,0 +1,365 @@
+//! Regression test framework for sonido effects
+//!
+//! This framework ensures effect implementations remain stable across changes
+//! by comparing current output against saved golden files.
+//!
+//! # Usage
+//!
+//! Run with `REGENERATE_GOLDEN=1` to create/update golden files:
+//! ```bash
+//! REGENERATE_GOLDEN=1 cargo test --test regression
+//! ```
+//!
+//! Run normally to verify against golden files:
+//! ```bash
+//! cargo test --test regression
+//! ```
+
+use sonido_analysis::compare::{mse, snr_db, spectral_correlation};
+use sonido_core::Effect;
+use sonido_effects::{
+    Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, LowPassFilter,
+    MultiVibrato, ParametricEq, Phaser, Reverb, TapeSaturation, Tremolo, Wah,
+};
+use std::fs::{self, File};
+use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::path::PathBuf;
+
+const SAMPLE_RATE: f32 = 48000.0;
+const TEST_DURATION_SAMPLES: usize = 4800; // 100ms at 48kHz
+const GOLDEN_DIR: &str = "tests/golden";
+
+// Thresholds for regression detection
+const MSE_THRESHOLD: f32 = 1e-6;
+const SNR_THRESHOLD_DB: f32 = 60.0;
+const SPECTRAL_CORRELATION_THRESHOLD: f32 = 0.9999;
+
+/// Generate a deterministic test signal (multi-frequency sine)
+fn generate_test_signal(size: usize) -> Vec<f32> {
+    (0..size)
+        .map(|i| {
+            let t = i as f32 / SAMPLE_RATE;
+            let fundamental = (2.0 * std::f32::consts::PI * 440.0 * t).sin();
+            let harmonic2 = 0.3 * (2.0 * std::f32::consts::PI * 880.0 * t).sin();
+            let harmonic3 = 0.2 * (2.0 * std::f32::consts::PI * 1320.0 * t).sin();
+            (fundamental + harmonic2 + harmonic3) * 0.5
+        })
+        .collect()
+}
+
+/// Generate an impulse signal for reverb/delay testing
+fn generate_impulse(size: usize) -> Vec<f32> {
+    let mut signal = vec![0.0; size];
+    signal[0] = 1.0;
+    signal
+}
+
+/// Get the golden file path for an effect
+fn golden_path(effect_name: &str) -> PathBuf {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    PathBuf::from(manifest_dir)
+        .join(GOLDEN_DIR)
+        .join(format!("{}.golden", effect_name))
+}
+
+/// Save output to golden file
+fn save_golden(effect_name: &str, output: &[f32]) -> std::io::Result<()> {
+    let path = golden_path(effect_name);
+    let file = File::create(&path)?;
+    let mut writer = BufWriter::new(file);
+    for sample in output {
+        writeln!(writer, "{:.10}", sample)?;
+    }
+    Ok(())
+}
+
+/// Load golden file
+fn load_golden(effect_name: &str) -> std::io::Result<Vec<f32>> {
+    let path = golden_path(effect_name);
+    let file = File::open(&path)?;
+    let reader = BufReader::new(file);
+    let mut samples = Vec::new();
+    for line in reader.lines() {
+        let line = line?;
+        if let Ok(sample) = line.trim().parse::<f32>() {
+            samples.push(sample);
+        }
+    }
+    Ok(samples)
+}
+
+/// Check if we should regenerate golden files
+fn should_regenerate() -> bool {
+    std::env::var("REGENERATE_GOLDEN").is_ok()
+}
+
+/// Run regression test for an effect
+fn run_regression_test<E: Effect>(
+    effect_name: &str,
+    mut effect: E,
+    input: &[f32],
+) -> Result<(), String> {
+    // Process input through effect
+    let mut output = vec![0.0; input.len()];
+    effect.process_block(input, &mut output);
+
+    if should_regenerate() {
+        // Save new golden file
+        save_golden(effect_name, &output)
+            .map_err(|e| format!("Failed to save golden file: {}", e))?;
+        println!("Regenerated golden file for {}", effect_name);
+        return Ok(());
+    }
+
+    // Load expected output
+    let expected = load_golden(effect_name).map_err(|e| {
+        format!(
+            "Failed to load golden file for {} (run with REGENERATE_GOLDEN=1 to create): {}",
+            effect_name, e
+        )
+    })?;
+
+    // Verify lengths match
+    if output.len() != expected.len() {
+        return Err(format!(
+            "{}: Output length mismatch (got {}, expected {})",
+            effect_name,
+            output.len(),
+            expected.len()
+        ));
+    }
+
+    // Compare using multiple metrics
+    let mse_val = mse(&output, &expected);
+    let snr = snr_db(&expected, &output);
+    let correlation = spectral_correlation(&output, &expected, 2048.min(output.len()));
+
+    // Check thresholds
+    let mut errors = Vec::new();
+
+    if mse_val > MSE_THRESHOLD {
+        errors.push(format!(
+            "MSE {} exceeds threshold {} (sample deviation)",
+            mse_val, MSE_THRESHOLD
+        ));
+    }
+
+    if snr < SNR_THRESHOLD_DB && snr.is_finite() {
+        errors.push(format!(
+            "SNR {:.1} dB below threshold {:.1} dB",
+            snr, SNR_THRESHOLD_DB
+        ));
+    }
+
+    if correlation < SPECTRAL_CORRELATION_THRESHOLD {
+        errors.push(format!(
+            "Spectral correlation {:.6} below threshold {:.6}",
+            correlation, SPECTRAL_CORRELATION_THRESHOLD
+        ));
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} regression detected:\n  - {}",
+            effect_name,
+            errors.join("\n  - ")
+        ))
+    }
+}
+
+// Individual effect regression tests
+
+#[test]
+fn test_distortion_regression() {
+    let mut effect = Distortion::new(SAMPLE_RATE);
+    effect.set_drive_db(15.0);
+    effect.set_tone_hz(4000.0);
+    effect.set_level_db(-6.0);
+
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("distortion", effect, &input).expect("Distortion regression test failed");
+}
+
+#[test]
+fn test_compressor_regression() {
+    let mut effect = Compressor::new(SAMPLE_RATE);
+    effect.set_threshold_db(-20.0);
+    effect.set_ratio(4.0);
+    effect.set_attack_ms(5.0);
+    effect.set_release_ms(50.0);
+
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("compressor", effect, &input).expect("Compressor regression test failed");
+}
+
+#[test]
+fn test_chorus_regression() {
+    let mut effect = Chorus::new(SAMPLE_RATE);
+    effect.set_rate(2.0);
+    effect.set_depth(0.7);
+    effect.set_mix(0.5);
+
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("chorus", effect, &input).expect("Chorus regression test failed");
+}
+
+#[test]
+fn test_delay_regression() {
+    let mut effect = Delay::new(SAMPLE_RATE);
+    effect.set_delay_time_ms(100.0);
+    effect.set_feedback(0.5);
+    effect.set_mix(0.5);
+
+    let input = generate_impulse(TEST_DURATION_SAMPLES);
+    run_regression_test("delay", effect, &input).expect("Delay regression test failed");
+}
+
+#[test]
+fn test_reverb_regression() {
+    let mut effect = Reverb::new(SAMPLE_RATE);
+    effect.set_room_size(0.7);
+    effect.set_decay(0.6);
+    effect.set_damping(0.3);
+    effect.set_predelay_ms(10.0);
+    effect.set_mix(0.5);
+
+    let input = generate_impulse(TEST_DURATION_SAMPLES);
+    run_regression_test("reverb", effect, &input).expect("Reverb regression test failed");
+}
+
+#[test]
+fn test_lowpass_regression() {
+    let mut effect = LowPassFilter::new(SAMPLE_RATE);
+    effect.set_cutoff_hz(1000.0);
+    effect.set_q(2.0);
+
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("lowpass", effect, &input).expect("LowPass regression test failed");
+}
+
+#[test]
+fn test_phaser_regression() {
+    let mut effect = Phaser::new(SAMPLE_RATE);
+    effect.set_rate(1.0);
+    effect.set_depth(0.8);
+    effect.set_feedback(0.5);
+
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("phaser", effect, &input).expect("Phaser regression test failed");
+}
+
+#[test]
+fn test_flanger_regression() {
+    let mut effect = Flanger::new(SAMPLE_RATE);
+    effect.set_rate(0.5);
+    effect.set_depth(0.7);
+    effect.set_feedback(0.5);
+    effect.set_mix(0.5);
+
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("flanger", effect, &input).expect("Flanger regression test failed");
+}
+
+#[test]
+fn test_tremolo_regression() {
+    let mut effect = Tremolo::new(SAMPLE_RATE);
+    effect.set_rate(5.0);
+    effect.set_depth(0.8);
+
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("tremolo", effect, &input).expect("Tremolo regression test failed");
+}
+
+#[test]
+fn test_tape_saturation_regression() {
+    let mut effect = TapeSaturation::new(SAMPLE_RATE);
+    effect.set_drive(2.0);
+    effect.set_saturation(0.6);
+
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("tape_saturation", effect, &input)
+        .expect("TapeSaturation regression test failed");
+}
+
+#[test]
+fn test_clean_preamp_regression() {
+    let mut effect = CleanPreamp::new(SAMPLE_RATE);
+    effect.set_gain_db(12.0);
+    effect.set_output_db(-6.0);
+
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("clean_preamp", effect, &input)
+        .expect("CleanPreamp regression test failed");
+}
+
+#[test]
+fn test_multi_vibrato_regression() {
+    let mut effect = MultiVibrato::new(SAMPLE_RATE);
+    effect.set_depth(0.8);
+    effect.set_mix(1.0);
+
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("multi_vibrato", effect, &input)
+        .expect("MultiVibrato regression test failed");
+}
+
+#[test]
+fn test_gate_regression() {
+    let mut effect = Gate::new(SAMPLE_RATE);
+    effect.set_threshold_db(-30.0);
+    effect.set_attack_ms(1.0);
+    effect.set_release_ms(50.0);
+
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("gate", effect, &input).expect("Gate regression test failed");
+}
+
+#[test]
+fn test_wah_regression() {
+    let mut effect = Wah::new(SAMPLE_RATE);
+    effect.set_frequency(1500.0);
+    effect.set_resonance(4.0);
+
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("wah", effect, &input).expect("Wah regression test failed");
+}
+
+#[test]
+fn test_parametric_eq_regression() {
+    let mut effect = ParametricEq::new(SAMPLE_RATE);
+    effect.set_low_gain(3.0);
+    effect.set_mid_gain(-2.0);
+    effect.set_mid_freq(1000.0);
+    effect.set_high_gain(2.0);
+
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("parametric_eq", effect, &input)
+        .expect("ParametricEq regression test failed");
+}
+
+/// Run all regression tests and provide summary
+#[test]
+fn test_regression_summary() {
+    // This test just verifies the framework works
+    // Individual tests above handle the actual regression checking
+
+    let golden_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(GOLDEN_DIR);
+
+    if !golden_dir.exists() {
+        fs::create_dir_all(&golden_dir).expect("Failed to create golden directory");
+    }
+
+    println!("\nRegression test framework initialized");
+    println!("Golden files directory: {:?}", golden_dir);
+
+    if should_regenerate() {
+        println!("REGENERATE_GOLDEN is set - golden files will be updated");
+    } else {
+        let file_count = fs::read_dir(&golden_dir)
+            .map(|rd| rd.filter_map(|e| e.ok()).count())
+            .unwrap_or(0);
+        println!("Found {} golden files", file_count);
+    }
+}

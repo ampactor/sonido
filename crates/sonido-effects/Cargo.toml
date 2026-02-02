@@ -18,6 +18,7 @@ libm = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
+sonido-analysis = { workspace = true }
 
 [[bench]]
 name = "effects_bench"

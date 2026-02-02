@@ -17,3 +17,8 @@ sonido-core = { path = "../sonido-core", default-features = false }
 libm = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "synth_bench"
+harness = false
