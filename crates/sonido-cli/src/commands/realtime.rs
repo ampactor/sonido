@@ -42,6 +42,10 @@ pub struct RealtimeArgs {
     /// Buffer size
     #[arg(long, default_value = "256")]
     buffer_size: u32,
+
+    /// Force mono processing (ignore stereo input/output)
+    #[arg(long)]
+    mono: bool,
 }
 
 fn parse_key_val(s: &str) -> Result<(String, String), String> {
@@ -107,7 +111,8 @@ pub fn run(args: RealtimeArgs) -> anyhow::Result<()> {
         .cloned()
         .unwrap_or_else(|| "none".to_string());
 
-    println!("Real-time processing with {} effect(s)", engine.len());
+    let mode = if args.mono { "mono" } else { "stereo" };
+    println!("Real-time {} processing with {} effect(s)", mode, engine.len());
     println!("  Input:  {}", input_name);
     println!("  Output: {}", output_name);
     println!("  Sample rate: {} Hz", args.sample_rate);
@@ -133,10 +138,16 @@ pub fn run(args: RealtimeArgs) -> anyhow::Result<()> {
     let mut stream = AudioStream::new(config)?;
 
     // Run the audio stream on the main thread
-    // The callback will be called from the audio thread
-    stream.run(move |input, output| {
-        engine.process_block(input, output);
-    })?;
+    // Use stereo or mono processing based on flag
+    if args.mono {
+        stream.run(move |input, output| {
+            engine.process_block(input, output);
+        })?;
+    } else {
+        stream.run_stereo(move |left_in, right_in, left_out, right_out| {
+            engine.process_block_stereo(left_in, right_in, left_out, right_out);
+        })?;
+    }
 
     println!("Done!");
     Ok(())

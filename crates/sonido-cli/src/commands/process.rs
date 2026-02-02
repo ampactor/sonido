@@ -4,7 +4,7 @@ use crate::effects::{create_effect_with_params, parse_chain};
 use crate::preset::Preset;
 use clap::Args;
 use indicatif::{ProgressBar, ProgressStyle};
-use sonido_io::{read_wav, write_wav, ProcessingEngine, WavSpec};
+use sonido_io::{read_wav_stereo, write_wav, write_wav_stereo, ProcessingEngine, WavSpec};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -41,6 +41,10 @@ pub struct ProcessArgs {
     /// Output bit depth (16, 24, or 32)
     #[arg(long, default_value = "32")]
     bit_depth: u16,
+
+    /// Force mono output (mix stereo to mono)
+    #[arg(long)]
+    mono: bool,
 }
 
 fn parse_key_val(s: &str) -> Result<(String, String), String> {
@@ -52,15 +56,17 @@ fn parse_key_val(s: &str) -> Result<(String, String), String> {
 }
 
 pub fn run(args: ProcessArgs) -> anyhow::Result<()> {
-    // Read input file
+    // Read input file as stereo (mono files are duplicated to both channels)
     println!("Reading {}...", args.input.display());
-    let (samples, spec) = read_wav(&args.input)?;
+    let (samples, spec) = read_wav_stereo(&args.input)?;
     let sample_rate = spec.sample_rate as f32;
+    let is_stereo_input = spec.channels == 2;
 
     println!(
-        "  {} samples, {} Hz, {:.2}s",
+        "  {} samples, {} Hz, {} channel(s), {:.2}s",
         samples.len(),
         spec.sample_rate,
+        spec.channels,
         samples.len() as f32 / sample_rate
     );
 
@@ -97,9 +103,15 @@ pub fn run(args: ProcessArgs) -> anyhow::Result<()> {
         anyhow::bail!("No effects to process");
     }
 
-    println!("Processing with {} effect(s)...", engine.len());
+    // Determine output mode
+    let output_stereo = is_stereo_input && !args.mono;
+    println!(
+        "Processing with {} effect(s) ({} output)...",
+        engine.len(),
+        if output_stereo { "stereo" } else { "mono" }
+    );
 
-    // Process with progress bar
+    // Process with progress bar using stereo processing
     let pb = ProgressBar::new(samples.len() as u64);
     pb.set_style(
         ProgressStyle::default_bar()
@@ -108,26 +120,21 @@ pub fn run(args: ProcessArgs) -> anyhow::Result<()> {
             .progress_chars("##-"),
     );
 
-    let mut output = vec![0.0; samples.len()];
     let block_size = args.block_size;
+    let output = engine.process_file_stereo(&samples, block_size);
 
-    for (i, (in_chunk, out_chunk)) in samples
-        .chunks(block_size)
-        .zip(output.chunks_mut(block_size))
-        .enumerate()
-    {
-        let len = in_chunk.len();
-        engine.process_block(in_chunk, &mut out_chunk[..len]);
-        pb.set_position(((i + 1) * block_size).min(samples.len()) as u64);
-    }
-
+    // Update progress (process_file_stereo handles blocks internally)
+    pb.set_position(samples.len() as u64);
     pb.finish_with_message("done");
 
-    // Calculate stats
-    let input_rms = rms(&samples);
-    let output_rms = rms(&output);
-    let input_peak = peak(&samples);
-    let output_peak = peak(&output);
+    // Calculate stats (using left channel for simplicity, or mono mix)
+    let input_mono = samples.to_mono();
+    let output_mono = output.to_mono();
+
+    let input_rms = rms(&input_mono);
+    let output_rms = rms(&output_mono);
+    let input_peak = peak(&input_mono);
+    let output_peak = peak(&output_mono);
 
     println!("\nStats:");
     println!(
@@ -142,14 +149,25 @@ pub fn run(args: ProcessArgs) -> anyhow::Result<()> {
     );
 
     // Write output file
-    let out_spec = WavSpec {
-        channels: 1,
-        sample_rate: spec.sample_rate,
-        bits_per_sample: args.bit_depth,
-    };
-
     println!("\nWriting {}...", args.output.display());
-    write_wav(&args.output, &output, out_spec)?;
+
+    if output_stereo {
+        let out_spec = WavSpec {
+            channels: 2,
+            sample_rate: spec.sample_rate,
+            bits_per_sample: args.bit_depth,
+        };
+        write_wav_stereo(&args.output, &output, out_spec)?;
+    } else {
+        let out_spec = WavSpec {
+            channels: 1,
+            sample_rate: spec.sample_rate,
+            bits_per_sample: args.bit_depth,
+        };
+        let mono_output = output.to_mono();
+        write_wav(&args.output, &mono_output, out_spec)?;
+    }
+
     println!("Done!");
 
     Ok(())
