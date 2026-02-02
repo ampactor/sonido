@@ -5,6 +5,8 @@ Production-grade DSP library in Rust for audio effects, plugins, and embedded sy
 ## Features
 
 - **15 audio effects**: distortion, compressor, chorus, delay, filter, vibrato, tape saturation, preamp, reverb, tremolo, gate, flanger, phaser, wah, parametric EQ
+- **Synthesis engine**: Oscillators with PolyBLEP anti-aliasing, ADSR envelopes, voice management, modulation matrix
+- **Cross-frequency coupling analysis**: Phase-amplitude coupling (PAC) for biosignal research (EEG, electric fish, etc.)
 - **no_std compatible**: Core primitives work on embedded targets without heap allocation
 - **Stereo-first processing**: True stereo effects with decorrelated L/R, backwards-compatible mono API
 - **Real-time audio I/O**: Process live audio via the CLI or GUI
@@ -12,6 +14,7 @@ Production-grade DSP library in Rust for audio effects, plugins, and embedded sy
 - **Spectral analysis toolkit**: FFT-based tools for reverse engineering hardware effects
 - **Zero-cost effect chaining**: Build complex signal chains with static or dynamic composition
 - **Parameter smoothing**: Click-free automation with exponential and linear smoothing
+- **Tempo sync**: Musical note divisions for tempo-synchronized effects
 
 ## Why Sonido?
 
@@ -76,11 +79,12 @@ chain.process_block(&input, &mut output);
 
 | Crate | Description | no_std |
 |-------|-------------|--------|
-| `sonido-core` | DSP primitives: Effect trait, parameters, delays, filters, LFOs | Yes |
+| `sonido-core` | DSP primitives: Effect trait, parameters, delays, filters, LFOs, tempo | Yes |
 | `sonido-effects` | Effect implementations: distortion, compressor, chorus, delay, etc. | Yes |
+| `sonido-synth` | Synthesis: oscillators, envelopes, voice management, modulation matrix | Yes |
 | `sonido-registry` | Effect factory and discovery by name/category | Yes |
 | `sonido-platform` | Hardware abstraction: PlatformController trait, ControlMapper, ControlId | Yes |
-| `sonido-analysis` | Spectral analysis tools for reverse engineering (FFT, transfer functions) | No |
+| `sonido-analysis` | Spectral analysis, PAC/CFC analysis, Hilbert transform, filter banks | No |
 | `sonido-io` | Audio I/O: WAV files (mono/stereo), real-time streaming via cpal | No |
 | `sonido-cli` | Command-line interface for processing and analysis | No |
 | `sonido-gui` | Real-time effects GUI with preset management | No |
@@ -140,6 +144,12 @@ sonido analyze transfer dry.wav wet.wav --output response.json
 
 # Extract impulse response from sweep recording
 sonido analyze ir sweep.wav recorded.wav --output ir.wav
+
+# Analyze phase-amplitude coupling (for EEG/biosignal research)
+sonido analyze pac eeg.wav --phase-low 4 --phase-high 8 --amp-low 30 --amp-high 80
+
+# Generate comodulogram across frequency pairs
+sonido analyze comodulogram eeg.wav --phase-range 2-20 --amp-range 20-200 -o comod.csv
 ```
 
 ### List available effects
@@ -186,6 +196,9 @@ cargo test --no-default-features -p sonido-effects
 - [Getting Started Guide](docs/GETTING_STARTED.md)
 - [CLI Guide](docs/CLI_GUIDE.md)
 - [Effects Reference](docs/EFFECTS_REFERENCE.md)
+- [Synthesis Guide](docs/SYNTHESIS.md)
+- [CFC/PAC Analysis Guide](docs/CFC_ANALYSIS.md)
+- [Biosignal Analysis](docs/BIOSIGNAL_ANALYSIS.md)
 - [Contributing](docs/CONTRIBUTING.md)
 - [Changelog](docs/CHANGELOG.md)
 - [GUI Documentation](docs/GUI.md)

@@ -9,6 +9,118 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### sonido-synth (NEW CRATE)
+
+Full synthesis engine for building synthesizers with `no_std` support.
+
+**Oscillators:**
+- `Oscillator` with PolyBLEP anti-aliasing for alias-free waveforms
+- `OscillatorWaveform`: Sine, Triangle, Saw, Square, Pulse (with width), Noise
+- Frequency and phase modulation support
+
+**Envelopes:**
+- `AdsrEnvelope` with Attack, Decay, Sustain, Release stages
+- Configurable curves and times in milliseconds
+- Gate-based triggering
+
+**Voice Management:**
+- `Voice` combining oscillators, filter, and envelopes
+- `VoiceManager` for polyphonic voice allocation
+- `VoiceAllocationMode`: Oldest, Newest, Quietest, HighestNote, LowestNote stealing strategies
+
+**Modulation:**
+- `ModulationMatrix` for flexible modulation routing
+- `ModulationRoute` with depth, curve, and inversion
+- `ModSourceId` and `ModDestination` for source/dest identification
+- `AudioModSource` to use audio input as modulation
+- `AudioGate` to convert audio amplitude to gate signals
+
+**Complete Synths:**
+- `MonophonicSynth` with portamento/glide
+- `PolyphonicSynth<N>` with configurable voice count
+- Dual oscillators with detune, filter with envelope, amp envelope
+
+#### sonido-config (NEW CRATE)
+
+CLI-first configuration and preset management.
+
+- `Preset` struct for loading/saving effect chain presets from TOML
+- `EffectConfig` for individual effect configuration with parameters
+- `EffectChain` runtime builder for effect chains
+- Parameter validation against registry schemas
+- Platform-specific paths (`user_presets_dir()`, `system_presets_dir()`)
+- Factory presets bundled with the library
+- `find_preset()` for searching preset directories
+
+#### sonido-core
+
+**Tempo System:**
+- `TempoManager` for tempo tracking and musical timing
+- `NoteDivision` enum: Whole, Half, Quarter, Eighth, Sixteenth, ThirtySecond
+- Dotted notes: DottedHalf, DottedQuarter, DottedEighth
+- Triplets: TripletQuarter, TripletEighth, TripletSixteenth
+- `division_to_hz()`, `division_to_ms()`, `division_to_samples()` conversions
+- `TransportState` (Playing, Stopped) with position tracking
+- Beat/bar position and phase methods
+
+**Modulation System:**
+- `ModulationSource` trait for unified modulation interface
+- Implemented for `Lfo` (bipolar) and `EnvelopeFollower` (unipolar)
+- `mod_advance()`, `mod_value()`, `mod_reset()` methods
+- `mod_advance_unipolar()` and `mod_advance_bipolar()` conversions
+- `ModulationAmount` struct for depth and inversion control
+
+#### sonido-analysis
+
+**Cross-Frequency Coupling (CFC) Analysis:**
+- `FilterBank` for multi-band frequency extraction with 4th-order Butterworth filters
+- `FrequencyBand` specification with center frequency and bandwidth
+- `eeg_bands` module with standard EEG bands (Delta, Theta, Alpha, Beta, Low Gamma, High Gamma)
+- `HilbertTransform` using FFT method for analytic signal computation
+- Instantaneous phase, amplitude, and frequency extraction
+- Phase unwrapping and frequency estimation
+
+**Phase-Amplitude Coupling:**
+- `PacAnalyzer` for analyzing coupling between frequency bands
+- `PacMethod`: Mean Vector Length (Canolty et al., 2006) and Kullback-Leibler (Tort et al., 2010)
+- `PacResult` with modulation index, preferred phase, and phase-amplitude histogram
+- 18-bin phase histogram (20 degrees per bin)
+- Significance threshold checking
+
+**Comodulogram:**
+- `Comodulogram::compute()` for multi-frequency PAC analysis
+- Configurable phase and amplitude frequency ranges with step sizes
+- `peak_coupling()` to find strongest coupling pair
+- `to_csv()` export for visualization
+- `get_coupling()` for specific frequency pair lookup
+
+#### sonido-cli
+
+**New Analyze Subcommands:**
+- `analyze pac` - Phase-Amplitude Coupling analysis
+  - Configurable phase and amplitude bands
+  - MVL and KL methods
+  - Surrogate shuffling for significance testing with p-value
+  - JSON output with phase histogram
+- `analyze comodulogram` - Multi-frequency PAC matrix
+  - Configurable frequency ranges and steps
+  - Bandwidth ratio control
+  - CSV output for heatmap visualization
+- `analyze bandpass` - Frequency band extraction
+  - Configurable low/high cutoff frequencies
+  - Filter order selection (2, 4, 6)
+  - WAV output
+- `analyze hilbert` - Hilbert transform analysis
+  - Instantaneous phase output (normalized -1 to 1)
+  - Amplitude envelope output (normalized 0 to 1)
+  - Optional pre-filtering with bandpass
+
+**Other CLI Additions:**
+- `tui` command for interactive terminal UI
+- `presets` command for preset management
+
+---
+
 #### Build Infrastructure
 
 - GitHub Actions CI workflow (`.github/workflows/ci.yml`)
