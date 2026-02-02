@@ -4,7 +4,8 @@ use crate::audio_bridge::{AudioBridge, MeteringData, SharedParams};
 use crate::chain_view::ChainView;
 use crate::effects_ui::{
     ChorusPanel, CompressorPanel, DelayPanel, DistortionPanel, EffectType, FilterPanel,
-    MultiVibratoPanel, PreampPanel, ReverbPanel, TapePanel,
+    FlangerPanel, GatePanel, MultiVibratoPanel, ParametricEqPanel, PhaserPanel, PreampPanel,
+    ReverbPanel, TapePanel, TremoloPanel, WahPanel,
 };
 use crate::preset_manager::PresetManager;
 use crate::theme::Theme;
@@ -13,8 +14,9 @@ use crossbeam_channel::Sender;
 use egui::{CentralPanel, Color32, Context, Frame, Margin, TopBottomPanel};
 use sonido_core::Effect;
 use sonido_effects::{
-    Chorus, CleanPreamp, Compressor, Delay, Distortion, LowPassFilter, MultiVibrato, Reverb,
-    TapeSaturation, WaveShape,
+    Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, LowPassFilter,
+    MultiVibrato, ParametricEq, Phaser, Reverb, TapeSaturation, Tremolo, TremoloWaveform, Wah,
+    WaveShape,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -42,7 +44,13 @@ pub struct SonidoApp {
     preamp_panel: PreampPanel,
     distortion_panel: DistortionPanel,
     compressor_panel: CompressorPanel,
+    gate_panel: GatePanel,
+    eq_panel: ParametricEqPanel,
+    wah_panel: WahPanel,
     chorus_panel: ChorusPanel,
+    flanger_panel: FlangerPanel,
+    phaser_panel: PhaserPanel,
+    tremolo_panel: TremoloPanel,
     delay_panel: DelayPanel,
     filter_panel: FilterPanel,
     multivibrato_panel: MultiVibratoPanel,
@@ -74,7 +82,13 @@ impl SonidoApp {
             preamp_panel: PreampPanel::new(),
             distortion_panel: DistortionPanel::new(),
             compressor_panel: CompressorPanel::new(),
+            gate_panel: GatePanel::new(),
+            eq_panel: ParametricEqPanel::new(),
+            wah_panel: WahPanel::new(),
             chorus_panel: ChorusPanel::new(),
+            flanger_panel: FlangerPanel::new(),
+            phaser_panel: PhaserPanel::new(),
+            tremolo_panel: TremoloPanel::new(),
             delay_panel: DelayPanel::new(),
             filter_panel: FilterPanel::new(),
             multivibrato_panel: MultiVibratoPanel::new(),
@@ -337,7 +351,13 @@ impl SonidoApp {
                     EffectType::Compressor => {
                         self.compressor_panel.ui(ui, &self.audio_bridge.params)
                     }
+                    EffectType::Gate => self.gate_panel.ui(ui, &self.audio_bridge.params),
+                    EffectType::ParametricEq => self.eq_panel.ui(ui, &self.audio_bridge.params),
+                    EffectType::Wah => self.wah_panel.ui(ui, &self.audio_bridge.params),
                     EffectType::Chorus => self.chorus_panel.ui(ui, &self.audio_bridge.params),
+                    EffectType::Flanger => self.flanger_panel.ui(ui, &self.audio_bridge.params),
+                    EffectType::Phaser => self.phaser_panel.ui(ui, &self.audio_bridge.params),
+                    EffectType::Tremolo => self.tremolo_panel.ui(ui, &self.audio_bridge.params),
                     EffectType::Delay => self.delay_panel.ui(ui, &self.audio_bridge.params),
                     EffectType::Filter => self.filter_panel.ui(ui, &self.audio_bridge.params),
                     EffectType::MultiVibrato => {
@@ -515,7 +535,13 @@ fn run_audio_thread(
     let mut preamp = CleanPreamp::new(sample_rate);
     let mut distortion = Distortion::new(sample_rate);
     let mut compressor = Compressor::new(sample_rate);
+    let mut gate = Gate::new(sample_rate);
+    let mut eq = ParametricEq::new(sample_rate);
+    let mut wah = Wah::new(sample_rate);
     let mut chorus = Chorus::new(sample_rate);
+    let mut flanger = Flanger::new(sample_rate);
+    let mut phaser = Phaser::new(sample_rate);
+    let mut tremolo = Tremolo::new(sample_rate);
     let mut delay = Delay::new(sample_rate);
     let mut filter = LowPassFilter::new(sample_rate);
     let mut vibrato = MultiVibrato::new(sample_rate);
@@ -589,9 +615,50 @@ fn run_audio_thread(
                 compressor.set_release_ms(params_output.comp_release.get());
                 compressor.set_makeup_gain_db(params_output.comp_makeup.get());
 
+                gate.set_threshold_db(params_output.gate_threshold.get());
+                gate.set_attack_ms(params_output.gate_attack.get());
+                gate.set_release_ms(params_output.gate_release.get());
+                gate.set_hold_ms(params_output.gate_hold.get());
+
+                eq.set_low_freq(params_output.eq_low_freq.get());
+                eq.set_low_gain(params_output.eq_low_gain.get());
+                eq.set_low_q(params_output.eq_low_q.get());
+                eq.set_mid_freq(params_output.eq_mid_freq.get());
+                eq.set_mid_gain(params_output.eq_mid_gain.get());
+                eq.set_mid_q(params_output.eq_mid_q.get());
+                eq.set_high_freq(params_output.eq_high_freq.get());
+                eq.set_high_gain(params_output.eq_high_gain.get());
+                eq.set_high_q(params_output.eq_high_q.get());
+
+                wah.set_frequency(params_output.wah_frequency.get());
+                wah.set_resonance(params_output.wah_resonance.get());
+                wah.set_sensitivity(params_output.wah_sensitivity.get());
+                wah.set_mode_index(params_output.wah_mode.load(Ordering::Relaxed) as usize);
+
                 chorus.set_rate(params_output.chorus_rate.get());
                 chorus.set_depth(params_output.chorus_depth.get());
                 chorus.set_mix(params_output.chorus_mix.get());
+
+                flanger.set_rate(params_output.flanger_rate.get());
+                flanger.set_depth(params_output.flanger_depth.get());
+                flanger.set_feedback(params_output.flanger_feedback.get());
+                flanger.set_mix(params_output.flanger_mix.get());
+
+                phaser.set_rate(params_output.phaser_rate.get());
+                phaser.set_depth(params_output.phaser_depth.get());
+                phaser.set_feedback(params_output.phaser_feedback.get());
+                phaser.set_mix(params_output.phaser_mix.get());
+                phaser.set_stages(params_output.phaser_stages.load(Ordering::Relaxed) as usize);
+
+                tremolo.set_rate(params_output.tremolo_rate.get());
+                tremolo.set_depth(params_output.tremolo_depth.get());
+                let trem_wave = params_output.tremolo_waveform.load(Ordering::Relaxed);
+                tremolo.set_waveform(match trem_wave {
+                    0 => TremoloWaveform::Sine,
+                    1 => TremoloWaveform::Triangle,
+                    2 => TremoloWaveform::Square,
+                    _ => TremoloWaveform::SampleHold,
+                });
 
                 delay.set_delay_time_ms(params_output.delay_time.get());
                 delay.set_feedback(params_output.delay_feedback.get());
@@ -617,7 +684,13 @@ fn run_audio_thread(
                 let bypass_preamp = params_output.bypass.preamp.load(Ordering::Relaxed);
                 let bypass_distortion = params_output.bypass.distortion.load(Ordering::Relaxed);
                 let bypass_compressor = params_output.bypass.compressor.load(Ordering::Relaxed);
+                let bypass_gate = params_output.bypass.gate.load(Ordering::Relaxed);
+                let bypass_eq = params_output.bypass.eq.load(Ordering::Relaxed);
+                let bypass_wah = params_output.bypass.wah.load(Ordering::Relaxed);
                 let bypass_chorus = params_output.bypass.chorus.load(Ordering::Relaxed);
+                let bypass_flanger = params_output.bypass.flanger.load(Ordering::Relaxed);
+                let bypass_phaser = params_output.bypass.phaser.load(Ordering::Relaxed);
+                let bypass_tremolo = params_output.bypass.tremolo.load(Ordering::Relaxed);
                 let bypass_delay = params_output.bypass.delay.load(Ordering::Relaxed);
                 let bypass_filter = params_output.bypass.filter.load(Ordering::Relaxed);
                 let bypass_vibrato = params_output.bypass.multivibrato.load(Ordering::Relaxed);
@@ -647,8 +720,26 @@ fn run_audio_thread(
                     if !bypass_compressor {
                         out = compressor.process(out);
                     }
+                    if !bypass_gate {
+                        out = gate.process(out);
+                    }
+                    if !bypass_eq {
+                        out = eq.process(out);
+                    }
+                    if !bypass_wah {
+                        out = wah.process(out);
+                    }
                     if !bypass_chorus {
                         out = chorus.process(out);
+                    }
+                    if !bypass_flanger {
+                        out = flanger.process(out);
+                    }
+                    if !bypass_phaser {
+                        out = phaser.process(out);
+                    }
+                    if !bypass_tremolo {
+                        out = tremolo.process(out);
                     }
                     if !bypass_delay {
                         out = delay.process(out);
