@@ -1,0 +1,18 @@
+[package]
+name = "sonido-platform"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Platform abstraction layer for hardware controllers, GUIs, and MIDI - no_std compatible"
+keywords = ["dsp", "audio", "platform", "controller", "no_std"]
+categories = ["multimedia::audio", "no-std", "hardware-support"]
+
+[features]
+default = ["std"]
+std = ["sonido-core/std"]
+
+[dependencies]
+sonido-core = { workspace = true }
+
+[dev-dependencies]
