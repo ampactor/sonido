@@ -2,7 +2,6 @@
 
 mod commands;
 mod effects;
-mod preset;
 
 use clap::{Parser, Subcommand};
 
@@ -36,6 +35,12 @@ enum Commands {
 
     /// List available effects and their parameters
     Effects(commands::effects::EffectsArgs),
+
+    /// Manage effect presets (list, show, save, delete)
+    Presets(commands::presets::PresetsArgs),
+
+    /// Interactive TUI mode for effect editing
+    Tui(commands::tui::TuiArgs),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -49,5 +54,7 @@ fn main() -> anyhow::Result<()> {
         Commands::Compare(args) => commands::compare::run(args),
         Commands::Devices(args) => commands::devices::run(args),
         Commands::Effects(args) => commands::effects::run(args),
+        Commands::Presets(args) => commands::presets::run(args),
+        Commands::Tui(args) => commands::tui::run(args),
     }
 }

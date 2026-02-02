@@ -15,6 +15,7 @@ sonido-core = { workspace = true, features = ["std"] }
 sonido-effects = { workspace = true, features = ["std"] }
 sonido-analysis = { workspace = true }
 sonido-io = { workspace = true }
+sonido-config = { workspace = true }
 
 clap = { workspace = true }
 serde = { workspace = true }
@@ -26,3 +27,7 @@ anyhow = "1.0"
 serde_json = "1.0"
 num-traits = { workspace = true }
 rustfft = { workspace = true }
+
+# TUI
+ratatui = "0.28"
+crossterm = "0.28"

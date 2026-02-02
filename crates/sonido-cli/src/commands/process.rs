@@ -1,9 +1,9 @@
 //! File-based effect processing command.
 
 use crate::effects::{create_effect_with_params, parse_chain};
-use crate::preset::Preset;
 use clap::Args;
 use indicatif::{ProgressBar, ProgressStyle};
+use sonido_config::{get_factory_preset, find_preset as config_find_preset, Preset};
 use sonido_io::{read_wav_stereo, write_wav, write_wav_stereo, ProcessingEngine, WavSpec};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -26,9 +26,9 @@ pub struct ProcessArgs {
     #[arg(short, long)]
     chain: Option<String>,
 
-    /// Preset file (TOML)
+    /// Preset name or path (supports factory presets, user presets, and file paths)
     #[arg(short, long)]
-    preset: Option<PathBuf>,
+    preset: Option<String>,
 
     /// Effect parameters (e.g., "drive=15")
     #[arg(long, value_parser = parse_key_val, number_of_values = 1)]
@@ -73,13 +73,15 @@ pub fn run(args: ProcessArgs) -> anyhow::Result<()> {
     // Build effect chain
     let mut engine = ProcessingEngine::new(sample_rate);
 
-    if let Some(preset_path) = &args.preset {
-        // Load preset from file
-        let preset_content = std::fs::read_to_string(preset_path)?;
-        let preset: Preset = toml::from_str(&preset_content)?;
+    if let Some(preset_name) = &args.preset {
+        // Load preset by name or path using sonido-config
+        let preset = load_preset(preset_name)?;
 
         println!("Loading preset: {}", preset.name);
-        for effect_cfg in preset.effects {
+        for effect_cfg in &preset.effects {
+            if effect_cfg.bypassed {
+                continue; // Skip bypassed effects
+            }
             let effect =
                 create_effect_with_params(&effect_cfg.effect_type, sample_rate, &effect_cfg.params)?;
             engine.add_effect(effect);
@@ -191,4 +193,34 @@ fn linear_to_db(linear: f32) -> f32 {
     } else {
         20.0 * linear.log10()
     }
+}
+
+/// Load a preset by name or path.
+///
+/// Searches in this order:
+/// 1. Factory presets (by name)
+/// 2. User presets (by name)
+/// 3. System presets (by name)
+/// 4. File path (if it's a path to a .toml file)
+fn load_preset(name: &str) -> anyhow::Result<Preset> {
+    // Try factory preset first
+    if let Some(preset) = get_factory_preset(name) {
+        return Ok(preset);
+    }
+
+    // Try to find in user/system directories
+    if let Some(path) = config_find_preset(name) {
+        return Preset::load(&path).map_err(|e| anyhow::anyhow!("{}", e));
+    }
+
+    // Try as a direct file path
+    let path = PathBuf::from(name);
+    if path.exists() {
+        return Preset::load(&path).map_err(|e| anyhow::anyhow!("{}", e));
+    }
+
+    anyhow::bail!(
+        "Preset '{}' not found. Use 'sonido presets list' to see available presets.",
+        name
+    )
 }
