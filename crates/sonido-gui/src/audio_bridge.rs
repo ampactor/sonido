@@ -80,7 +80,13 @@ pub struct BypassStates {
     pub preamp: AtomicBool,
     pub distortion: AtomicBool,
     pub compressor: AtomicBool,
+    pub gate: AtomicBool,
+    pub eq: AtomicBool,
+    pub wah: AtomicBool,
     pub chorus: AtomicBool,
+    pub flanger: AtomicBool,
+    pub phaser: AtomicBool,
+    pub tremolo: AtomicBool,
     pub delay: AtomicBool,
     pub filter: AtomicBool,
     pub multivibrato: AtomicBool,
@@ -94,7 +100,13 @@ impl Default for BypassStates {
             preamp: AtomicBool::new(false),
             distortion: AtomicBool::new(false),
             compressor: AtomicBool::new(false),
+            gate: AtomicBool::new(true),  // Gate bypassed by default
+            eq: AtomicBool::new(true),    // EQ bypassed by default
+            wah: AtomicBool::new(true),   // Wah bypassed by default
             chorus: AtomicBool::new(false),
+            flanger: AtomicBool::new(true),  // Flanger bypassed by default
+            phaser: AtomicBool::new(true),   // Phaser bypassed by default
+            tremolo: AtomicBool::new(true),  // Tremolo bypassed by default
             delay: AtomicBool::new(false),
             filter: AtomicBool::new(false),
             multivibrato: AtomicBool::new(false),
@@ -129,10 +141,51 @@ pub struct SharedParams {
     pub comp_release: AtomicParam,
     pub comp_makeup: AtomicParam,
 
+    // Gate
+    pub gate_threshold: AtomicParam,
+    pub gate_attack: AtomicParam,
+    pub gate_release: AtomicParam,
+    pub gate_hold: AtomicParam,
+
+    // Parametric EQ
+    pub eq_low_freq: AtomicParam,
+    pub eq_low_gain: AtomicParam,
+    pub eq_low_q: AtomicParam,
+    pub eq_mid_freq: AtomicParam,
+    pub eq_mid_gain: AtomicParam,
+    pub eq_mid_q: AtomicParam,
+    pub eq_high_freq: AtomicParam,
+    pub eq_high_gain: AtomicParam,
+    pub eq_high_q: AtomicParam,
+
+    // Wah
+    pub wah_frequency: AtomicParam,
+    pub wah_resonance: AtomicParam,
+    pub wah_sensitivity: AtomicParam,
+    pub wah_mode: AtomicU32, // 0=Auto, 1=Manual
+
     // Chorus
     pub chorus_rate: AtomicParam,
     pub chorus_depth: AtomicParam,
     pub chorus_mix: AtomicParam,
+
+    // Flanger
+    pub flanger_rate: AtomicParam,
+    pub flanger_depth: AtomicParam,
+    pub flanger_feedback: AtomicParam,
+    pub flanger_mix: AtomicParam,
+
+    // Phaser
+    pub phaser_rate: AtomicParam,
+    pub phaser_depth: AtomicParam,
+    pub phaser_feedback: AtomicParam,
+    pub phaser_mix: AtomicParam,
+    pub phaser_stages: AtomicU32, // 2-12
+
+    // Tremolo
+    pub tremolo_rate: AtomicParam,
+    pub tremolo_depth: AtomicParam,
+    pub tremolo_waveform: AtomicU32, // 0=Sine, 1=Triangle, 2=Square, 3=S&H
 
     // Delay
     pub delay_time: AtomicParam,
@@ -185,10 +238,51 @@ impl Default for SharedParams {
             comp_release: AtomicParam::new(100.0, 10.0, 1000.0),
             comp_makeup: AtomicParam::new(0.0, 0.0, 20.0),
 
+            // Gate
+            gate_threshold: AtomicParam::new(-40.0, -80.0, 0.0),
+            gate_attack: AtomicParam::new(1.0, 0.1, 50.0),
+            gate_release: AtomicParam::new(100.0, 10.0, 1000.0),
+            gate_hold: AtomicParam::new(50.0, 0.0, 500.0),
+
+            // Parametric EQ
+            eq_low_freq: AtomicParam::new(100.0, 20.0, 500.0),
+            eq_low_gain: AtomicParam::new(0.0, -12.0, 12.0),
+            eq_low_q: AtomicParam::new(1.0, 0.5, 5.0),
+            eq_mid_freq: AtomicParam::new(1000.0, 200.0, 5000.0),
+            eq_mid_gain: AtomicParam::new(0.0, -12.0, 12.0),
+            eq_mid_q: AtomicParam::new(1.0, 0.5, 5.0),
+            eq_high_freq: AtomicParam::new(5000.0, 1000.0, 15000.0),
+            eq_high_gain: AtomicParam::new(0.0, -12.0, 12.0),
+            eq_high_q: AtomicParam::new(1.0, 0.5, 5.0),
+
+            // Wah
+            wah_frequency: AtomicParam::new(800.0, 200.0, 2000.0),
+            wah_resonance: AtomicParam::new(5.0, 1.0, 10.0),
+            wah_sensitivity: AtomicParam::new(0.5, 0.0, 1.0),
+            wah_mode: AtomicU32::new(0), // Auto mode
+
             // Chorus
             chorus_rate: AtomicParam::new(1.0, 0.1, 10.0),
             chorus_depth: AtomicParam::new(0.5, 0.0, 1.0),
             chorus_mix: AtomicParam::new(0.5, 0.0, 1.0),
+
+            // Flanger
+            flanger_rate: AtomicParam::new(0.5, 0.05, 5.0),
+            flanger_depth: AtomicParam::new(0.5, 0.0, 1.0),
+            flanger_feedback: AtomicParam::new(0.5, 0.0, 0.95),
+            flanger_mix: AtomicParam::new(0.5, 0.0, 1.0),
+
+            // Phaser
+            phaser_rate: AtomicParam::new(0.3, 0.05, 5.0),
+            phaser_depth: AtomicParam::new(0.5, 0.0, 1.0),
+            phaser_feedback: AtomicParam::new(0.5, 0.0, 0.95),
+            phaser_mix: AtomicParam::new(0.5, 0.0, 1.0),
+            phaser_stages: AtomicU32::new(6),
+
+            // Tremolo
+            tremolo_rate: AtomicParam::new(5.0, 0.5, 20.0),
+            tremolo_depth: AtomicParam::new(0.5, 0.0, 1.0),
+            tremolo_waveform: AtomicU32::new(0), // Sine
 
             // Delay
             delay_time: AtomicParam::new(300.0, 1.0, 2000.0),
@@ -305,9 +399,11 @@ pub struct EffectOrder {
 
 impl Default for EffectOrder {
     fn default() -> Self {
-        // Default order: preamp, dist, comp, chorus, delay, filter, vibrato, tape, reverb
+        // Default order with all effects
         Self {
-            order: Arc::new(parking_lot::RwLock::new(vec![0, 1, 2, 3, 4, 5, 6, 7, 8])),
+            order: Arc::new(parking_lot::RwLock::new(vec![
+                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+            ])),
         }
     }
 }
@@ -364,10 +460,16 @@ mod tests {
     #[test]
     fn test_effect_order() {
         let order = EffectOrder::default();
-        assert_eq!(order.get(), vec![0, 1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(
+            order.get(),
+            vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+        );
 
         order.move_effect(0, 2);
-        assert_eq!(order.get(), vec![1, 2, 0, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(
+            order.get(),
+            vec![1, 2, 0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+        );
     }
 
     #[test]

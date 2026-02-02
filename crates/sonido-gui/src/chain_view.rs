@@ -234,7 +234,13 @@ impl ChainView {
             EffectType::Preamp => params.bypass.preamp.load(Ordering::Relaxed),
             EffectType::Distortion => params.bypass.distortion.load(Ordering::Relaxed),
             EffectType::Compressor => params.bypass.compressor.load(Ordering::Relaxed),
+            EffectType::Gate => params.bypass.gate.load(Ordering::Relaxed),
+            EffectType::ParametricEq => params.bypass.eq.load(Ordering::Relaxed),
+            EffectType::Wah => params.bypass.wah.load(Ordering::Relaxed),
             EffectType::Chorus => params.bypass.chorus.load(Ordering::Relaxed),
+            EffectType::Flanger => params.bypass.flanger.load(Ordering::Relaxed),
+            EffectType::Phaser => params.bypass.phaser.load(Ordering::Relaxed),
+            EffectType::Tremolo => params.bypass.tremolo.load(Ordering::Relaxed),
             EffectType::Delay => params.bypass.delay.load(Ordering::Relaxed),
             EffectType::Filter => params.bypass.filter.load(Ordering::Relaxed),
             EffectType::MultiVibrato => params.bypass.multivibrato.load(Ordering::Relaxed),
@@ -258,9 +264,33 @@ impl ChainView {
                 let current = params.bypass.compressor.load(Ordering::Relaxed);
                 params.bypass.compressor.store(!current, Ordering::Relaxed);
             }
+            EffectType::Gate => {
+                let current = params.bypass.gate.load(Ordering::Relaxed);
+                params.bypass.gate.store(!current, Ordering::Relaxed);
+            }
+            EffectType::ParametricEq => {
+                let current = params.bypass.eq.load(Ordering::Relaxed);
+                params.bypass.eq.store(!current, Ordering::Relaxed);
+            }
+            EffectType::Wah => {
+                let current = params.bypass.wah.load(Ordering::Relaxed);
+                params.bypass.wah.store(!current, Ordering::Relaxed);
+            }
             EffectType::Chorus => {
                 let current = params.bypass.chorus.load(Ordering::Relaxed);
                 params.bypass.chorus.store(!current, Ordering::Relaxed);
+            }
+            EffectType::Flanger => {
+                let current = params.bypass.flanger.load(Ordering::Relaxed);
+                params.bypass.flanger.store(!current, Ordering::Relaxed);
+            }
+            EffectType::Phaser => {
+                let current = params.bypass.phaser.load(Ordering::Relaxed);
+                params.bypass.phaser.store(!current, Ordering::Relaxed);
+            }
+            EffectType::Tremolo => {
+                let current = params.bypass.tremolo.load(Ordering::Relaxed);
+                params.bypass.tremolo.store(!current, Ordering::Relaxed);
             }
             EffectType::Delay => {
                 let current = params.bypass.delay.load(Ordering::Relaxed);
