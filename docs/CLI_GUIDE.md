@@ -113,12 +113,20 @@ sonido realtime [OPTIONS]
 |--------|-------------|
 | `-e, --effect <NAME>` | Single effect to apply |
 | `-c, --chain <SPEC>` | Effect chain specification |
-| `-p, --preset <FILE>` | Preset file (TOML) |
+| `-p, --preset <NAME>` | Preset name or path (factory, user, or file) |
 | `--param <KEY=VALUE>` | Effect parameter |
-| `--input-device <NAME>` | Input device name |
-| `--output-device <NAME>` | Output device name |
+| `-i, --input <DEVICE>` | Input device (index, name, or partial name) |
+| `-o, --output <DEVICE>` | Output device (index, name, or partial name) |
 | `--sample-rate <N>` | Sample rate (default: 48000) |
 | `--buffer-size <N>` | Buffer size in samples (default: 256) |
+| `--mono` | Force mono processing |
+
+### Device Selection
+
+Devices can be selected by:
+- **Index**: Use the number shown in `sonido devices list` (e.g., `--input 0`)
+- **Exact name**: Full device name (e.g., `--input "USB Audio Interface"`)
+- **Partial name**: Case-insensitive substring match (e.g., `--input "USB"`)
 
 ### Examples
 
@@ -126,14 +134,20 @@ sonido realtime [OPTIONS]
 # Simple chorus effect
 sonido realtime --effect chorus --param rate=2 --param depth=0.6
 
+# Select devices by index
+sonido realtime --input 0 --output 0 --effect reverb
+
+# Select devices by partial name match
+sonido realtime --input "USB" --output "USB" --effect distortion
+
 # Chain with custom devices
 sonido realtime \
     --chain "preamp:gain=6|distortion:drive=12" \
-    --input-device "USB Audio" \
-    --output-device "Built-in Output"
+    --input "USB Audio" \
+    --output "Built-in Output"
 
 # Using a preset
-sonido realtime --preset presets/tape_delay.toml
+sonido realtime --preset tape_warmth
 
 # Lower latency with smaller buffer
 sonido realtime --effect delay --buffer-size 128
@@ -337,15 +351,52 @@ Calculates:
 
 List and manage audio devices.
 
+### Subcommands
+
+#### list
+
+List all available audio devices with indices.
+
 ```bash
-sonido devices
+sonido devices list [OPTIONS]
 ```
 
-Shows:
-- Available input devices
-- Available output devices
-- Default devices
-- Supported sample rates
+| Option | Description |
+|--------|-------------|
+| `--include-virtual` | Show virtual/loopback device info and setup guidance |
+
+Output shows numbered devices that can be used with `--input` and `--output`:
+
+```
+Input Devices:
+  [0] Built-in Microphone (48000 Hz)
+  [1] USB Audio Interface (44100 Hz)
+
+Output Devices:
+  [0] Built-in Speaker (48000 Hz)
+  [1] USB Audio Interface (44100 Hz)
+```
+
+#### info
+
+Show default device information.
+
+```bash
+sonido devices info
+```
+
+### Virtual Audio / Loopback
+
+To capture system audio (e.g., for recording what's playing), use `--include-virtual` to see loopback device guidance:
+
+```bash
+sonido devices list --include-virtual
+```
+
+If no loopback devices are detected, platform-specific installation instructions are shown:
+- **Windows**: VB-Audio Virtual Cable
+- **macOS**: BlackHole
+- **Linux**: PulseAudio/PipeWire module-loopback
 
 ---
 
@@ -383,6 +434,111 @@ sonido process input.wav output.wav --effect lowpass --param cutoff=2000
 # These are equivalent
 sonido process input.wav output.wav --effect multivibrato --param depth=0.6
 sonido process input.wav output.wav --effect vibrato --param depth=0.6
+```
+
+---
+
+## presets
+
+Manage effect presets (list, show, save, delete, export).
+
+### Subcommands
+
+#### list
+
+List available presets.
+
+```bash
+sonido presets list [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--factory` | Show only factory presets |
+| `--user` | Show only user presets |
+
+#### show
+
+Show details of a preset.
+
+```bash
+sonido presets show <NAME>
+```
+
+#### save
+
+Save an effect chain as a user preset.
+
+```bash
+sonido presets save <NAME> --chain <SPEC> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `-c, --chain <SPEC>` | Effect chain specification (required) |
+| `-d, --description <TEXT>` | Preset description |
+| `--force` | Overwrite if preset exists |
+
+```bash
+sonido presets save my_tone --chain "preamp:gain=6|distortion:drive=12" \
+    --description "My custom crunch tone"
+```
+
+#### delete
+
+Delete a user preset.
+
+```bash
+sonido presets delete <NAME> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--force` | Don't ask for confirmation |
+
+#### copy
+
+Copy a factory preset to user presets for customization.
+
+```bash
+sonido presets copy <SOURCE> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `-n, --name <NAME>` | New preset name (default: source name) |
+
+```bash
+sonido presets copy crunch --name my_crunch
+```
+
+#### export-factory
+
+Export all factory presets to a directory as individual TOML files.
+
+```bash
+sonido presets export-factory <OUTPUT_DIR> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--force` | Overwrite existing files |
+
+```bash
+sonido presets export-factory ./presets/
+```
+
+This is useful for:
+- Distributing presets with release builds
+- Inspecting factory preset configurations
+- Using as templates for custom presets
+
+#### paths
+
+Show preset directory locations.
+
+```bash
+sonido presets paths
 ```
 
 ---

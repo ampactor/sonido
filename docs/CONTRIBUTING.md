@@ -11,6 +11,39 @@ cargo build
 cargo test
 ```
 
+## Continuous Integration
+
+All pull requests are automatically tested via GitHub Actions:
+
+- **Test matrix**: Linux, macOS, Windows
+- **no_std checks**: sonido-core, sonido-effects, sonido-registry, sonido-platform
+- **Linting**: `cargo clippy --all-targets -- -D warnings`
+- **Formatting**: `cargo fmt --all -- --check`
+
+### Running CI Checks Locally
+
+```bash
+# Run the same checks as CI
+cargo test --workspace
+cargo test --no-default-features -p sonido-core -p sonido-effects
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all -- --check
+```
+
+## Releases
+
+Releases are built automatically when a version tag is pushed:
+
+```bash
+git tag v0.1.0
+git push --tags
+```
+
+This triggers the release workflow which:
+1. Builds binaries for Linux x64, macOS x64/ARM64, Windows x64
+2. Packages with factory presets and documentation
+3. Creates a GitHub release with downloadable artifacts
+
 ## Documentation Protocol
 
 ### When to Update Docs
