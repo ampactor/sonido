@@ -6,6 +6,8 @@
 use core::f32::consts::PI;
 use libm::{sinf, floorf};
 
+use crate::tempo::NoteDivision;
+
 /// LFO waveform type
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum LfoWaveform {
@@ -170,6 +172,26 @@ impl Lfo {
     pub fn set_sample_rate(&mut self, sample_rate: f32) {
         let freq = self.phase_inc * self.sample_rate;
         self.sample_rate = sample_rate;
+        self.set_frequency(freq);
+    }
+
+    /// Sync LFO frequency to tempo.
+    ///
+    /// Sets the LFO frequency to match a musical note division at the given BPM.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sonido_core::{Lfo, NoteDivision};
+    ///
+    /// let mut lfo = Lfo::new(48000.0, 1.0);
+    ///
+    /// // Sync to eighth notes at 120 BPM (4 Hz)
+    /// lfo.sync_to_tempo(120.0, NoteDivision::Eighth);
+    /// assert!((lfo.frequency() - 4.0).abs() < 0.001);
+    /// ```
+    pub fn sync_to_tempo(&mut self, bpm: f32, division: NoteDivision) {
+        let freq = division.to_hz(bpm);
         self.set_frequency(freq);
     }
 }

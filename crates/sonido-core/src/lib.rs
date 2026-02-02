@@ -97,6 +97,8 @@ pub mod envelope;
 pub mod oversample;
 pub mod comb;
 pub mod allpass;
+pub mod tempo;
+pub mod modulation;
 
 // Re-export main types at crate root
 pub use effect::{Effect, EffectExt, Chain};
@@ -111,3 +113,5 @@ pub use oversample::{Oversampled, MAX_OVERSAMPLE_FACTOR};
 pub use comb::CombFilter;
 pub use allpass::AllpassFilter;
 pub use param_info::{ParameterInfo, ParamDescriptor, ParamUnit};
+pub use tempo::{TempoManager, NoteDivision, TransportState};
+pub use modulation::{ModulationSource, ModulationAmount};
