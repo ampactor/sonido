@@ -16,3 +16,4 @@ rustfft = { workspace = true }
 sonido-core = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
+tempfile = "3"
