@@ -5,6 +5,7 @@ use rustfft::num_complex::Complex;
 use sonido_analysis::{Fft, TransferFunction, Window, welch_psd, ThdAnalyzer, StftAnalyzer};
 use sonido_analysis::export::{export_frd, export_spectrogram_csv, export_distortion_json};
 use sonido_analysis::{FilterBank, FrequencyBand, HilbertTransform, PacAnalyzer, PacMethod, Comodulogram};
+use sonido_analysis::{ImdAnalyzer, ConstantQTransform, CqtSpectrogram, Chromagram};
 use sonido_io::{read_wav, write_wav, WavSpec};
 use std::path::PathBuf;
 
@@ -244,6 +245,60 @@ enum AnalyzeCommand {
         /// Optional bandpass filter before Hilbert transform (as "low-high" Hz)
         #[arg(long)]
         bandpass: Option<String>,
+    },
+
+    /// Analyze Intermodulation Distortion (IMD) using two-tone test
+    Imd {
+        /// Input WAV file (should contain a two-tone test signal)
+        #[arg(value_name = "INPUT")]
+        input: PathBuf,
+
+        /// First tone frequency in Hz
+        #[arg(long)]
+        freq1: f32,
+
+        /// Second tone frequency in Hz
+        #[arg(long)]
+        freq2: f32,
+
+        /// FFT size
+        #[arg(long, default_value = "8192")]
+        fft_size: usize,
+
+        /// Output JSON file (optional)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+
+    /// Constant-Q Transform analysis (logarithmic frequency resolution)
+    Cqt {
+        /// Input WAV file
+        #[arg(value_name = "INPUT")]
+        input: PathBuf,
+
+        /// Minimum frequency (Hz)
+        #[arg(long, default_value = "32.7")]
+        min_freq: f32,
+
+        /// Maximum frequency (Hz, defaults to Nyquist/2)
+        #[arg(long)]
+        max_freq: Option<f32>,
+
+        /// Bins per octave (12 for semitone resolution, 24 for quarter-tone)
+        #[arg(long, default_value = "12")]
+        bins_per_octave: usize,
+
+        /// Output CSV file (optional)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Also compute chromagram (pitch class profile)
+        #[arg(long)]
+        chromagram: bool,
+
+        /// Show top N peaks
+        #[arg(long, default_value = "10")]
+        peaks: usize,
     },
 }
 
@@ -1048,9 +1103,220 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
                 println!("\n  Note: Use --phase-output and/or --amp-output to save results");
             }
         }
+
+        AnalyzeCommand::Imd {
+            input,
+            freq1,
+            freq2,
+            fft_size,
+            output,
+        } => {
+            println!("Analyzing Intermodulation Distortion...");
+            println!("  Input: {}", input.display());
+
+            let (samples, spec) = read_wav(&input)?;
+            let sample_rate = spec.sample_rate as f32;
+
+            println!(
+                "  {} samples, {} Hz, {:.2}s",
+                samples.len(),
+                spec.sample_rate,
+                samples.len() as f32 / sample_rate
+            );
+
+            // Validate frequencies
+            let nyquist = sample_rate / 2.0;
+            if freq1 >= nyquist || freq2 >= nyquist {
+                anyhow::bail!("Frequencies must be below Nyquist ({:.0} Hz)", nyquist);
+            }
+            if freq1 == freq2 {
+                anyhow::bail!("Two-tone test requires different frequencies");
+            }
+
+            let (f1, f2) = if freq1 < freq2 {
+                (freq1, freq2)
+            } else {
+                (freq2, freq1)
+            };
+
+            println!("\n  Test tones: {:.1} Hz and {:.1} Hz", f1, f2);
+
+            let analyzer = ImdAnalyzer::new(sample_rate, fft_size);
+            let result = analyzer.analyze(&samples, f1, f2);
+
+            // Convert to dB
+            let amp1_db = if result.amp1 > 0.0 { 20.0 * result.amp1.log10() } else { -120.0 };
+            let amp2_db = if result.amp2 > 0.0 { 20.0 * result.amp2.log10() } else { -120.0 };
+
+            println!("\nIMD Analysis Results:");
+            println!("  Fundamental tones:");
+            println!("    f1 = {:.1} Hz at {:.1} dB", f1, amp1_db);
+            println!("    f2 = {:.1} Hz at {:.1} dB", f2, amp2_db);
+
+            println!("\n  Second-order products:");
+            let imd2_diff_db = if result.imd2_diff > 0.0 { 20.0 * result.imd2_diff.log10() } else { -120.0 };
+            let imd2_sum_db = if result.imd2_sum > 0.0 { 20.0 * result.imd2_sum.log10() } else { -120.0 };
+            println!("    f2-f1 = {:.1} Hz at {:.1} dB", f2 - f1, imd2_diff_db);
+            println!("    f1+f2 = {:.1} Hz at {:.1} dB", f1 + f2, imd2_sum_db);
+
+            println!("\n  Third-order products:");
+            let imd3_low_db = if result.imd3_low > 0.0 { 20.0 * result.imd3_low.log10() } else { -120.0 };
+            let imd3_high_db = if result.imd3_high > 0.0 { 20.0 * result.imd3_high.log10() } else { -120.0 };
+            println!("    2f1-f2 = {:.1} Hz at {:.1} dB", 2.0 * f1 - f2, imd3_low_db);
+            println!("    2f2-f1 = {:.1} Hz at {:.1} dB", 2.0 * f2 - f1, imd3_high_db);
+
+            println!("\n  IMD ratio: {:.4}% ({:.1} dB)", result.imd_ratio * 100.0, result.imd_db);
+
+            // Write output JSON if requested
+            if let Some(output_path) = output {
+                let json = serde_json::json!({
+                    "freq1": f1,
+                    "freq2": f2,
+                    "amp1": result.amp1,
+                    "amp2": result.amp2,
+                    "imd2_diff": result.imd2_diff,
+                    "imd2_sum": result.imd2_sum,
+                    "imd3_low": result.imd3_low,
+                    "imd3_high": result.imd3_high,
+                    "imd_ratio": result.imd_ratio,
+                    "imd_db": result.imd_db,
+                    "products": {
+                        "f2_minus_f1": f2 - f1,
+                        "f1_plus_f2": f1 + f2,
+                        "2f1_minus_f2": 2.0 * f1 - f2,
+                        "2f2_minus_f1": 2.0 * f2 - f1,
+                    }
+                });
+
+                std::fs::write(&output_path, serde_json::to_string_pretty(&json)?)?;
+                println!("\nWrote IMD analysis to {}", output_path.display());
+            }
+        }
+
+        AnalyzeCommand::Cqt {
+            input,
+            min_freq,
+            max_freq,
+            bins_per_octave,
+            output,
+            chromagram,
+            peaks,
+        } => {
+            println!("Computing Constant-Q Transform...");
+            println!("  Input: {}", input.display());
+
+            let (samples, spec) = read_wav(&input)?;
+            let sample_rate = spec.sample_rate as f32;
+
+            println!(
+                "  {} samples, {} Hz, {:.2}s",
+                samples.len(),
+                spec.sample_rate,
+                samples.len() as f32 / sample_rate
+            );
+
+            // Use max_freq or default to Nyquist/2
+            let max_f = max_freq.unwrap_or((sample_rate / 2.0).min(8000.0));
+
+            println!("\n  Frequency range: {:.1} Hz to {:.1} Hz", min_freq, max_f);
+            println!("  Bins per octave: {}", bins_per_octave);
+
+            let cqt = ConstantQTransform::new(sample_rate, min_freq, max_f, bins_per_octave);
+            let result = cqt.analyze(&samples);
+
+            println!("\n  CQT bins: {}", result.magnitudes.len());
+
+            // Find peaks
+            let mut indexed: Vec<(usize, f32)> = result.magnitudes.iter().copied().enumerate().collect();
+            indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+
+            let magnitude_db = result.magnitude_db();
+            let midi_notes = result.midi_notes();
+
+            println!("\nTop {} frequency peaks:", peaks);
+            println!("  {:>10}  {:>8}  {:>8}  {:>8}", "Freq (Hz)", "MIDI", "Note", "Level (dB)");
+            println!("  {:>10}  {:>8}  {:>8}  {:>8}", "--------", "----", "----", "----------");
+
+            for (i, _) in indexed.iter().take(peaks) {
+                let freq = result.frequencies.get(*i).copied().unwrap_or(0.0);
+                let midi = midi_notes.get(*i).copied().unwrap_or(0.0);
+                let db = magnitude_db.get(*i).copied().unwrap_or(-120.0);
+                let note_name = midi_to_note_name(midi);
+                println!("  {:>10.1}  {:>8.1}  {:>8}  {:>8.1}", freq, midi, note_name, db);
+            }
+
+            // Peak frequency
+            if let Some(peak_freq) = result.peak_frequency() {
+                let peak_midi = 69.0 + 12.0 * (peak_freq / 440.0).log2();
+                println!("\n  Peak frequency: {:.1} Hz (MIDI {:.1}, {})",
+                    peak_freq, peak_midi, midi_to_note_name(peak_midi));
+            }
+
+            // Chromagram if requested
+            if chromagram {
+                let hop_size = cqt.num_bins().max(256);
+                let cqt_spec = CqtSpectrogram::from_signal(&samples, &cqt, hop_size);
+                let chroma = Chromagram::from_cqt_spectrogram(&cqt_spec, bins_per_octave);
+
+                println!("\nChromagram (pitch class distribution):");
+                let pitch_names = Chromagram::pitch_class_names();
+
+                // Compute average chroma across all frames
+                let mut avg_chroma = [0.0f32; 12];
+                for frame in &chroma.data {
+                    for (i, &val) in frame.iter().enumerate() {
+                        avg_chroma[i] += val;
+                    }
+                }
+                let num_frames = chroma.data.len().max(1) as f32;
+                for val in &mut avg_chroma {
+                    *val /= num_frames;
+                }
+
+                // Normalize to max
+                let max_chroma = avg_chroma.iter().copied().fold(0.0f32, f32::max);
+                if max_chroma > 0.0 {
+                    for val in &mut avg_chroma {
+                        *val /= max_chroma;
+                    }
+                }
+
+                for (i, &val) in avg_chroma.iter().enumerate() {
+                    let bar_len = (val * 30.0) as usize;
+                    let bar = "#".repeat(bar_len);
+                    println!("  {:>3}: {:.3} {}", pitch_names[i], val, bar);
+                }
+            }
+
+            // Write CSV if requested
+            if let Some(output_path) = output {
+                let mut csv = String::new();
+                csv.push_str("frequency_hz,magnitude,magnitude_db,midi_note\n");
+                for (i, &freq) in result.frequencies.iter().enumerate() {
+                    let mag = result.magnitudes.get(i).copied().unwrap_or(0.0);
+                    let db = magnitude_db.get(i).copied().unwrap_or(-120.0);
+                    let midi = midi_notes.get(i).copied().unwrap_or(0.0);
+                    csv.push_str(&format!("{:.2},{:.6},{:.2},{:.2}\n", freq, mag, db, midi));
+                }
+                std::fs::write(&output_path, csv)?;
+                println!("\nWrote CQT to {}", output_path.display());
+            }
+        }
     }
 
     Ok(())
+}
+
+/// Convert MIDI note number to note name (e.g., 69 -> "A4")
+fn midi_to_note_name(midi: f32) -> String {
+    let note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    let midi_rounded = midi.round() as i32;
+    if midi_rounded < 0 || midi_rounded > 127 {
+        return "---".to_string();
+    }
+    let note = (midi_rounded % 12) as usize;
+    let octave = (midi_rounded / 12) - 1;
+    format!("{}{}", note_names[note], octave)
 }
 
 /// Simple pseudo-random number generator (for surrogate shuffling)
