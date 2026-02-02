@@ -83,17 +83,23 @@ sonido-gui --sample-rate 96000
 
 ### Effect Chain Strip
 
-The chain strip shows all 9 effects in processing order:
+The chain strip shows all 15 effects in processing order:
 
 | Effect | Short Name | Description |
 |--------|------------|-------------|
 | Preamp | PRE | Clean gain stage |
 | Distortion | DIST | Waveshaping distortion |
 | Compressor | COMP | Dynamics compressor |
-| Chorus | CHO | Modulated delay chorus |
-| Delay | DLY | Tape-style feedback delay |
+| Gate | GATE | Noise gate |
+| Parametric EQ | EQ | 3-band parametric equalizer |
 | Filter | FLT | Resonant lowpass filter |
+| Wah | WAH | Auto-wah / manual wah |
+| Tremolo | TREM | Amplitude modulation |
+| Chorus | CHO | Modulated delay chorus |
+| Flanger | FLG | Classic flanger effect |
+| Phaser | PHAS | Multi-stage phaser |
 | MultiVibrato | VIB | 10-unit tape wow/flutter |
+| Delay | DLY | Tape-style feedback delay |
 | Tape | TAPE | Tape saturation |
 | Reverb | REV | Freeverb-style reverb |
 
@@ -168,6 +174,54 @@ When an effect is selected, its parameter panel appears below the chain. Each pa
 - **Pre-delay**: 0 to 100 ms
 - **Mix**: 0 to 1 wet/dry mix
 - **Type**: Room, Hall
+
+### Tremolo
+- **Rate**: 0.5 to 20 Hz LFO rate
+- **Depth**: 0 to 100% modulation depth
+- **Wave**: Sine, Triangle, Square, Sample & Hold
+
+### Flanger
+- **Rate**: 0.05 to 5 Hz LFO rate
+- **Depth**: 0 to 100% modulation depth
+- **Feedback**: 0 to 95% feedback amount
+- **Mix**: 0 to 100% wet/dry mix
+
+### Phaser
+- **Rate**: 0.05 to 5 Hz LFO rate
+- **Depth**: 0 to 100% modulation depth
+- **Feedback**: 0 to 95% feedback/resonance
+- **Mix**: 0 to 100% wet/dry mix
+- **Stages**: 2, 4, 6, 8, 10, or 12 allpass stages
+
+### Gate
+- **Threshold**: -80 to 0 dB open threshold
+- **Attack**: 0.1 to 50 ms attack time
+- **Release**: 10 to 1000 ms release time
+- **Hold**: 0 to 500 ms hold time
+
+### Wah
+- **Frequency**: 200 to 2000 Hz center frequency
+- **Resonance**: 1 to 10 filter Q
+- **Sensitivity**: 0 to 100% (auto-wah mode)
+- **Mode**: Auto (envelope follower), Manual
+
+### Parametric EQ
+Three independent bands with identical controls:
+
+**Low Band**
+- **Frequency**: 20 to 500 Hz
+- **Gain**: -12 to +12 dB
+- **Q**: 0.5 to 5.0
+
+**Mid Band**
+- **Frequency**: 200 to 5000 Hz
+- **Gain**: -12 to +12 dB
+- **Q**: 0.5 to 5.0
+
+**High Band**
+- **Frequency**: 1000 to 15000 Hz
+- **Gain**: -12 to +12 dB
+- **Q**: 0.5 to 5.0
 
 ## Preset Management
 
