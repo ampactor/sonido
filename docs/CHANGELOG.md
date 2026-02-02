@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Build Infrastructure
+
+- GitHub Actions CI workflow (`.github/workflows/ci.yml`)
+  - Multi-platform testing (Linux, macOS, Windows)
+  - `no_std` compatibility checks for core crates
+  - Clippy linting and rustfmt checking
+  - Cargo caching for faster builds
+
+- GitHub Actions release workflow (`.github/workflows/release.yml`)
+  - Triggered on version tags (`v*`)
+  - Builds for Linux x64, macOS x64, macOS ARM64, Windows x64
+  - Packages CLI and GUI binaries with factory presets
+  - Creates GitHub releases with artifacts
+
+#### CLI Audio Device UX
+
+- Device selection by index: `sonido realtime --input 0 --output 0`
+- Fuzzy device name matching: `sonido realtime --input "USB" --output "USB"`
+- Device list now shows indices for easy reference
+- Loopback device detection with `--include-virtual` flag
+- Platform-specific guidance for virtual audio setup (VB-Audio, BlackHole, PulseAudio)
+
+#### CLI Preset Management
+
+- `sonido presets export-factory <DIR>` - Export all factory presets as TOML files
+
+#### sonido-io
+
+- `find_device_fuzzy()` - Find devices by partial name match
+- `find_device_by_index()` - Find devices by numeric index
+
+### Changed
+
+- `sonido realtime` device options renamed from `--input-device`/`--output-device` to `-i/--input` and `-o/--output` (old names still work as aliases)
+
+---
+
 #### Phase 2: New Guitar Effects
 
 Six new effects expanding the modulation, dynamics, and filter categories:
