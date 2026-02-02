@@ -21,6 +21,7 @@ cpal.workspace = true
 sonido-core = { path = "../sonido-core", features = ["std"] }
 sonido-effects = { path = "../sonido-effects", features = ["std"] }
 sonido-io = { path = "../sonido-io" }
+sonido-config = { path = "../sonido-config", features = ["std"] }
 
 # Thread-safety
 crossbeam-channel = "0.5"

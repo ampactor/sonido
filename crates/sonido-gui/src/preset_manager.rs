@@ -1,413 +1,575 @@
 //! Preset management for saving and loading effect configurations.
+//!
+//! This module uses sonido_config::Preset for storage (TOML format) while
+//! keeping SharedParams for real-time atomic parameter access in the audio thread.
 
 use crate::audio_bridge::SharedParams;
-use serde::{Deserialize, Serialize};
-use std::fs;
+use sonido_config::{
+    EffectConfig, Preset,
+    paths::{user_presets_dir, ensure_user_presets_dir, list_user_presets},
+    factory_presets,
+};
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-/// A complete preset containing all effect parameters.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Preset {
-    pub name: String,
-    pub category: String,
+/// Convert SharedParams to a sonido_config::Preset.
+///
+/// Creates a preset that captures the current state of all parameters.
+pub fn params_to_preset(name: &str, description: Option<&str>, params: &Arc<SharedParams>) -> Preset {
+    let mut preset = Preset::new(name);
 
-    // Global
-    pub input_gain: f32,
-    pub master_volume: f32,
+    if let Some(desc) = description {
+        preset = preset.with_description(desc);
+    }
 
-    // Effect order (indices)
-    pub effect_order: Vec<usize>,
-
-    // Bypass states
-    pub preamp_bypass: bool,
-    pub distortion_bypass: bool,
-    pub compressor_bypass: bool,
-    pub chorus_bypass: bool,
-    pub delay_bypass: bool,
-    pub filter_bypass: bool,
-    pub multivibrato_bypass: bool,
-    pub tape_bypass: bool,
-    pub reverb_bypass: bool,
+    // Build effect chain from current parameters
+    // The GUI has a fixed set of effects, so we capture them all
 
     // Preamp
-    pub preamp_gain: f32,
+    preset = preset.with_effect(
+        EffectConfig::new("preamp")
+            .with_bypass(params.bypass.preamp.load(Ordering::Relaxed))
+            .with_param("gain", format!("{}", params.preamp_gain.get()))
+    );
 
     // Distortion
-    pub dist_drive: f32,
-    pub dist_tone: f32,
-    pub dist_level: f32,
-    pub dist_waveshape: u32,
+    preset = preset.with_effect(
+        EffectConfig::new("distortion")
+            .with_bypass(params.bypass.distortion.load(Ordering::Relaxed))
+            .with_param("drive", format!("{}", params.dist_drive.get()))
+            .with_param("tone", format!("{}", params.dist_tone.get()))
+            .with_param("level", format!("{}", params.dist_level.get()))
+            .with_param("waveshape", format!("{}", params.dist_waveshape.load(Ordering::Relaxed)))
+    );
 
     // Compressor
-    pub comp_threshold: f32,
-    pub comp_ratio: f32,
-    pub comp_attack: f32,
-    pub comp_release: f32,
-    pub comp_makeup: f32,
+    preset = preset.with_effect(
+        EffectConfig::new("compressor")
+            .with_bypass(params.bypass.compressor.load(Ordering::Relaxed))
+            .with_param("threshold", format!("{}", params.comp_threshold.get()))
+            .with_param("ratio", format!("{}", params.comp_ratio.get()))
+            .with_param("attack", format!("{}", params.comp_attack.get()))
+            .with_param("release", format!("{}", params.comp_release.get()))
+            .with_param("makeup", format!("{}", params.comp_makeup.get()))
+    );
 
     // Chorus
-    pub chorus_rate: f32,
-    pub chorus_depth: f32,
-    pub chorus_mix: f32,
+    preset = preset.with_effect(
+        EffectConfig::new("chorus")
+            .with_bypass(params.bypass.chorus.load(Ordering::Relaxed))
+            .with_param("rate", format!("{}", params.chorus_rate.get()))
+            .with_param("depth", format!("{}", params.chorus_depth.get()))
+            .with_param("mix", format!("{}", params.chorus_mix.get()))
+    );
 
     // Delay
-    pub delay_time: f32,
-    pub delay_feedback: f32,
-    pub delay_mix: f32,
+    preset = preset.with_effect(
+        EffectConfig::new("delay")
+            .with_bypass(params.bypass.delay.load(Ordering::Relaxed))
+            .with_param("time", format!("{}", params.delay_time.get()))
+            .with_param("feedback", format!("{}", params.delay_feedback.get()))
+            .with_param("mix", format!("{}", params.delay_mix.get()))
+    );
 
     // Filter
-    pub filter_cutoff: f32,
-    pub filter_resonance: f32,
+    preset = preset.with_effect(
+        EffectConfig::new("filter")
+            .with_bypass(params.bypass.filter.load(Ordering::Relaxed))
+            .with_param("cutoff", format!("{}", params.filter_cutoff.get()))
+            .with_param("resonance", format!("{}", params.filter_resonance.get()))
+    );
 
     // MultiVibrato
-    pub vibrato_depth: f32,
+    preset = preset.with_effect(
+        EffectConfig::new("multivibrato")
+            .with_bypass(params.bypass.multivibrato.load(Ordering::Relaxed))
+            .with_param("intensity", format!("{}", params.vibrato_depth.get()))
+    );
 
-    // Tape
-    pub tape_drive: f32,
-    pub tape_saturation: f32,
+    // Tape Saturation
+    preset = preset.with_effect(
+        EffectConfig::new("tape")
+            .with_bypass(params.bypass.tape.load(Ordering::Relaxed))
+            .with_param("drive", format!("{}", params.tape_drive.get()))
+            .with_param("warmth", format!("{}", params.tape_saturation.get()))
+    );
 
     // Reverb
-    pub reverb_room_size: f32,
-    pub reverb_decay: f32,
-    pub reverb_damping: f32,
-    pub reverb_predelay: f32,
-    pub reverb_mix: f32,
-    pub reverb_type: u32,
+    preset = preset.with_effect(
+        EffectConfig::new("reverb")
+            .with_bypass(params.bypass.reverb.load(Ordering::Relaxed))
+            .with_param("room_size", format!("{}", params.reverb_room_size.get()))
+            .with_param("decay", format!("{}", params.reverb_decay.get()))
+            .with_param("damping", format!("{}", params.reverb_damping.get()))
+            .with_param("predelay", format!("{}", params.reverb_predelay.get()))
+            .with_param("mix", format!("{}", params.reverb_mix.get()))
+    );
+
+    preset
 }
 
-impl Default for Preset {
-    fn default() -> Self {
-        Self {
-            name: "Init".to_string(),
-            category: "Default".to_string(),
-            effect_order: vec![0, 1, 2, 3, 4, 5, 6, 7, 8],
-            input_gain: 0.0,
-            master_volume: 0.0,
-            preamp_bypass: false,
-            distortion_bypass: true,
-            compressor_bypass: true,
-            chorus_bypass: true,
-            delay_bypass: true,
-            filter_bypass: true,
-            multivibrato_bypass: true,
-            tape_bypass: true,
-            reverb_bypass: true,
-            preamp_gain: 0.0,
-            dist_drive: 15.0,
-            dist_tone: 4000.0,
-            dist_level: -6.0,
-            dist_waveshape: 0,
-            comp_threshold: -20.0,
-            comp_ratio: 4.0,
-            comp_attack: 10.0,
-            comp_release: 100.0,
-            comp_makeup: 0.0,
-            chorus_rate: 1.0,
-            chorus_depth: 0.5,
-            chorus_mix: 0.5,
-            delay_time: 300.0,
-            delay_feedback: 0.4,
-            delay_mix: 0.5,
-            filter_cutoff: 5000.0,
-            filter_resonance: 0.7,
-            vibrato_depth: 0.5,
-            tape_drive: 6.0,
-            tape_saturation: 0.5,
-            reverb_room_size: 0.5,
-            reverb_decay: 0.5,
-            reverb_damping: 0.5,
-            reverb_predelay: 10.0,
-            reverb_mix: 0.3,
-            reverb_type: 0,
+/// Apply a sonido_config::Preset to SharedParams.
+///
+/// Updates all atomic parameters from the preset configuration.
+pub fn preset_to_params(preset: &Preset, params: &Arc<SharedParams>) {
+    for effect in &preset.effects {
+        match effect.effect_type.as_str() {
+            "preamp" => {
+                params.bypass.preamp.store(effect.bypassed, Ordering::Relaxed);
+                if let Some(v) = effect.parse_param("gain") {
+                    params.preamp_gain.set(v);
+                }
+            }
+            "distortion" => {
+                params.bypass.distortion.store(effect.bypassed, Ordering::Relaxed);
+                if let Some(v) = effect.parse_param("drive") {
+                    params.dist_drive.set(v);
+                }
+                if let Some(v) = effect.parse_param("tone") {
+                    params.dist_tone.set(v);
+                }
+                if let Some(v) = effect.parse_param("level") {
+                    params.dist_level.set(v);
+                }
+                if let Some(v) = effect.parse_param("waveshape") {
+                    params.dist_waveshape.store(v as u32, Ordering::Relaxed);
+                }
+            }
+            "compressor" => {
+                params.bypass.compressor.store(effect.bypassed, Ordering::Relaxed);
+                if let Some(v) = effect.parse_param("threshold") {
+                    params.comp_threshold.set(v);
+                }
+                if let Some(v) = effect.parse_param("ratio") {
+                    params.comp_ratio.set(v);
+                }
+                if let Some(v) = effect.parse_param("attack") {
+                    params.comp_attack.set(v);
+                }
+                if let Some(v) = effect.parse_param("release") {
+                    params.comp_release.set(v);
+                }
+                if let Some(v) = effect.parse_param("makeup") {
+                    params.comp_makeup.set(v);
+                }
+            }
+            "chorus" => {
+                params.bypass.chorus.store(effect.bypassed, Ordering::Relaxed);
+                if let Some(v) = effect.parse_param("rate") {
+                    params.chorus_rate.set(v);
+                }
+                if let Some(v) = effect.parse_param("depth") {
+                    params.chorus_depth.set(v);
+                }
+                if let Some(v) = effect.parse_param("mix") {
+                    params.chorus_mix.set(v);
+                }
+            }
+            "delay" => {
+                params.bypass.delay.store(effect.bypassed, Ordering::Relaxed);
+                if let Some(v) = effect.parse_param("time") {
+                    params.delay_time.set(v);
+                }
+                if let Some(v) = effect.parse_param("feedback") {
+                    params.delay_feedback.set(v);
+                }
+                if let Some(v) = effect.parse_param("mix") {
+                    params.delay_mix.set(v);
+                }
+            }
+            "filter" => {
+                params.bypass.filter.store(effect.bypassed, Ordering::Relaxed);
+                if let Some(v) = effect.parse_param("cutoff") {
+                    params.filter_cutoff.set(v);
+                }
+                if let Some(v) = effect.parse_param("resonance") {
+                    params.filter_resonance.set(v);
+                }
+            }
+            "multivibrato" => {
+                params.bypass.multivibrato.store(effect.bypassed, Ordering::Relaxed);
+                if let Some(v) = effect.parse_param("intensity") {
+                    params.vibrato_depth.set(v);
+                }
+            }
+            "tape" => {
+                params.bypass.tape.store(effect.bypassed, Ordering::Relaxed);
+                if let Some(v) = effect.parse_param("drive") {
+                    params.tape_drive.set(v);
+                }
+                if let Some(v) = effect.parse_param("warmth") {
+                    params.tape_saturation.set(v);
+                }
+            }
+            "reverb" => {
+                params.bypass.reverb.store(effect.bypassed, Ordering::Relaxed);
+                if let Some(v) = effect.parse_param("room_size") {
+                    params.reverb_room_size.set(v);
+                }
+                if let Some(v) = effect.parse_param("decay") {
+                    params.reverb_decay.set(v);
+                }
+                if let Some(v) = effect.parse_param("damping") {
+                    params.reverb_damping.set(v);
+                }
+                if let Some(v) = effect.parse_param("predelay") {
+                    params.reverb_predelay.set(v);
+                }
+                if let Some(v) = effect.parse_param("mix") {
+                    params.reverb_mix.set(v);
+                }
+            }
+            _ => {
+                // Unknown effect type, skip
+                log::warn!("Unknown effect type in preset: {}", effect.effect_type);
+            }
         }
     }
 }
 
-impl Preset {
-    /// Create preset from current parameters.
-    pub fn from_params(name: &str, category: &str, params: &Arc<SharedParams>) -> Self {
+/// Preset entry for the manager.
+#[derive(Debug, Clone)]
+pub struct PresetEntry {
+    /// The preset data.
+    pub preset: Preset,
+    /// Source: "factory", "user", or file path.
+    pub source: PresetSource,
+}
+
+/// Where a preset came from.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PresetSource {
+    /// Built-in factory preset.
+    Factory,
+    /// User preset loaded from disk.
+    User(PathBuf),
+    /// Unsaved preset (created but not yet saved).
+    Unsaved,
+}
+
+impl PresetEntry {
+    /// Create a factory preset entry.
+    pub fn factory(preset: Preset) -> Self {
         Self {
-            name: name.to_string(),
-            category: category.to_string(),
-            effect_order: vec![0, 1, 2, 3, 4, 5, 6, 7, 8], // TODO: Get from chain view
-            input_gain: params.input_gain.get(),
-            master_volume: params.master_volume.get(),
-            preamp_bypass: params.bypass.preamp.load(Ordering::Relaxed),
-            distortion_bypass: params.bypass.distortion.load(Ordering::Relaxed),
-            compressor_bypass: params.bypass.compressor.load(Ordering::Relaxed),
-            chorus_bypass: params.bypass.chorus.load(Ordering::Relaxed),
-            delay_bypass: params.bypass.delay.load(Ordering::Relaxed),
-            filter_bypass: params.bypass.filter.load(Ordering::Relaxed),
-            multivibrato_bypass: params.bypass.multivibrato.load(Ordering::Relaxed),
-            tape_bypass: params.bypass.tape.load(Ordering::Relaxed),
-            reverb_bypass: params.bypass.reverb.load(Ordering::Relaxed),
-            preamp_gain: params.preamp_gain.get(),
-            dist_drive: params.dist_drive.get(),
-            dist_tone: params.dist_tone.get(),
-            dist_level: params.dist_level.get(),
-            dist_waveshape: params.dist_waveshape.load(Ordering::Relaxed),
-            comp_threshold: params.comp_threshold.get(),
-            comp_ratio: params.comp_ratio.get(),
-            comp_attack: params.comp_attack.get(),
-            comp_release: params.comp_release.get(),
-            comp_makeup: params.comp_makeup.get(),
-            chorus_rate: params.chorus_rate.get(),
-            chorus_depth: params.chorus_depth.get(),
-            chorus_mix: params.chorus_mix.get(),
-            delay_time: params.delay_time.get(),
-            delay_feedback: params.delay_feedback.get(),
-            delay_mix: params.delay_mix.get(),
-            filter_cutoff: params.filter_cutoff.get(),
-            filter_resonance: params.filter_resonance.get(),
-            vibrato_depth: params.vibrato_depth.get(),
-            tape_drive: params.tape_drive.get(),
-            tape_saturation: params.tape_saturation.get(),
-            reverb_room_size: params.reverb_room_size.get(),
-            reverb_decay: params.reverb_decay.get(),
-            reverb_damping: params.reverb_damping.get(),
-            reverb_predelay: params.reverb_predelay.get(),
-            reverb_mix: params.reverb_mix.get(),
-            reverb_type: params.reverb_type.load(Ordering::Relaxed),
+            preset,
+            source: PresetSource::Factory,
         }
     }
 
-    /// Apply preset to parameters.
-    pub fn apply_to_params(&self, params: &Arc<SharedParams>) {
-        params.input_gain.set(self.input_gain);
-        params.master_volume.set(self.master_volume);
-        params.bypass.preamp.store(self.preamp_bypass, Ordering::Relaxed);
-        params.bypass.distortion.store(self.distortion_bypass, Ordering::Relaxed);
-        params.bypass.compressor.store(self.compressor_bypass, Ordering::Relaxed);
-        params.bypass.chorus.store(self.chorus_bypass, Ordering::Relaxed);
-        params.bypass.delay.store(self.delay_bypass, Ordering::Relaxed);
-        params.bypass.filter.store(self.filter_bypass, Ordering::Relaxed);
-        params.bypass.multivibrato.store(self.multivibrato_bypass, Ordering::Relaxed);
-        params.bypass.tape.store(self.tape_bypass, Ordering::Relaxed);
-        params.bypass.reverb.store(self.reverb_bypass, Ordering::Relaxed);
-        params.preamp_gain.set(self.preamp_gain);
-        params.dist_drive.set(self.dist_drive);
-        params.dist_tone.set(self.dist_tone);
-        params.dist_level.set(self.dist_level);
-        params.dist_waveshape.store(self.dist_waveshape, Ordering::Relaxed);
-        params.comp_threshold.set(self.comp_threshold);
-        params.comp_ratio.set(self.comp_ratio);
-        params.comp_attack.set(self.comp_attack);
-        params.comp_release.set(self.comp_release);
-        params.comp_makeup.set(self.comp_makeup);
-        params.chorus_rate.set(self.chorus_rate);
-        params.chorus_depth.set(self.chorus_depth);
-        params.chorus_mix.set(self.chorus_mix);
-        params.delay_time.set(self.delay_time);
-        params.delay_feedback.set(self.delay_feedback);
-        params.delay_mix.set(self.delay_mix);
-        params.filter_cutoff.set(self.filter_cutoff);
-        params.filter_resonance.set(self.filter_resonance);
-        params.vibrato_depth.set(self.vibrato_depth);
-        params.tape_drive.set(self.tape_drive);
-        params.tape_saturation.set(self.tape_saturation);
-        params.reverb_room_size.set(self.reverb_room_size);
-        params.reverb_decay.set(self.reverb_decay);
-        params.reverb_damping.set(self.reverb_damping);
-        params.reverb_predelay.set(self.reverb_predelay);
-        params.reverb_mix.set(self.reverb_mix);
-        params.reverb_type.store(self.reverb_type, Ordering::Relaxed);
+    /// Create a user preset entry.
+    pub fn user(preset: Preset, path: PathBuf) -> Self {
+        Self {
+            preset,
+            source: PresetSource::User(path),
+        }
+    }
+
+    /// Create an unsaved preset entry.
+    pub fn unsaved(preset: Preset) -> Self {
+        Self {
+            preset,
+            source: PresetSource::Unsaved,
+        }
+    }
+
+    /// Check if this is a factory preset.
+    pub fn is_factory(&self) -> bool {
+        matches!(self.source, PresetSource::Factory)
+    }
+
+    /// Check if this is a user preset.
+    pub fn is_user(&self) -> bool {
+        matches!(self.source, PresetSource::User(_))
+    }
+
+    /// Get the file path if this is a user preset.
+    pub fn path(&self) -> Option<&PathBuf> {
+        match &self.source {
+            PresetSource::User(p) => Some(p),
+            _ => None,
+        }
     }
 }
 
 /// Manager for loading and saving presets.
+///
+/// Uses sonido_config::Preset for storage (TOML format) while maintaining
+/// compatibility with the GUI's SharedParams for real-time parameter access.
 pub struct PresetManager {
-    presets: Vec<Preset>,
+    /// All available presets (factory + user).
+    presets: Vec<PresetEntry>,
+    /// Index of the currently selected preset.
     current_preset: usize,
-    presets_dir: PathBuf,
+    /// Whether the current preset has been modified.
     modified: bool,
 }
 
 impl PresetManager {
     /// Create a new preset manager.
+    ///
+    /// Loads factory presets and any user presets from the user presets directory.
     pub fn new() -> Self {
-        let presets_dir = Self::get_presets_dir();
-        let _ = fs::create_dir_all(&presets_dir);
-
         let mut manager = Self {
             presets: Vec::new(),
             current_preset: 0,
-            presets_dir,
             modified: false,
         };
 
         manager.load_factory_presets();
         manager.load_user_presets();
 
+        // Ensure we have at least one preset
         if manager.presets.is_empty() {
-            manager.presets.push(Preset::default());
+            let init = Preset::new("Init")
+                .with_description("Clean signal path");
+            manager.presets.push(PresetEntry::unsaved(init));
         }
 
         manager
     }
 
-    /// Get presets directory path.
-    fn get_presets_dir() -> PathBuf {
-        dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("sonido")
-            .join("presets")
-    }
-
-    /// Load factory presets.
+    /// Load factory presets from sonido_config.
     fn load_factory_presets(&mut self) {
-        // Clean preset
-        self.presets.push(Preset::default());
-
-        // Crunch preset
-        let mut crunch = Preset::default();
-        crunch.name = "Crunch".to_string();
-        crunch.category = "Factory".to_string();
-        crunch.distortion_bypass = false;
-        crunch.dist_drive = 12.0;
-        crunch.dist_tone = 5000.0;
-        crunch.dist_level = -3.0;
-        self.presets.push(crunch);
-
-        // High Gain preset
-        let mut high_gain = Preset::default();
-        high_gain.name = "High Gain".to_string();
-        high_gain.category = "Factory".to_string();
-        high_gain.distortion_bypass = false;
-        high_gain.compressor_bypass = false;
-        high_gain.dist_drive = 30.0;
-        high_gain.dist_tone = 4500.0;
-        high_gain.dist_level = -6.0;
-        high_gain.comp_threshold = -15.0;
-        high_gain.comp_ratio = 6.0;
-        self.presets.push(high_gain);
-
-        // Ambient preset
-        let mut ambient = Preset::default();
-        ambient.name = "Ambient".to_string();
-        ambient.category = "Factory".to_string();
-        ambient.delay_bypass = false;
-        ambient.reverb_bypass = false;
-        ambient.chorus_bypass = false;
-        ambient.delay_time = 500.0;
-        ambient.delay_feedback = 0.5;
-        ambient.delay_mix = 0.4;
-        ambient.reverb_room_size = 0.8;
-        ambient.reverb_decay = 0.7;
-        ambient.reverb_mix = 0.4;
-        ambient.chorus_depth = 0.3;
-        ambient.chorus_rate = 0.5;
-        ambient.chorus_mix = 0.3;
-        self.presets.push(ambient);
-
-        // Tape Warmth preset
-        let mut tape_warmth = Preset::default();
-        tape_warmth.name = "Tape Warmth".to_string();
-        tape_warmth.category = "Factory".to_string();
-        tape_warmth.tape_bypass = false;
-        tape_warmth.tape_drive = 12.0;
-        tape_warmth.tape_saturation = 0.6;
-        self.presets.push(tape_warmth);
+        for preset in factory_presets() {
+            self.presets.push(PresetEntry::factory(preset));
+        }
     }
 
-    /// Load user presets from disk.
+    /// Load user presets from the user presets directory.
     fn load_user_presets(&mut self) {
-        if let Ok(entries) = fs::read_dir(&self.presets_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().is_some_and(|ext| ext == "json") {
-                    if let Ok(content) = fs::read_to_string(&path) {
-                        if let Ok(preset) = serde_json::from_str::<Preset>(&content) {
-                            self.presets.push(preset);
-                        }
-                    }
+        for path in list_user_presets() {
+            match Preset::load(&path) {
+                Ok(preset) => {
+                    self.presets.push(PresetEntry::user(preset, path));
+                }
+                Err(e) => {
+                    log::warn!("Failed to load preset {:?}: {}", path, e);
                 }
             }
         }
     }
 
     /// Get all presets.
-    pub fn presets(&self) -> &[Preset] {
+    pub fn presets(&self) -> &[PresetEntry] {
         &self.presets
     }
 
-    /// Get current preset index.
+    /// Get the current preset index.
     pub fn current_preset(&self) -> usize {
         self.current_preset
     }
 
-    /// Get current preset.
-    pub fn current(&self) -> Option<&Preset> {
+    /// Get the current preset.
+    pub fn current(&self) -> Option<&PresetEntry> {
         self.presets.get(self.current_preset)
     }
 
-    /// Select a preset by index.
+    /// Select a preset by index and apply it to the parameters.
     pub fn select(&mut self, index: usize, params: &Arc<SharedParams>) {
         if index < self.presets.len() {
             self.current_preset = index;
-            self.presets[index].apply_to_params(params);
+            preset_to_params(&self.presets[index].preset, params);
             self.modified = false;
         }
     }
 
-    /// Mark current preset as modified.
+    /// Mark the current preset as modified.
     pub fn mark_modified(&mut self) {
         self.modified = true;
     }
 
-    /// Check if current preset is modified.
+    /// Check if the current preset has been modified.
     pub fn is_modified(&self) -> bool {
         self.modified
     }
 
-    /// Save current settings as a new preset.
-    pub fn save_as(&mut self, name: &str, category: &str, params: &Arc<SharedParams>) -> Result<(), String> {
-        let preset = Preset::from_params(name, category, params);
+    /// Save the current parameters as a new preset.
+    ///
+    /// The preset is saved to the user presets directory as a TOML file.
+    pub fn save_as(
+        &mut self,
+        name: &str,
+        description: Option<&str>,
+        params: &Arc<SharedParams>,
+    ) -> Result<(), String> {
+        // Create the preset from current parameters
+        let preset = params_to_preset(name, description, params);
+
+        // Ensure the presets directory exists
+        ensure_user_presets_dir().map_err(|e| format!("Failed to create presets directory: {}", e))?;
+
+        // Generate filename from name
+        let filename = format!("{}.toml", name.to_lowercase().replace(' ', "_"));
+        let path = user_presets_dir().join(&filename);
 
         // Save to file
-        let filename = format!("{}.json", name.replace(' ', "_").to_lowercase());
-        let path = self.presets_dir.join(&filename);
+        preset.save(&path).map_err(|e| format!("Failed to save preset: {}", e))?;
 
-        let json = serde_json::to_string_pretty(&preset)
-            .map_err(|e| format!("Failed to serialize preset: {}", e))?;
-
-        fs::write(&path, json).map_err(|e| format!("Failed to write preset file: {}", e))?;
-
-        // Add to list
-        self.presets.push(preset);
+        // Add to our list
+        self.presets.push(PresetEntry::user(preset, path));
         self.current_preset = self.presets.len() - 1;
         self.modified = false;
 
         Ok(())
     }
 
-    /// Save current preset (overwrite).
+    /// Overwrite the current user preset with updated parameters.
+    ///
+    /// Only works for user presets, not factory presets.
     pub fn save_current(&mut self, params: &Arc<SharedParams>) -> Result<(), String> {
-        let preset = self.presets.get(self.current_preset).ok_or("No preset selected")?;
-        let name = preset.name.clone();
-        let category = preset.category.clone();
+        let entry = self.presets.get(self.current_preset)
+            .ok_or_else(|| "No preset selected".to_string())?;
 
-        let updated = Preset::from_params(&name, &category, params);
+        let path = match &entry.source {
+            PresetSource::User(p) => p.clone(),
+            PresetSource::Factory => {
+                return Err("Cannot overwrite factory preset. Use 'Save As' instead.".to_string());
+            }
+            PresetSource::Unsaved => {
+                return Err("Preset has not been saved yet. Use 'Save As'.".to_string());
+            }
+        };
+
+        // Create updated preset
+        let preset = params_to_preset(
+            &entry.preset.name,
+            entry.preset.description.as_deref(),
+            params,
+        );
 
         // Save to file
-        let filename = format!("{}.json", name.replace(' ', "_").to_lowercase());
-        let path = self.presets_dir.join(&filename);
+        preset.save(&path).map_err(|e| format!("Failed to save preset: {}", e))?;
 
-        let json = serde_json::to_string_pretty(&updated)
-            .map_err(|e| format!("Failed to serialize preset: {}", e))?;
-
-        fs::write(&path, json).map_err(|e| format!("Failed to write preset file: {}", e))?;
-
-        self.presets[self.current_preset] = updated;
+        // Update our entry
+        self.presets[self.current_preset] = PresetEntry::user(preset, path);
         self.modified = false;
 
         Ok(())
+    }
+
+    /// Delete a user preset.
+    ///
+    /// Only works for user presets, not factory presets.
+    pub fn delete(&mut self, index: usize) -> Result<(), String> {
+        if index >= self.presets.len() {
+            return Err("Invalid preset index".to_string());
+        }
+
+        let entry = &self.presets[index];
+        let path = match &entry.source {
+            PresetSource::User(p) => p.clone(),
+            PresetSource::Factory => {
+                return Err("Cannot delete factory preset".to_string());
+            }
+            PresetSource::Unsaved => {
+                // Just remove from list
+                self.presets.remove(index);
+                if self.current_preset >= self.presets.len() && self.current_preset > 0 {
+                    self.current_preset -= 1;
+                }
+                return Ok(());
+            }
+        };
+
+        // Delete the file
+        std::fs::remove_file(&path).map_err(|e| format!("Failed to delete preset file: {}", e))?;
+
+        // Remove from list
+        self.presets.remove(index);
+        if self.current_preset >= self.presets.len() && self.current_preset > 0 {
+            self.current_preset -= 1;
+        }
+
+        Ok(())
+    }
+
+    /// Reload all presets from disk.
+    pub fn reload(&mut self) {
+        let current_name = self.current()
+            .map(|e| e.preset.name.clone());
+
+        self.presets.clear();
+        self.load_factory_presets();
+        self.load_user_presets();
+
+        // Try to restore selection by name
+        if let Some(name) = current_name {
+            if let Some(idx) = self.presets.iter().position(|e| e.preset.name == name) {
+                self.current_preset = idx;
+            } else {
+                self.current_preset = 0;
+            }
+        } else {
+            self.current_preset = 0;
+        }
+
+        self.modified = false;
+    }
+
+    /// Get the user presets directory path.
+    pub fn presets_dir() -> PathBuf {
+        user_presets_dir()
     }
 }
 
 impl Default for PresetManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_preset_manager_new() {
+        let manager = PresetManager::new();
+        // Should have factory presets loaded
+        assert!(!manager.presets.is_empty());
+        // First preset should be factory
+        assert!(manager.presets[0].is_factory());
+    }
+
+    #[test]
+    fn test_params_to_preset_roundtrip() {
+        let params = Arc::new(SharedParams::default());
+
+        // Set some test values
+        params.dist_drive.set(20.0);
+        params.reverb_mix.set(0.7);
+        params.bypass.chorus.store(true, Ordering::Relaxed);
+
+        // Convert to preset
+        let preset = params_to_preset("Test", Some("Test preset"), &params);
+
+        // Create fresh params and apply preset
+        let params2 = Arc::new(SharedParams::default());
+        preset_to_params(&preset, &params2);
+
+        // Verify values match
+        assert!((params2.dist_drive.get() - 20.0).abs() < 0.01);
+        assert!((params2.reverb_mix.get() - 0.7).abs() < 0.01);
+        assert!(params2.bypass.chorus.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn test_preset_entry_sources() {
+        let preset = Preset::new("Test");
+
+        let factory = PresetEntry::factory(preset.clone());
+        assert!(factory.is_factory());
+        assert!(!factory.is_user());
+        assert!(factory.path().is_none());
+
+        let user = PresetEntry::user(preset.clone(), PathBuf::from("/test.toml"));
+        assert!(!user.is_factory());
+        assert!(user.is_user());
+        assert!(user.path().is_some());
+
+        let unsaved = PresetEntry::unsaved(preset);
+        assert!(!unsaved.is_factory());
+        assert!(!unsaved.is_user());
     }
 }

@@ -58,7 +58,7 @@ pub struct SonidoApp {
     // Preset dialog
     show_save_dialog: bool,
     new_preset_name: String,
-    new_preset_category: String,
+    new_preset_description: String,
 }
 
 impl SonidoApp {
@@ -86,15 +86,15 @@ impl SonidoApp {
             audio_error: None,
             show_save_dialog: false,
             new_preset_name: String::new(),
-            new_preset_category: "User".to_string(),
+            new_preset_description: "User".to_string(),
         };
 
         // Apply theme
         app.theme.apply(&cc.egui_ctx);
 
-        // Load initial preset
-        if let Some(preset) = app.preset_manager.current() {
-            preset.apply_to_params(&app.audio_bridge.params);
+        // Load initial preset - select first preset which applies it to params
+        if !app.preset_manager.presets().is_empty() {
+            app.preset_manager.select(0, &app.audio_bridge.params);
         }
 
         // Start audio
@@ -157,7 +157,7 @@ impl SonidoApp {
             let current_name = self
                 .preset_manager
                 .current()
-                .map(|p| p.name.as_str())
+                .map(|p| p.preset.name.as_str())
                 .unwrap_or("Init");
             let display_name = if self.preset_manager.is_modified() {
                 format!("{}*", current_name)
@@ -171,7 +171,7 @@ impl SonidoApp {
                 .presets()
                 .iter()
                 .enumerate()
-                .map(|(i, p)| (i, p.name.clone()))
+                .map(|(i, p)| (i, p.preset.name.clone()))
                 .collect();
             let current_idx = self.preset_manager.current_preset();
 
@@ -197,7 +197,7 @@ impl SonidoApp {
                 self.new_preset_name = self
                     .preset_manager
                     .current()
-                    .map(|p| p.name.clone())
+                    .map(|p| p.preset.name.clone())
                     .unwrap_or_default();
             }
 
@@ -380,8 +380,8 @@ impl SonidoApp {
                 });
 
                 ui.horizontal(|ui| {
-                    ui.label("Category:");
-                    ui.text_edit_singleline(&mut self.new_preset_category);
+                    ui.label("Description:");
+                    ui.text_edit_singleline(&mut self.new_preset_description);
                 });
 
                 ui.add_space(8.0);
@@ -393,9 +393,14 @@ impl SonidoApp {
 
                     if ui.button("Save").clicked() {
                         if !self.new_preset_name.is_empty() {
+                            let description = if self.new_preset_description.is_empty() {
+                                None
+                            } else {
+                                Some(self.new_preset_description.as_str())
+                            };
                             if let Err(e) = self.preset_manager.save_as(
                                 &self.new_preset_name,
-                                &self.new_preset_category,
+                                description,
                                 &self.audio_bridge.params,
                             ) {
                                 log::error!("Failed to save preset: {}", e);
