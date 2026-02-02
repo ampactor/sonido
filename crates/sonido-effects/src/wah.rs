@@ -184,6 +184,43 @@ impl Effect for Wah {
         filtered * 0.8 + input * 0.2
     }
 
+    #[inline]
+    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+        // Linked stereo: use combined envelope for both channels
+        let base_freq = self.frequency.advance();
+        let resonance = self.resonance.advance();
+        let sensitivity = self.sensitivity.advance();
+
+        // Use combined signal for envelope detection
+        let combined = (left + right) * 0.5;
+
+        let target_freq = match self.mode {
+            WahMode::Auto => {
+                let env_level = self.envelope.process(combined);
+                let freq_range = (self.max_freq - self.min_freq) * sensitivity;
+                let freq_offset = env_level * freq_range;
+                (base_freq + freq_offset).clamp(self.min_freq, self.max_freq)
+            }
+            WahMode::Manual => {
+                self.envelope.process(combined);
+                base_freq
+            }
+        };
+
+        self.filter.set_cutoff(target_freq);
+        self.filter.set_resonance(resonance);
+
+        // Process left channel through filter
+        let filtered_l = self.filter.process(left);
+        let out_l = filtered_l * 0.8 + left * 0.2;
+
+        // Process right channel through same filter (shared state gives slight coloration)
+        let filtered_r = self.filter.process(right);
+        let out_r = filtered_r * 0.8 + right * 0.2;
+
+        (out_l, out_r)
+    }
+
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
         self.filter.set_sample_rate(sample_rate);

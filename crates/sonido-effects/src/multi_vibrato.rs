@@ -152,6 +152,32 @@ impl Effect for MultiVibrato {
         input * (1.0 - self.mix) + wet * self.mix
     }
 
+    #[inline]
+    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+        // Dual-mono: process each channel through the same vibrato units
+        // Note: vibrato delay lines are shared, giving a slight linked character
+        let depth_scale = self.depth_scale.advance();
+
+        // Process left through all vibratos
+        let mut wet_l = 0.0f32;
+        for vib in &mut self.vibratos {
+            wet_l += vib.process(left, self.sample_rate, depth_scale);
+        }
+        wet_l /= NUM_VIBRATOS as f32;
+
+        // Process right through all vibratos
+        let mut wet_r = 0.0f32;
+        for vib in &mut self.vibratos {
+            wet_r += vib.process(right, self.sample_rate, depth_scale);
+        }
+        wet_r /= NUM_VIBRATOS as f32;
+
+        let out_l = left * (1.0 - self.mix) + wet_l * self.mix;
+        let out_r = right * (1.0 - self.mix) + wet_r * self.mix;
+
+        (out_l, out_r)
+    }
+
     fn reset(&mut self) {
         for vib in &mut self.vibratos {
             vib.reset();

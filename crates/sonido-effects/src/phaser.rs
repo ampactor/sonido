@@ -47,10 +47,14 @@ const MAX_STAGES: usize = 12;
 /// ```
 #[derive(Debug, Clone)]
 pub struct Phaser {
-    /// Allpass filter stages
+    /// Allpass filter stages (left channel)
     allpass: [FirstOrderAllpass; MAX_STAGES],
-    /// LFO for modulation
+    /// Allpass filter stages (right channel for stereo)
+    allpass_r: [FirstOrderAllpass; MAX_STAGES],
+    /// LFO for modulation (left channel)
     lfo: Lfo,
+    /// LFO for modulation (right channel, phase offset)
+    lfo_r: Lfo,
     /// LFO rate parameter
     rate: SmoothedParam,
     /// Modulation depth parameter
@@ -59,12 +63,16 @@ pub struct Phaser {
     feedback: SmoothedParam,
     /// Wet/dry mix parameter
     mix: SmoothedParam,
+    /// Stereo spread (LFO phase offset 0-0.5, where 0.5 = 180 degrees)
+    stereo_spread: f32,
     /// Number of active stages (2-12)
     stages: usize,
     /// Sample rate
     sample_rate: f32,
-    /// Feedback sample for resonance
+    /// Feedback sample for resonance (left)
     feedback_sample: f32,
+    /// Feedback sample for resonance (right)
+    feedback_sample_r: f32,
     /// Minimum center frequency (Hz)
     min_freq: f32,
     /// Maximum center frequency (Hz)
@@ -130,19 +138,36 @@ impl Phaser {
 
     /// Create a new phaser effect.
     pub fn new(sample_rate: f32) -> Self {
+        let mut lfo_r = Lfo::new(sample_rate, 0.3);
+        lfo_r.set_phase(0.25); // 90 degree offset for stereo spread
+
         Self {
             allpass: [FirstOrderAllpass::new(); MAX_STAGES],
+            allpass_r: [FirstOrderAllpass::new(); MAX_STAGES],
             lfo: Lfo::new(sample_rate, 0.3),
+            lfo_r,
             rate: SmoothedParam::with_config(0.3, sample_rate, 10.0),
             depth: SmoothedParam::with_config(0.5, sample_rate, 10.0),
             feedback: SmoothedParam::with_config(0.5, sample_rate, 10.0),
             mix: SmoothedParam::with_config(0.5, sample_rate, 10.0),
+            stereo_spread: 0.25, // 90 degree default spread
             stages: 6,
             sample_rate,
             feedback_sample: 0.0,
+            feedback_sample_r: 0.0,
             min_freq: Self::MIN_FREQ,
             max_freq: Self::MAX_FREQ,
         }
+    }
+
+    /// Set stereo spread (0-0.5, where 0.5 = 180 degree phase offset).
+    pub fn set_stereo_spread(&mut self, spread: f32) {
+        self.stereo_spread = spread.clamp(0.0, 0.5);
+    }
+
+    /// Get current stereo spread.
+    pub fn stereo_spread(&self) -> f32 {
+        self.stereo_spread
     }
 
     /// Set LFO rate in Hz (0.05-5 Hz).
@@ -239,10 +264,67 @@ impl Effect for Phaser {
         input * (1.0 - mix) + wet * mix
     }
 
+    #[inline]
+    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+        // True stereo: offset LFO phase between channels for stereo spread
+        let rate = self.rate.advance();
+        let depth = self.depth.advance();
+        let feedback = self.feedback.advance();
+        let mix = self.mix.advance();
+
+        // Update LFO frequencies
+        self.lfo.set_frequency(rate);
+        self.lfo_r.set_frequency(rate);
+
+        // Maintain phase offset for right channel
+        // Get LFO values
+        let lfo_l = self.lfo.advance_unipolar();
+        let lfo_r = self.lfo_r.advance_unipolar();
+
+        let freq_ratio = self.max_freq / self.min_freq;
+
+        // Calculate center frequencies for each channel
+        let center_freq_l = self.min_freq * libm::powf(freq_ratio, lfo_l * depth);
+        let center_freq_r = self.min_freq * libm::powf(freq_ratio, lfo_r * depth);
+
+        // Update allpass frequencies for left channel
+        for i in 0..self.stages {
+            let stage_offset = 1.0 + (i as f32 * 0.1);
+            self.allpass[i].set_frequency(center_freq_l * stage_offset, self.sample_rate);
+            self.allpass_r[i].set_frequency(center_freq_r * stage_offset, self.sample_rate);
+        }
+
+        // Process left channel
+        let input_l = left + self.feedback_sample * feedback;
+        let mut wet_l = input_l;
+        for i in 0..self.stages {
+            wet_l = self.allpass[i].process(wet_l);
+        }
+        self.feedback_sample = wet_l;
+
+        // Process right channel
+        let input_r = right + self.feedback_sample_r * feedback;
+        let mut wet_r = input_r;
+        for i in 0..self.stages {
+            wet_r = self.allpass_r[i].process(wet_r);
+        }
+        self.feedback_sample_r = wet_r;
+
+        let out_l = left * (1.0 - mix) + wet_l * mix;
+        let out_r = right * (1.0 - mix) + wet_r * mix;
+
+        (out_l, out_r)
+    }
+
+    fn is_true_stereo(&self) -> bool {
+        true
+    }
+
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
 
         self.lfo.set_sample_rate(sample_rate);
+        self.lfo_r.set_sample_rate(sample_rate);
         self.rate.set_sample_rate(sample_rate);
         self.depth.set_sample_rate(sample_rate);
         self.feedback.set_sample_rate(sample_rate);
@@ -252,9 +334,14 @@ impl Effect for Phaser {
     fn reset(&mut self) {
         for i in 0..MAX_STAGES {
             self.allpass[i].clear();
+            self.allpass_r[i].clear();
         }
         self.lfo.reset();
+        self.lfo_r.reset();
+        // Restore stereo spread phase offset
+        self.lfo_r.set_phase(self.stereo_spread);
         self.feedback_sample = 0.0;
+        self.feedback_sample_r = 0.0;
     }
 }
 

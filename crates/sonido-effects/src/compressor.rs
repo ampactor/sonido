@@ -157,6 +157,21 @@ impl Effect for Compressor {
         input * gain_linear * makeup
     }
 
+    #[inline]
+    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+        // Linked stereo: detect envelope from both channels (sum), apply same gain
+        // This prevents image shifting that would occur with independent compression
+        let sum = (left + right) * 0.5;
+        let envelope = self.envelope_follower.process(sum);
+        let envelope_db = linear_to_db(envelope);
+        let gain_reduction_db = self.gain_computer.compute_gain_db(envelope_db);
+        let gain_linear = db_to_linear(gain_reduction_db);
+        let makeup = self.makeup_gain.advance();
+
+        let gain = gain_linear * makeup;
+        (left * gain, right * gain)
+    }
+
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
         self.envelope_follower.set_sample_rate(sample_rate);

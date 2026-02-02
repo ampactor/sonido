@@ -35,7 +35,9 @@ use libm::ceilf;
 #[derive(Debug, Clone)]
 pub struct Flanger {
     delay: InterpolatedDelay,
+    delay_r: InterpolatedDelay,  // Right channel delay for stereo
     lfo: Lfo,
+    lfo_r: Lfo,  // Right channel LFO with phase offset
     rate: SmoothedParam,
     depth: SmoothedParam,
     feedback: SmoothedParam,
@@ -45,8 +47,12 @@ pub struct Flanger {
     base_delay_samples: f32,
     /// Maximum modulation depth in samples (5ms)
     max_mod_samples: f32,
-    /// Feedback sample for regeneration
+    /// Feedback sample for regeneration (left)
     feedback_sample: f32,
+    /// Feedback sample for regeneration (right)
+    feedback_sample_r: f32,
+    /// Stereo spread (LFO phase offset 0-0.5)
+    stereo_spread: f32,
 }
 
 impl Flanger {
@@ -66,9 +72,14 @@ impl Flanger {
         let base_delay_samples = (Self::BASE_DELAY_MS / 1000.0) * sample_rate;
         let max_mod_samples = (Self::MAX_MOD_MS / 1000.0) * sample_rate;
 
+        let mut lfo_r = Lfo::new(sample_rate, 0.5);
+        lfo_r.set_phase(0.25); // 90 degree offset
+
         Self {
             delay: InterpolatedDelay::new(max_delay_samples),
+            delay_r: InterpolatedDelay::new(max_delay_samples),
             lfo: Lfo::new(sample_rate, 0.5),
+            lfo_r,
             rate: SmoothedParam::with_config(0.5, sample_rate, 10.0),
             depth: SmoothedParam::with_config(0.5, sample_rate, 10.0),
             feedback: SmoothedParam::with_config(0.5, sample_rate, 10.0),
@@ -77,6 +88,8 @@ impl Flanger {
             base_delay_samples,
             max_mod_samples,
             feedback_sample: 0.0,
+            feedback_sample_r: 0.0,
+            stereo_spread: 0.25,
         }
     }
 
@@ -157,6 +170,55 @@ impl Effect for Flanger {
         input * (1.0 - mix) + delayed * mix
     }
 
+    #[inline]
+    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+        // True stereo: offset LFO phase between channels for stereo spread
+        let rate = self.rate.advance();
+        let depth = self.depth.advance();
+        let feedback = self.feedback.advance();
+        let mix = self.mix.advance();
+
+        // Update LFO frequencies
+        self.lfo.set_frequency(rate);
+        self.lfo_r.set_frequency(rate);
+
+        // Get LFO values (with phase offset for right channel)
+        let lfo_l = self.lfo.advance_unipolar();
+        let lfo_r = self.lfo_r.advance_unipolar();
+
+        let min_delay = (Self::MIN_DELAY_MS / 1000.0) * self.sample_rate;
+
+        // Calculate delay times for each channel
+        let mod_l = (lfo_l * 2.0 - 1.0) * depth * self.max_mod_samples;
+        let mod_r = (lfo_r * 2.0 - 1.0) * depth * self.max_mod_samples;
+        let delay_l = (self.base_delay_samples + mod_l).max(min_delay);
+        let delay_r = (self.base_delay_samples + mod_r).max(min_delay);
+
+        // Read from delay lines
+        let delayed_l = self.delay.read(delay_l);
+        let delayed_r = self.delay_r.read(delay_r);
+
+        // Write input + feedback to delay lines
+        let input_l = left + self.feedback_sample * feedback;
+        let input_r = right + self.feedback_sample_r * feedback;
+        self.delay.write(input_l);
+        self.delay_r.write(input_r);
+
+        // Store for next iteration
+        self.feedback_sample = delayed_l;
+        self.feedback_sample_r = delayed_r;
+
+        // Mix dry and wet signals
+        let out_l = left * (1.0 - mix) + delayed_l * mix;
+        let out_r = right * (1.0 - mix) + delayed_r * mix;
+
+        (out_l, out_r)
+    }
+
+    fn is_true_stereo(&self) -> bool {
+        true
+    }
+
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
 
@@ -164,6 +226,7 @@ impl Effect for Flanger {
         self.max_mod_samples = (Self::MAX_MOD_MS / 1000.0) * sample_rate;
 
         self.lfo.set_sample_rate(sample_rate);
+        self.lfo_r.set_sample_rate(sample_rate);
         self.rate.set_sample_rate(sample_rate);
         self.depth.set_sample_rate(sample_rate);
         self.feedback.set_sample_rate(sample_rate);
@@ -172,8 +235,12 @@ impl Effect for Flanger {
 
     fn reset(&mut self) {
         self.delay.clear();
+        self.delay_r.clear();
         self.lfo.reset();
+        self.lfo_r.reset();
+        self.lfo_r.set_phase(self.stereo_spread); // Restore phase offset
         self.feedback_sample = 0.0;
+        self.feedback_sample_r = 0.0;
     }
 }
 

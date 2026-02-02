@@ -140,6 +140,20 @@ impl Effect for Tremolo {
         input * gain
     }
 
+    #[inline]
+    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+        // Dual-mono: same gain applied to both channels
+        let rate = self.rate.advance();
+        let depth = self.depth.advance();
+
+        self.lfo.set_frequency(rate);
+
+        let lfo_unipolar = self.lfo.advance_unipolar();
+        let gain = 1.0 - (depth * (1.0 - lfo_unipolar));
+
+        (left * gain, right * gain)
+    }
+
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
         self.lfo.set_sample_rate(sample_rate);
