@@ -4,8 +4,9 @@ Production-grade DSP library in Rust for audio effects, plugins, and embedded sy
 
 ## Features
 
-- **9 audio effects**: distortion, compressor, chorus, delay, filter, vibrato, tape saturation, preamp, reverb
+- **15 audio effects**: distortion, compressor, chorus, delay, filter, vibrato, tape saturation, preamp, reverb, tremolo, gate, flanger, phaser, wah, parametric EQ
 - **no_std compatible**: Core primitives work on embedded targets without heap allocation
+- **Stereo-first processing**: True stereo effects with decorrelated L/R, backwards-compatible mono API
 - **Real-time audio I/O**: Process live audio via the CLI or GUI
 - **Professional GUI**: egui-based interface with real-time metering, preset management, and drag-and-drop effect chaining
 - **Spectral analysis toolkit**: FFT-based tools for reverse engineering hardware effects
@@ -22,7 +23,7 @@ Production-grade DSP library in Rust for audio effects, plugins, and embedded sy
 | Oversampling | Per-effect or missing | Generic `Oversampled<N, E>` wrapper |
 | Latency reporting | Missing | Built-in for DAW compensation |
 | Documentation | Sparse | Every public item documented |
-| Testing | Minimal | 110+ unit tests |
+| Testing | Minimal | 290+ unit tests |
 
 ## Quick Start
 
@@ -77,8 +78,10 @@ chain.process_block(&input, &mut output);
 |-------|-------------|--------|
 | `sonido-core` | DSP primitives: Effect trait, parameters, delays, filters, LFOs | Yes |
 | `sonido-effects` | Effect implementations: distortion, compressor, chorus, delay, etc. | Yes |
+| `sonido-registry` | Effect factory and discovery by name/category | Yes |
+| `sonido-platform` | Hardware abstraction: PlatformController trait, ControlMapper, ControlId | Yes |
 | `sonido-analysis` | Spectral analysis tools for reverse engineering (FFT, transfer functions) | No |
-| `sonido-io` | Audio I/O: WAV files, real-time streaming via cpal | No |
+| `sonido-io` | Audio I/O: WAV files (mono/stereo), real-time streaming via cpal | No |
 | `sonido-cli` | Command-line interface for processing and analysis | No |
 | `sonido-gui` | Real-time effects GUI with preset management | No |
 
