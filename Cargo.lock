@@ -3787,6 +3787,7 @@ version = "0.1.0"
 dependencies = [
  "rustfft",
  "sonido-core",
+ "tempfile",
 ]
 
 [[package]]
@@ -3890,6 +3891,14 @@ version = "0.1.0"
 dependencies = [
  "sonido-core",
  "sonido-effects",
+]
+
+[[package]]
+name = "sonido-synth"
+version = "0.1.0"
+dependencies = [
+ "libm",
+ "sonido-core",
 ]
 
 [[package]]
