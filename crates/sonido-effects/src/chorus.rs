@@ -1,6 +1,6 @@
 //! Classic chorus effect with dual voices.
 
-use sonido_core::{Effect, SmoothedParam, InterpolatedDelay, Lfo};
+use sonido_core::{Effect, SmoothedParam, InterpolatedDelay, Lfo, ParameterInfo, ParamDescriptor, ParamUnit};
 
 /// Chorus effect with dual voices.
 ///
@@ -124,6 +124,63 @@ impl Effect for Chorus {
         self.delay2.clear();
         self.lfo1.reset();
         self.lfo2.reset();
+    }
+}
+
+impl ParameterInfo for Chorus {
+    fn param_count(&self) -> usize {
+        3
+    }
+
+    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
+        match index {
+            0 => Some(ParamDescriptor {
+                name: "Rate",
+                short_name: "Rate",
+                unit: ParamUnit::Hertz,
+                min: 0.1,
+                max: 10.0,
+                default: 1.0,
+                step: 0.1,
+            }),
+            1 => Some(ParamDescriptor {
+                name: "Depth",
+                short_name: "Depth",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+                step: 1.0,
+            }),
+            2 => Some(ParamDescriptor {
+                name: "Mix",
+                short_name: "Mix",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+                step: 1.0,
+            }),
+            _ => None,
+        }
+    }
+
+    fn get_param(&self, index: usize) -> f32 {
+        match index {
+            0 => self.rate.target(),
+            1 => self.depth.target() * 100.0,
+            2 => self.mix.target() * 100.0,
+            _ => 0.0,
+        }
+    }
+
+    fn set_param(&mut self, index: usize, value: f32) {
+        match index {
+            0 => self.set_rate(value),
+            1 => self.set_depth(value / 100.0),
+            2 => self.set_mix(value / 100.0),
+            _ => {}
+        }
     }
 }
 

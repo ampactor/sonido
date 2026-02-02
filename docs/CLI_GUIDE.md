@@ -80,6 +80,20 @@ effect1:param1=value1,param2=value2|effect2:param=value|effect3
 - Parameters are separated by `,`
 - Parameter names and values are separated by `=`
 - Effects with no parameters can omit the colon
+- Whitespace around `|` separators is trimmed (ignored)
+
+**Edge Cases:**
+
+```bash
+# Effects without parameters can omit the colon entirely
+sonido process input.wav output.wav --chain "distortion|delay:time=300"
+
+# Whitespace around pipes is ignored
+sonido process input.wav output.wav --chain "preamp:gain=6 | distortion | delay:time=300"
+
+# Empty segments between pipes are skipped
+sonido process input.wav output.wav --chain "preamp:gain=6||distortion"
+```
 
 ---
 
@@ -206,8 +220,15 @@ sonido generate impulse <OUTPUT> [OPTIONS]
 | `--sample-rate <N>` | Sample rate (default: 48000) |
 | `--amplitude <N>` | Impulse amplitude (default: 1.0) |
 
+> **Note:** Unlike other generate commands, `--length` is specified in **samples**, not seconds.
+> For a 1-second impulse response at 48kHz, use `--length 48000`.
+
 ```bash
+# 1 second impulse at 48kHz
 sonido generate impulse impulse.wav --length 48000
+
+# 2 second impulse at 44.1kHz
+sonido generate impulse impulse.wav --length 88200 --sample-rate 44100
 ```
 
 #### silence
@@ -341,6 +362,28 @@ Shows all effects with:
 - Parameter names
 - Default values
 - Valid ranges
+
+### Effect Aliases
+
+Several effects have shorter alias names that can be used interchangeably:
+
+| Effect | Alias(es) |
+|--------|-----------|
+| `filter` | `lowpass` |
+| `multivibrato` | `vibrato` |
+| `tape` | `tapesaturation` |
+| `preamp` | `cleanpreamp` |
+
+Examples:
+```bash
+# These are equivalent
+sonido process input.wav output.wav --effect filter --param cutoff=2000
+sonido process input.wav output.wav --effect lowpass --param cutoff=2000
+
+# These are equivalent
+sonido process input.wav output.wav --effect multivibrato --param depth=0.6
+sonido process input.wav output.wav --effect vibrato --param depth=0.6
+```
 
 ---
 

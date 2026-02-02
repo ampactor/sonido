@@ -1,6 +1,6 @@
 //! Biquad-based filter effects.
 
-use sonido_core::{Effect, SmoothedParam, Biquad, lowpass_coefficients};
+use sonido_core::{Effect, SmoothedParam, Biquad, lowpass_coefficients, ParameterInfo, ParamDescriptor, ParamUnit};
 
 /// Low-pass filter effect with smoothed parameter control.
 ///
@@ -91,6 +91,52 @@ impl Effect for LowPassFilter {
         self.q.snap_to_target();
         self.needs_update = true;
         self.update_coefficients();
+    }
+}
+
+impl ParameterInfo for LowPassFilter {
+    fn param_count(&self) -> usize {
+        2
+    }
+
+    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
+        match index {
+            0 => Some(ParamDescriptor {
+                name: "Cutoff",
+                short_name: "Cutoff",
+                unit: ParamUnit::Hertz,
+                min: 20.0,
+                max: 20000.0,
+                default: 1000.0,
+                step: 1.0,
+            }),
+            1 => Some(ParamDescriptor {
+                name: "Resonance",
+                short_name: "Reso",
+                unit: ParamUnit::Ratio,
+                min: 0.1,
+                max: 20.0,
+                default: 0.707,
+                step: 0.01,
+            }),
+            _ => None,
+        }
+    }
+
+    fn get_param(&self, index: usize) -> f32 {
+        match index {
+            0 => self.cutoff.target(),
+            1 => self.q.target(),
+            _ => 0.0,
+        }
+    }
+
+    fn set_param(&mut self, index: usize, value: f32) {
+        match index {
+            0 => self.set_cutoff_hz(value),
+            1 => self.set_q(value),
+            _ => {}
+        }
     }
 }
 

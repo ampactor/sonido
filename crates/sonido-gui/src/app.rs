@@ -507,7 +507,7 @@ fn run_audio_thread(
     };
 
     // Create effects
-    let mut preamp = CleanPreamp::new();
+    let mut preamp = CleanPreamp::new(sample_rate);
     let mut distortion = Distortion::new(sample_rate);
     let mut compressor = Compressor::new(sample_rate);
     let mut chorus = Chorus::new(sample_rate);

@@ -28,7 +28,7 @@
 //! - **Fast release** (< 100ms): Pumping effect, good for drums
 //! - **Slow release** (> 200ms): Smooth, transparent compression
 
-use sonido_core::{Effect, SmoothedParam, EnvelopeFollower};
+use sonido_core::{Effect, SmoothedParam, EnvelopeFollower, ParameterInfo, ParamDescriptor, ParamUnit};
 use libm::{log10f, powf};
 
 /// Converts linear amplitude to decibels.
@@ -166,6 +166,85 @@ impl Effect for Compressor {
     fn reset(&mut self) {
         self.envelope_follower.reset();
         self.makeup_gain.snap_to_target();
+    }
+}
+
+impl ParameterInfo for Compressor {
+    fn param_count(&self) -> usize {
+        5
+    }
+
+    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
+        match index {
+            0 => Some(ParamDescriptor {
+                name: "Threshold",
+                short_name: "Thresh",
+                unit: ParamUnit::Decibels,
+                min: -60.0,
+                max: 0.0,
+                default: -18.0,
+                step: 0.5,
+            }),
+            1 => Some(ParamDescriptor {
+                name: "Ratio",
+                short_name: "Ratio",
+                unit: ParamUnit::Ratio,
+                min: 1.0,
+                max: 20.0,
+                default: 4.0,
+                step: 0.1,
+            }),
+            2 => Some(ParamDescriptor {
+                name: "Attack",
+                short_name: "Attack",
+                unit: ParamUnit::Milliseconds,
+                min: 0.1,
+                max: 100.0,
+                default: 10.0,
+                step: 0.1,
+            }),
+            3 => Some(ParamDescriptor {
+                name: "Release",
+                short_name: "Release",
+                unit: ParamUnit::Milliseconds,
+                min: 10.0,
+                max: 1000.0,
+                default: 100.0,
+                step: 1.0,
+            }),
+            4 => Some(ParamDescriptor {
+                name: "Makeup Gain",
+                short_name: "Makeup",
+                unit: ParamUnit::Decibels,
+                min: 0.0,
+                max: 24.0,
+                default: 0.0,
+                step: 0.5,
+            }),
+            _ => None,
+        }
+    }
+
+    fn get_param(&self, index: usize) -> f32 {
+        match index {
+            0 => self.gain_computer.threshold_db,
+            1 => self.gain_computer.ratio,
+            2 => self.envelope_follower.attack_ms(),
+            3 => self.envelope_follower.release_ms(),
+            4 => linear_to_db(self.makeup_gain.target()),
+            _ => 0.0,
+        }
+    }
+
+    fn set_param(&mut self, index: usize, value: f32) {
+        match index {
+            0 => self.set_threshold_db(value),
+            1 => self.set_ratio(value),
+            2 => self.set_attack_ms(value),
+            3 => self.set_release_ms(value),
+            4 => self.set_makeup_gain_db(value),
+            _ => {}
+        }
     }
 }
 

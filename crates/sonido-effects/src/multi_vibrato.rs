@@ -3,7 +3,7 @@
 //! 10 simultaneous subtle vibratos at different frequencies and waveforms
 //! to simulate authentic tape wow and flutter.
 
-use sonido_core::{Effect, Lfo, LfoWaveform, FixedDelayLine};
+use sonido_core::{Effect, Lfo, LfoWaveform, FixedDelayLine, ParameterInfo, ParamDescriptor, ParamUnit, SmoothedParam};
 
 /// Number of vibrato units in MultiVibrato
 pub const NUM_VIBRATOS: usize = 10;
@@ -32,11 +32,11 @@ impl VibratoUnit {
         }
     }
 
-    fn process(&mut self, input: f32, sample_rate: f32) -> f32 {
+    fn process(&mut self, input: f32, sample_rate: f32, depth_scale: f32) -> f32 {
         let lfo_val = self.lfo.advance();
 
-        // Convert cents to delay modulation
-        let cents_to_samples = self.depth_cents * sample_rate / 44100.0 * 0.01;
+        // Convert cents to delay modulation, scaled by master depth
+        let cents_to_samples = self.depth_cents * depth_scale * sample_rate / 44100.0 * 0.01;
         let delay_mod = lfo_val * cents_to_samples;
 
         let delay_samples = self.base_delay + delay_mod;
@@ -76,8 +76,8 @@ pub struct MultiVibrato {
     sample_rate: f32,
     /// Overall mix (0.0 = dry, 1.0 = full effect)
     mix: f32,
-    /// Master depth control (scales all vibrato depths)
-    depth_scale: f32,
+    /// Master depth control (scales all vibrato depths) with smoothing
+    depth_scale: SmoothedParam,
 }
 
 impl Default for MultiVibrato {
@@ -111,7 +111,7 @@ impl MultiVibrato {
             vibratos,
             sample_rate,
             mix: 1.0,
-            depth_scale: 1.0,
+            depth_scale: SmoothedParam::with_config(1.0, sample_rate, 10.0),
         }
     }
 
@@ -127,22 +127,24 @@ impl MultiVibrato {
 
     /// Set master depth scale (multiplies all vibrato depths)
     pub fn set_depth(&mut self, scale: f32) {
-        self.depth_scale = scale.clamp(0.0, 2.0);
+        self.depth_scale.set_target(scale.clamp(0.0, 2.0));
     }
 
-    /// Get current depth scale
+    /// Get current depth scale target
     pub fn depth(&self) -> f32 {
-        self.depth_scale
+        self.depth_scale.target()
     }
 }
 
 impl Effect for MultiVibrato {
     #[inline]
     fn process(&mut self, input: f32) -> f32 {
+        let depth_scale = self.depth_scale.advance();
+
         // Process through all vibratos and average
         let mut wet = 0.0f32;
         for vib in &mut self.vibratos {
-            wet += vib.process(input, self.sample_rate);
+            wet += vib.process(input, self.sample_rate, depth_scale);
         }
         wet /= NUM_VIBRATOS as f32;
 
@@ -154,6 +156,7 @@ impl Effect for MultiVibrato {
         for vib in &mut self.vibratos {
             vib.reset();
         }
+        self.depth_scale.snap_to_target();
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
@@ -161,11 +164,47 @@ impl Effect for MultiVibrato {
         for vib in &mut self.vibratos {
             vib.set_sample_rate(sample_rate);
         }
+        self.depth_scale.set_sample_rate(sample_rate);
     }
 
     fn latency_samples(&self) -> usize {
         // Report minimal latency from base delay
         128
+    }
+}
+
+impl ParameterInfo for MultiVibrato {
+    fn param_count(&self) -> usize {
+        1
+    }
+
+    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
+        match index {
+            0 => Some(ParamDescriptor {
+                name: "Depth",
+                short_name: "Depth",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 200.0,
+                default: 100.0,
+                step: 1.0,
+            }),
+            _ => None,
+        }
+    }
+
+    fn get_param(&self, index: usize) -> f32 {
+        match index {
+            0 => self.depth_scale.target() * 100.0,
+            _ => 0.0,
+        }
+    }
+
+    fn set_param(&mut self, index: usize, value: f32) {
+        match index {
+            0 => self.set_depth(value / 100.0),
+            _ => {}
+        }
     }
 }
 
@@ -197,5 +236,30 @@ mod tests {
     fn test_multi_vibrato_latency() {
         let vibrato = MultiVibrato::new(48000.0);
         assert_eq!(vibrato.latency_samples(), 128);
+    }
+
+    #[test]
+    fn test_multi_vibrato_depth_smoothing() {
+        let mut vibrato = MultiVibrato::new(48000.0);
+        vibrato.set_mix(1.0);
+        vibrato.set_depth(0.0);
+        vibrato.reset();
+
+        // Process some samples to fill delay lines
+        for _ in 0..200 {
+            vibrato.process(0.5);
+        }
+
+        // Set new depth target
+        vibrato.set_depth(2.0);
+
+        // Verify target is set
+        assert!((vibrato.depth() - 2.0).abs() < 0.01, "Target should be 2.0");
+
+        // Process samples - the depth smoothing takes effect
+        for _ in 0..1000 {
+            let output = vibrato.process(0.5);
+            assert!(output.is_finite());
+        }
     }
 }

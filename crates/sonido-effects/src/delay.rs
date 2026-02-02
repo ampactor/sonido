@@ -1,6 +1,6 @@
 //! Classic delay effect with feedback control.
 
-use sonido_core::{Effect, SmoothedParam, InterpolatedDelay};
+use sonido_core::{Effect, SmoothedParam, InterpolatedDelay, ParameterInfo, ParamDescriptor, ParamUnit};
 
 /// Classic delay effect with feedback.
 ///
@@ -94,6 +94,63 @@ impl Effect for Delay {
         self.delay_time.snap_to_target();
         self.feedback.snap_to_target();
         self.mix.snap_to_target();
+    }
+}
+
+impl ParameterInfo for Delay {
+    fn param_count(&self) -> usize {
+        3
+    }
+
+    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
+        match index {
+            0 => Some(ParamDescriptor {
+                name: "Delay Time",
+                short_name: "Time",
+                unit: ParamUnit::Milliseconds,
+                min: 1.0,
+                max: 2000.0,
+                default: 300.0,
+                step: 1.0,
+            }),
+            1 => Some(ParamDescriptor {
+                name: "Feedback",
+                short_name: "Feedback",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 95.0,
+                default: 40.0,
+                step: 1.0,
+            }),
+            2 => Some(ParamDescriptor {
+                name: "Mix",
+                short_name: "Mix",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+                step: 1.0,
+            }),
+            _ => None,
+        }
+    }
+
+    fn get_param(&self, index: usize) -> f32 {
+        match index {
+            0 => self.delay_time.target() / self.sample_rate * 1000.0,
+            1 => self.feedback.target() * 100.0,
+            2 => self.mix.target() * 100.0,
+            _ => 0.0,
+        }
+    }
+
+    fn set_param(&mut self, index: usize, value: f32) {
+        match index {
+            0 => self.set_delay_time_ms(value),
+            1 => self.set_feedback(value / 100.0),
+            2 => self.set_mix(value / 100.0),
+            _ => {}
+        }
     }
 }
 

@@ -6,7 +6,8 @@ Production-grade DSP library in Rust for audio effects, plugins, and embedded sy
 
 - **9 audio effects**: distortion, compressor, chorus, delay, filter, vibrato, tape saturation, preamp, reverb
 - **no_std compatible**: Core primitives work on embedded targets without heap allocation
-- **Real-time audio I/O**: Process live audio via the CLI
+- **Real-time audio I/O**: Process live audio via the CLI or GUI
+- **Professional GUI**: egui-based interface with real-time metering, preset management, and drag-and-drop effect chaining
 - **Spectral analysis toolkit**: FFT-based tools for reverse engineering hardware effects
 - **Zero-cost effect chaining**: Build complex signal chains with static or dynamic composition
 - **Parameter smoothing**: Click-free automation with exponential and linear smoothing
@@ -79,6 +80,7 @@ chain.process_block(&input, &mut output);
 | `sonido-analysis` | Spectral analysis tools for reverse engineering (FFT, transfer functions) | No |
 | `sonido-io` | Audio I/O: WAV files, real-time streaming via cpal | No |
 | `sonido-cli` | Command-line interface for processing and analysis | No |
+| `sonido-gui` | Real-time effects GUI with preset management | No |
 
 ## CLI Usage
 
@@ -143,6 +145,21 @@ sonido analyze ir sweep.wav recorded.wav --output ir.wav
 sonido effects
 ```
 
+## GUI
+
+Launch the real-time effects processor GUI:
+
+```bash
+cargo run -p sonido-gui --release
+```
+
+The GUI provides:
+- Drag-and-drop effect chain builder
+- Real-time input/output metering
+- Professional knob controls for all parameters
+- Preset save/load with categories
+- Dark theme optimized for studio use
+
 ## Building
 
 ```bash
@@ -168,6 +185,7 @@ cargo test --no-default-features -p sonido-effects
 - [Effects Reference](docs/EFFECTS_REFERENCE.md)
 - [Contributing](docs/CONTRIBUTING.md)
 - [Changelog](docs/CHANGELOG.md)
+- [GUI Documentation](docs/GUI.md)
 
 ## License
 

@@ -30,7 +30,7 @@ fn main() {
     println!("-------------------------------------------------");
 
     let preamp = {
-        let mut p = CleanPreamp::new();
+        let mut p = CleanPreamp::new(SAMPLE_RATE);
         p.set_gain_db(6.0);
         p
     };

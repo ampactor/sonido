@@ -388,7 +388,7 @@ pub fn create_effect_with_params(
             Ok(Box::new(effect))
         }
         "preamp" | "cleanpreamp" => {
-            let mut effect = CleanPreamp::new();
+            let mut effect = CleanPreamp::new(sample_rate);
             for (key, value) in params {
                 match key.as_str() {
                     "gain" => effect.set_gain_db(parse_f32(key, value)?),
