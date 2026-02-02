@@ -6,11 +6,13 @@ Production-grade DSP library in Rust for audio effects, plugins, and embedded sy
 
 | Crate | Purpose | no_std |
 |-------|---------|--------|
-| sonido-core | Effect trait, ParameterInfo, SmoothedParam, delays, filters, LFOs | Yes |
+| sonido-core | Effect trait, ParameterInfo, SmoothedParam, delays, filters, LFOs, tempo, modulation | Yes |
 | sonido-effects | Distortion, Compressor, Chorus, Delay, Reverb, etc. (all implement ParameterInfo) | Yes |
+| sonido-synth | Synthesis engine: oscillators (PolyBLEP), ADSR envelopes, voices, modulation matrix | Yes |
 | sonido-registry | Effect factory and discovery by name/category | Yes |
+| sonido-config | CLI-first configuration and preset management | No |
 | sonido-platform | Hardware abstraction: PlatformController trait, ControlMapper, ControlId | Yes |
-| sonido-analysis | FFT, spectral analysis, transfer functions | No |
+| sonido-analysis | FFT, spectral analysis, transfer functions, CFC/PAC analysis | No |
 | sonido-io | WAV I/O, real-time audio streaming (cpal), stereo support | No |
 | sonido-cli | Command-line processor and analyzer | No |
 | sonido-gui | egui-based real-time effects GUI | No |
@@ -70,6 +72,22 @@ let registry = EffectRegistry::new();
 let mut effect = registry.create("distortion", 48000.0).unwrap();
 ```
 
+**ModulationSource** - Unified interface for LFOs, envelopes, followers:
+```rust
+use sonido_core::{Lfo, ModulationSource};
+let mut lfo = Lfo::new(48000.0, 2.0);
+let value = lfo.mod_advance();  // -1.0 to 1.0 for bipolar sources
+let uni = lfo.mod_advance_unipolar();  // 0.0 to 1.0
+```
+
+**TempoManager** - Tempo-synced timing for delays and LFOs:
+```rust
+use sonido_core::{TempoManager, NoteDivision};
+let tempo = TempoManager::new(48000.0, 120.0);
+let delay_ms = tempo.division_to_ms(NoteDivision::DottedEighth);  // 375ms at 120 BPM
+let lfo_hz = tempo.division_to_hz(NoteDivision::Quarter);  // 2 Hz at 120 BPM
+```
+
 ## Commands
 
 ```bash
@@ -87,12 +105,22 @@ cargo run -p sonido-cli -- --help   # CLI help
 | Effect trait | crates/sonido-core/src/effect.rs |
 | ParameterInfo trait | crates/sonido-core/src/param_info.rs |
 | SmoothedParam | crates/sonido-core/src/param.rs |
+| ModulationSource trait | crates/sonido-core/src/modulation.rs |
+| TempoManager/NoteDivision | crates/sonido-core/src/tempo.rs |
 | Effect Registry | crates/sonido-registry/src/lib.rs |
 | Reverb | crates/sonido-effects/src/reverb.rs |
 | CombFilter/AllpassFilter | crates/sonido-core/src/comb.rs, allpass.rs |
+| Oscillator (PolyBLEP) | crates/sonido-synth/src/oscillator.rs |
+| ADSR Envelope | crates/sonido-synth/src/envelope.rs |
+| Voice/VoiceManager | crates/sonido-synth/src/voice.rs |
+| ModulationMatrix | crates/sonido-synth/src/mod_matrix.rs |
+| Preset/EffectConfig | crates/sonido-config/src/lib.rs |
+| PAC/Comodulogram | crates/sonido-analysis/src/cfc.rs |
+| FilterBank | crates/sonido-analysis/src/filterbank.rs |
+| HilbertTransform | crates/sonido-analysis/src/hilbert.rs |
 | GUI app | crates/sonido-gui/src/app.rs |
 | CLI commands | crates/sonido-cli/src/main.rs |
-| CLI presets | crates/sonido-cli/src/preset.rs |
+| CLI analyze commands | crates/sonido-cli/src/commands/analyze.rs |
 
 ## Conventions
 

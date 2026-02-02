@@ -12,46 +12,49 @@ The library is built with stereo-first processing and no_std compatibility at it
 ## Crate Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Applications                                  │
-│  ┌─────────────┐  ┌─────────────┐  ┌───────────┐  ┌──────────────┐ │
-│  │ sonido-cli  │  │ sonido-gui  │  │ VST3/AU   │  │sonido-hothouse│ │
-│  │  (binary)   │  │  (egui)     │  │ (future)  │  │  (embedded)   │ │
-│  └──────┬──────┘  └──────┬──────┘  └─────┬─────┘  └──────┬───────┘ │
-└─────────┼────────────────┼───────────────┼───────────────┼─────────┘
+┌───────────────────────────────────────────────────────────────────────────┐
+│                           Applications                                     │
+│  ┌─────────────┐  ┌─────────────┐  ┌───────────┐  ┌──────────────┐        │
+│  │ sonido-cli  │  │ sonido-gui  │  │ VST3/AU   │  │sonido-hothouse│        │
+│  │  (binary)   │  │  (egui)     │  │ (future)  │  │  (embedded)   │        │
+│  └──────┬──────┘  └──────┬──────┘  └─────┬─────┘  └──────┬───────┘        │
+└─────────┼────────────────┼───────────────┼───────────────┼────────────────┘
           │                │               │               │
           └────────────────┼───────────────┼───────────────┘
                            │               │
-                           ▼               ▼
-                  ┌─────────────────────────────────┐
-                  │        sonido-platform          │
-                  │  PlatformController + Mapping   │
-                  │           [no_std]              │
-                  └───────────────┬─────────────────┘
-                                  │
-                  ┌───────────────┼───────────────┐
-                  │               │               │
-                  ▼               ▼               ▼
-         ┌────────────────┐ ┌─────────────┐ ┌─────────────────┐
-         │  sonido-io     │ │  sonido-    │ │ sonido-analysis │
-         │  (audio I/O)   │ │  registry   │ │    (FFT/IR)     │
-         └───────┬────────┘ └──────┬──────┘ └────────┬────────┘
-                 │                 │                  │
-                 └─────────────────┼──────────────────┘
+          ┌────────────────┴───────────────┴────────────────┐
+          │                                                 │
+          ▼                                                 ▼
+┌─────────────────────┐                    ┌─────────────────────────────────┐
+│   sonido-config     │                    │        sonido-platform          │
+│  Presets + Config   │                    │  PlatformController + Mapping   │
+│       [std]         │                    │           [no_std]              │
+└─────────┬───────────┘                    └───────────────┬─────────────────┘
+          │                                                │
+          │                ┌───────────────┬───────────────┤
+          │                │               │               │
+          ▼                ▼               ▼               ▼
+┌────────────────┐ ┌─────────────────┐ ┌─────────────┐ ┌─────────────────┐
+│  sonido-io     │ │ sonido-analysis │ │  sonido-    │ │  sonido-synth   │
+│  (audio I/O)   │ │ (FFT/CFC/PAC)   │ │  registry   │ │  (synthesis)    │
+│     [std]      │ │     [std]       │ │  [no_std]   │ │    [no_std]     │
+└───────┬────────┘ └────────┬────────┘ └──────┬──────┘ └────────┬────────┘
+        │                   │                 │                  │
+        └───────────────────┴─────────────────┴──────────────────┘
+                                    │
+                                    ▼
+                           ┌───────────────┐
+                           │sonido-effects │
+                           │  (15 effects) │
+                           │   [no_std]    │
+                           └───────┬───────┘
                                    │
                                    ▼
-                          ┌───────────────┐
-                          │sonido-effects │
-                          │  (15 effects) │
-                          │   [no_std]    │
-                          └───────┬───────┘
-                                  │
-                                  ▼
-                          ┌───────────────┐
-                          │  sonido-core  │
-                          │ (primitives)  │
-                          │   [no_std]    │
-                          └───────────────┘
+                           ┌───────────────┐
+                           │  sonido-core  │
+                           │ (primitives)  │
+                           │   [no_std]    │
+                           └───────────────┘
 ```
 
 ## Crate Responsibilities
@@ -71,6 +74,9 @@ The foundation crate providing DSP primitives. Designed for `no_std` environment
 - `Lfo`: Low-frequency oscillator for modulation effects (5 waveforms)
 - `EnvelopeFollower`: Amplitude envelope detection for dynamics
 - `Oversampled`: Generic 2x/4x/8x oversampling wrapper for anti-aliasing
+- `ModulationSource` trait: Unified interface for LFOs, envelopes, followers
+- `TempoManager`: Tempo tracking with musical timing utilities
+- `NoteDivision`: Musical note divisions (whole, half, quarter, dotted, triplet)
 
 ### sonido-effects
 
@@ -99,13 +105,21 @@ Audio effect implementations built on sonido-core. All `no_std` compatible with 
 
 ### sonido-analysis
 
-Spectral analysis tools for reverse engineering hardware. Requires `std` for FFT.
+Spectral analysis tools for reverse engineering hardware and biosignal research. Requires `std` for FFT.
 
 **Components:**
 - `Fft`: FFT wrapper around rustfft
 - `Window`: Window functions (Hamming, Blackman, Hann)
 - `TransferFunction`: Measure frequency response between two signals
 - `SineSweep`: Generate logarithmic sine sweeps for IR capture
+
+**Cross-Frequency Coupling (CFC):**
+- `FilterBank`: Multi-band bandpass filter bank with 4th-order Butterworth filters
+- `FrequencyBand`: Frequency band specification with EEG bands (delta, theta, alpha, beta, gamma)
+- `HilbertTransform`: FFT-based Hilbert transform for instantaneous phase/amplitude
+- `PacAnalyzer`: Phase-Amplitude Coupling analyzer (Mean Vector Length, Kullback-Leibler)
+- `PacResult`: PAC analysis results (modulation index, preferred phase, phase histogram)
+- `Comodulogram`: Multi-frequency PAC analysis for visualizing coupling patterns
 
 ### sonido-io
 
@@ -128,6 +142,33 @@ let (samples, sample_rate) = read_wav_stereo("input.wav")?;
 write_wav_stereo("output.wav", &processed, sample_rate)?;
 ```
 
+### sonido-synth
+
+Full synthesis engine for building synthesizers. `no_std` compatible.
+
+**Oscillators:**
+- `Oscillator`: Audio-rate oscillator with PolyBLEP anti-aliasing
+- `OscillatorWaveform`: Sine, Triangle, Saw, Square, Pulse, Noise
+
+**Envelopes:**
+- `AdsrEnvelope`: Attack-Decay-Sustain-Release envelope generator
+- `EnvelopeState`: Envelope stage tracking (Idle, Attack, Decay, Sustain, Release)
+
+**Voice Management:**
+- `Voice`: Single synthesizer voice (oscillators + filter + envelopes)
+- `VoiceManager`: Polyphonic voice allocation with stealing strategies
+- `VoiceAllocationMode`: Oldest, Newest, Quietest, HighestNote, LowestNote
+
+**Modulation:**
+- `ModulationMatrix`: Flexible routing of modulation sources to destinations
+- `ModulationRoute`: Single modulation routing with depth and curve
+- `AudioModSource`: Use audio input as modulation source
+- `AudioGate`: Convert audio amplitude to gate signal
+
+**Complete Synths:**
+- `MonophonicSynth`: Single-voice synth with portamento/glide
+- `PolyphonicSynth<N>`: N-voice polyphonic synth
+
 ### sonido-registry
 
 Central registry for discovering and instantiating effects. Provides a unified
@@ -145,6 +186,39 @@ use sonido_registry::EffectRegistry;
 
 let registry = EffectRegistry::new();
 let mut effect = registry.create("distortion", 48000.0).unwrap();
+```
+
+### sonido-config
+
+CLI-first configuration and preset management. Requires `std`.
+
+**Key components:**
+- `Preset`: Effect chain preset with metadata and effect configurations
+- `EffectConfig`: Single effect configuration with parameters
+- `EffectChain`: Runtime effect chain builder
+- `validation`: Effect type and parameter validation
+- `paths`: Platform-specific preset directories (user, system)
+- `factory_presets`: Built-in presets for common use cases
+
+**Usage:**
+```rust
+use sonido_config::{Preset, EffectConfig, user_presets_dir};
+
+// Load a preset
+let preset = Preset::load("my_preset.toml")?;
+
+// Create programmatically
+let preset = Preset {
+    name: "My Preset".to_string(),
+    description: Some("Custom effect chain".to_string()),
+    sample_rate: 48000,
+    effects: vec![
+        EffectConfig::new("distortion").with_param("drive", "0.6"),
+        EffectConfig::new("reverb").with_param("room_size", "0.8"),
+    ],
+};
+
+preset.save(&user_presets_dir().join("my_preset.toml"))?;
 ```
 
 ### sonido-platform
@@ -186,10 +260,18 @@ Command-line interface tying everything together.
 - `process`: File-based effect processing
 - `realtime`: Live audio processing
 - `generate`: Test signal generation
-- `analyze`: Spectral analysis
+- `analyze`: Spectral analysis (spectrum, transfer, IR, distortion, spectrogram, dynamics)
 - `compare`: A/B audio comparison
 - `devices`: Audio device management
 - `effects`: List available effects
+- `presets`: Preset management (list, show, save, delete)
+- `tui`: Interactive terminal UI for effect editing
+
+**Analyze subcommands for CFC research:**
+- `pac`: Phase-Amplitude Coupling analysis with surrogate testing
+- `comodulogram`: Multi-frequency PAC matrix for coupling visualization
+- `bandpass`: Extract frequency band with configurable filter order
+- `hilbert`: Compute instantaneous phase and amplitude
 
 ### sonido-gui
 

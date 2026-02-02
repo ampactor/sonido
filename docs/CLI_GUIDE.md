@@ -317,6 +317,7 @@ sonido analyze ir <SWEEP> <RESPONSE> -o <OUTPUT>
 | Option | Description |
 |--------|-------------|
 | `-o, --output <FILE>` | Output IR WAV file (required) |
+| `--rt60` | Estimate and display RT60 reverberation time |
 
 ```bash
 # 1. Generate sweep
@@ -327,7 +328,190 @@ sonido generate sweep sweep.wav --duration 3.0
 
 # 3. Extract IR
 sonido analyze ir sweep.wav recorded.wav -o impulse_response.wav
+
+# With RT60 estimation
+sonido analyze ir sweep.wav recorded.wav -o impulse_response.wav --rt60
 ```
+
+#### distortion
+
+Analyze harmonic distortion (THD, THD+N).
+
+```bash
+sonido analyze distortion <INPUT> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--fundamental <HZ>` | Fundamental frequency (auto-detected if omitted) |
+| `--fft-size <N>` | FFT size (default: 8192) |
+| `-o, --output <FILE>` | Output JSON file |
+
+```bash
+# Analyze distortion of a test tone
+sonido analyze distortion test_tone.wav --fft-size 16384
+
+# With known fundamental
+sonido analyze distortion 1khz_through_amp.wav --fundamental 1000
+```
+
+#### spectrogram
+
+Generate time-frequency spectrogram.
+
+```bash
+sonido analyze spectrogram <INPUT> -o <OUTPUT.csv> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--fft-size <N>` | FFT size (default: 2048) |
+| `--hop <N>` | Hop size (default: fft_size / 4) |
+| `-o, --output <FILE>` | Output CSV file (required) |
+
+```bash
+sonido analyze spectrogram recording.wav -o spectrogram.csv --fft-size 4096 --hop 512
+```
+
+#### dynamics
+
+Analyze dynamics (RMS, crest factor, dynamic range).
+
+```bash
+sonido analyze dynamics <INPUT>
+```
+
+```bash
+sonido analyze dynamics master.wav
+```
+
+Output includes:
+- Peak level (dBFS)
+- RMS level (dBFS)
+- Crest factor (dB)
+- Dynamic range (dB)
+- Headroom (dB)
+
+#### pac
+
+Analyze Phase-Amplitude Coupling between frequency bands.
+
+```bash
+sonido analyze pac <INPUT> [OPTIONS]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--phase-low <HZ>` | Phase band lower frequency | 4.0 |
+| `--phase-high <HZ>` | Phase band upper frequency | 8.0 |
+| `--amp-low <HZ>` | Amplitude band lower frequency | 30.0 |
+| `--amp-high <HZ>` | Amplitude band upper frequency | 100.0 |
+| `--method <METHOD>` | `mvl` (Mean Vector Length) or `kl` (Kullback-Leibler) | mvl |
+| `--surrogates <N>` | Number of surrogate iterations for significance testing | 0 |
+| `-o, --output <FILE>` | Output JSON file | - |
+
+```bash
+# Analyze theta-gamma coupling
+sonido analyze pac eeg_recording.wav \
+    --phase-low 4 --phase-high 8 \
+    --amp-low 30 --amp-high 80 \
+    --method mvl
+
+# With surrogate significance testing
+sonido analyze pac eeg_recording.wav \
+    --phase-low 4 --phase-high 8 \
+    --amp-low 30 --amp-high 100 \
+    --surrogates 200 \
+    --output pac_results.json
+```
+
+Output includes:
+- Modulation Index (0-1 coupling strength)
+- Preferred phase (radians and degrees)
+- Amplitude distribution by phase bin
+- p-value (if surrogates > 0)
+
+See [CFC_ANALYSIS.md](CFC_ANALYSIS.md) for detailed PAC analysis documentation.
+
+#### comodulogram
+
+Compute coupling across multiple frequency pairs.
+
+```bash
+sonido analyze comodulogram <INPUT> -o <OUTPUT.csv> [OPTIONS]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--phase-range <LOW-HIGH>` | Phase frequency range | 2-20 |
+| `--amp-range <LOW-HIGH>` | Amplitude frequency range | 20-200 |
+| `--phase-step <HZ>` | Phase frequency step | 2.0 |
+| `--amp-step <HZ>` | Amplitude frequency step | 10.0 |
+| `--bandwidth <RATIO>` | Bandwidth as fraction of center frequency | 0.5 |
+| `-o, --output <FILE>` | Output CSV file (required) | - |
+
+```bash
+# Full comodulogram
+sonido analyze comodulogram recording.wav \
+    --phase-range 2-20 \
+    --amp-range 20-200 \
+    --phase-step 2 \
+    --amp-step 10 \
+    --output comodulogram.csv
+```
+
+The output CSV can be visualized as a heatmap showing coupling strength across frequency pairs.
+
+#### bandpass
+
+Extract a frequency band using bandpass filtering.
+
+```bash
+sonido analyze bandpass <INPUT> -o <OUTPUT.wav> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--low <HZ>` | Lower cutoff frequency (required) |
+| `--high <HZ>` | Upper cutoff frequency (required) |
+| `--order <N>` | Filter order: 2, 4, or 6 (default: 4) |
+| `-o, --output <FILE>` | Output WAV file (required) |
+
+```bash
+# Extract theta band (4-8 Hz)
+sonido analyze bandpass eeg.wav --low 4 --high 8 -o theta_band.wav
+
+# Extract with higher-order filter for sharper cutoff
+sonido analyze bandpass eeg.wav --low 30 --high 80 --order 6 -o gamma_band.wav
+```
+
+#### hilbert
+
+Extract instantaneous phase and amplitude using Hilbert transform.
+
+```bash
+sonido analyze hilbert <INPUT> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--phase-output <FILE>` | Output WAV file for phase |
+| `--amp-output <FILE>` | Output WAV file for amplitude envelope |
+| `--bandpass <LOW-HIGH>` | Optional bandpass filter before transform |
+
+```bash
+# Extract amplitude envelope
+sonido analyze hilbert recording.wav --amp-output envelope.wav
+
+# Extract phase after bandpass filtering
+sonido analyze hilbert eeg.wav \
+    --bandpass 4-8 \
+    --phase-output theta_phase.wav \
+    --amp-output theta_amplitude.wav
+```
+
+The phase output is normalized to [-1, 1] (representing [-pi, pi] radians).
+The amplitude output is normalized to [0, 1].
 
 ---
 
