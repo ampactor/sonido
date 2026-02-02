@@ -485,18 +485,156 @@ fn interleave_into(left: &[f32], right: &[f32], output: &mut [f32], channels: us
     }
 }
 
-fn find_input_device(host: &Host, name: &str) -> Result<Device> {
-    host.input_devices()
+/// Find an input device by exact name, partial name, or index.
+///
+/// The `name_or_index` can be:
+/// - A numeric index (e.g., "0", "1")
+/// - An exact device name
+/// - A partial device name (case-insensitive fuzzy match)
+fn find_input_device(host: &Host, name_or_index: &str) -> Result<Device> {
+    let devices: Vec<_> = host
+        .input_devices()
         .map_err(|e| Error::Stream(e.to_string()))?
-        .find(|d| d.name().map(|n| n == name).unwrap_or(false))
-        .ok_or_else(|| Error::DeviceNotFound(name.to_string()))
+        .collect();
+
+    find_device_from_list(&devices, name_or_index, "input")
 }
 
-fn find_output_device(host: &Host, name: &str) -> Result<Device> {
-    host.output_devices()
+/// Find an output device by exact name, partial name, or index.
+///
+/// The `name_or_index` can be:
+/// - A numeric index (e.g., "0", "1")
+/// - An exact device name
+/// - A partial device name (case-insensitive fuzzy match)
+fn find_output_device(host: &Host, name_or_index: &str) -> Result<Device> {
+    let devices: Vec<_> = host
+        .output_devices()
         .map_err(|e| Error::Stream(e.to_string()))?
-        .find(|d| d.name().map(|n| n == name).unwrap_or(false))
-        .ok_or_else(|| Error::DeviceNotFound(name.to_string()))
+        .collect();
+
+    find_device_from_list(&devices, name_or_index, "output")
+}
+
+/// Find a device from a list by index, exact name, or fuzzy match.
+fn find_device_from_list(devices: &[Device], name_or_index: &str, kind: &str) -> Result<Device> {
+    // Try parsing as index first
+    if let Ok(index) = name_or_index.parse::<usize>() {
+        return devices
+            .get(index)
+            .cloned()
+            .ok_or_else(|| Error::DeviceNotFound(format!(
+                "{} device index {} (only {} devices available)",
+                kind, index, devices.len()
+            )));
+    }
+
+    // Try exact match
+    for device in devices {
+        if device.name().is_ok_and(|n| n == name_or_index) {
+            return Ok(device.clone());
+        }
+    }
+
+    // Try case-insensitive partial match
+    let search_lower = name_or_index.to_lowercase();
+    let mut matches: Vec<_> = devices
+        .iter()
+        .filter_map(|d| {
+            d.name().ok().and_then(|name| {
+                if name.to_lowercase().contains(&search_lower) {
+                    Some((d.clone(), name))
+                } else {
+                    None
+                }
+            })
+        })
+        .collect();
+
+    match matches.len() {
+        0 => Err(Error::DeviceNotFound(format!(
+            "no {} device matching '{}'",
+            kind, name_or_index
+        ))),
+        1 => Ok(matches.remove(0).0),
+        _ => {
+            // Multiple matches - return first but warn
+            let names: Vec<_> = matches.iter().map(|(_, n)| n.as_str()).collect();
+            eprintln!(
+                "Warning: '{}' matches multiple {} devices: {:?}. Using first match: {}",
+                name_or_index, kind, names, names[0]
+            );
+            Ok(matches.remove(0).0)
+        }
+    }
+}
+
+/// Find a device by partial name match (case-insensitive).
+///
+/// Returns the first device whose name contains the search string.
+/// Useful for user-friendly device selection.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use sonido_io::find_device_fuzzy;
+///
+/// // Find any USB audio device
+/// let device = find_device_fuzzy("USB", true)?;  // input
+/// let device = find_device_fuzzy("USB", false)?; // output
+/// ```
+pub fn find_device_fuzzy(search: &str, is_input: bool) -> Result<AudioDevice> {
+    let devices = list_devices()?;
+    let search_lower = search.to_lowercase();
+
+    let filtered: Vec<_> = devices
+        .iter()
+        .filter(|d| {
+            let matches_type = if is_input { d.is_input } else { d.is_output };
+            matches_type && d.name.to_lowercase().contains(&search_lower)
+        })
+        .collect();
+
+    match filtered.len() {
+        0 => Err(Error::DeviceNotFound(format!(
+            "no {} device matching '{}'",
+            if is_input { "input" } else { "output" },
+            search
+        ))),
+        _ => Ok(filtered[0].clone()),
+    }
+}
+
+/// Find a device by index.
+///
+/// # Arguments
+///
+/// * `index` - Zero-based device index
+/// * `is_input` - Whether to search input devices (true) or output devices (false)
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use sonido_io::find_device_by_index;
+///
+/// let device = find_device_by_index(0, true)?;  // First input device
+/// let device = find_device_by_index(1, false)?; // Second output device
+/// ```
+pub fn find_device_by_index(index: usize, is_input: bool) -> Result<AudioDevice> {
+    let devices = list_devices()?;
+
+    let filtered: Vec<_> = devices
+        .iter()
+        .filter(|d| if is_input { d.is_input } else { d.is_output })
+        .collect();
+
+    filtered.get(index).cloned().cloned().ok_or_else(|| {
+        Error::DeviceNotFound(format!(
+            "{} device index {} (only {} devices available)",
+            if is_input { "input" } else { "output" },
+            index,
+            filtered.len()
+        ))
+    })
 }
 
 #[cfg(test)]

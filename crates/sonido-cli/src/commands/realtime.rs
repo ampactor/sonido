@@ -27,13 +27,13 @@ pub struct RealtimeArgs {
     #[arg(long, value_parser = parse_key_val, number_of_values = 1)]
     param: Vec<(String, String)>,
 
-    /// Input device name
-    #[arg(long)]
-    input_device: Option<String>,
+    /// Input device (index, exact name, or partial name)
+    #[arg(short, long, alias = "input-device")]
+    input: Option<String>,
 
-    /// Output device name
-    #[arg(long)]
-    output_device: Option<String>,
+    /// Output device (index, exact name, or partial name)
+    #[arg(short, long, alias = "output-device")]
+    output: Option<String>,
 
     /// Sample rate
     #[arg(long, default_value = "48000")]
@@ -98,20 +98,55 @@ pub fn run(args: RealtimeArgs) -> anyhow::Result<()> {
         anyhow::bail!("No effects to process");
     }
 
-    // Show device info
+    // Resolve device names from index or partial match
     let (default_input, default_output) = default_device()?;
-    let input_name = args
-        .input_device
-        .as_ref()
-        .or(default_input.as_ref().map(|d| &d.name))
-        .cloned()
-        .unwrap_or_else(|| "none".to_string());
-    let output_name = args
-        .output_device
-        .as_ref()
-        .or(default_output.as_ref().map(|d| &d.name))
-        .cloned()
-        .unwrap_or_else(|| "none".to_string());
+
+    let (input_name, resolved_input) = match &args.input {
+        Some(spec) => {
+            // Try to find the device to get its full name for display
+            match sonido_io::find_device_fuzzy(spec, true)
+                .or_else(|_| {
+                    spec.parse::<usize>()
+                        .ok()
+                        .and_then(|idx| sonido_io::find_device_by_index(idx, true).ok())
+                        .ok_or_else(|| anyhow::anyhow!("device not found"))
+                })
+            {
+                Ok(device) => (device.name.clone(), Some(spec.clone())),
+                Err(_) => (spec.clone(), Some(spec.clone())), // Pass through, let stream handle errors
+            }
+        }
+        None => (
+            default_input
+                .as_ref()
+                .map(|d| d.name.clone())
+                .unwrap_or_else(|| "none".to_string()),
+            None,
+        ),
+    };
+
+    let (output_name, resolved_output) = match &args.output {
+        Some(spec) => {
+            match sonido_io::find_device_fuzzy(spec, false)
+                .or_else(|_| {
+                    spec.parse::<usize>()
+                        .ok()
+                        .and_then(|idx| sonido_io::find_device_by_index(idx, false).ok())
+                        .ok_or_else(|| anyhow::anyhow!("device not found"))
+                })
+            {
+                Ok(device) => (device.name.clone(), Some(spec.clone())),
+                Err(_) => (spec.clone(), Some(spec.clone())),
+            }
+        }
+        None => (
+            default_output
+                .as_ref()
+                .map(|d| d.name.clone())
+                .unwrap_or_else(|| "none".to_string()),
+            None,
+        ),
+    };
 
     let mode = if args.mono { "mono" } else { "stereo" };
     println!("Real-time {} processing with {} effect(s)", mode, engine.len());
@@ -133,8 +168,8 @@ pub fn run(args: RealtimeArgs) -> anyhow::Result<()> {
     let config = StreamConfig {
         sample_rate: args.sample_rate,
         buffer_size: args.buffer_size,
-        input_device: args.input_device,
-        output_device: args.output_device,
+        input_device: resolved_input.or_else(|| args.input.clone()),
+        output_device: resolved_output.or_else(|| args.output.clone()),
     };
 
     let mut stream = AudioStream::new(config)?;
