@@ -294,6 +294,119 @@ impl AudioStream {
         Ok(())
     }
 
+    /// Run the audio stream with a stereo processing callback.
+    ///
+    /// The callback receives separate left and right channel inputs
+    /// and must fill the left and right output buffers.
+    /// This function blocks until the stream is stopped.
+    ///
+    /// Note: The actual stream may be interleaved stereo depending on the
+    /// audio device. This method handles deinterleaving input and
+    /// interleaving output automatically.
+    pub fn run_stereo<F>(&mut self, mut process: F) -> Result<()>
+    where
+        F: FnMut(&[f32], &[f32], &mut [f32], &mut [f32]) + Send + 'static,
+    {
+        use std::sync::mpsc;
+
+        // Get supported configs
+        let input_config = self
+            .input_device
+            .default_input_config()
+            .map_err(|e| Error::Stream(e.to_string()))?;
+
+        let output_config = self
+            .output_device
+            .default_output_config()
+            .map_err(|e| Error::Stream(e.to_string()))?;
+
+        let input_channels = input_config.channels() as usize;
+        let output_channels = output_config.channels() as usize;
+
+        // Create channel for passing audio between input and output
+        let (tx, rx) = mpsc::sync_channel::<Vec<f32>>(4);
+
+        let running = Arc::clone(&self.running);
+        self.running.store(true, Ordering::SeqCst);
+
+        // Input stream - capture audio and send to channel
+        let input_running = Arc::clone(&running);
+        let input_stream = self
+            .input_device
+            .build_input_stream(
+                &input_config.into(),
+                move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                    if input_running.load(Ordering::SeqCst) {
+                        let _ = tx.try_send(data.to_vec());
+                    }
+                },
+                |err| eprintln!("Input stream error: {}", err),
+                None,
+            )
+            .map_err(|e| Error::Stream(e.to_string()))?;
+
+        // Output stream - receive and process stereo audio
+        let output_running = Arc::clone(&running);
+        let mut pending_input: Vec<f32> = Vec::new();
+
+        let output_stream = self
+            .output_device
+            .build_output_stream(
+                &output_config.into(),
+                move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                    if !output_running.load(Ordering::SeqCst) {
+                        data.fill(0.0);
+                        return;
+                    }
+
+                    // Collect input samples
+                    while let Ok(samples) = rx.try_recv() {
+                        pending_input.extend(samples);
+                    }
+
+                    let frames_needed = data.len() / output_channels;
+                    let input_samples_needed = frames_needed * input_channels;
+
+                    // Process if we have enough input
+                    if pending_input.len() >= input_samples_needed {
+                        let input: Vec<f32> = pending_input.drain(..input_samples_needed).collect();
+
+                        // Deinterleave input to separate L/R buffers
+                        let (left_in, right_in) = deinterleave(&input, input_channels);
+
+                        // Prepare output buffers
+                        let mut left_out = vec![0.0; frames_needed];
+                        let mut right_out = vec![0.0; frames_needed];
+
+                        // Process
+                        process(&left_in, &right_in, &mut left_out, &mut right_out);
+
+                        // Interleave output back into the data buffer
+                        interleave_into(&left_out, &right_out, data, output_channels);
+                    } else {
+                        // Not enough input - output silence
+                        data.fill(0.0);
+                    }
+                },
+                |err| eprintln!("Output stream error: {}", err),
+                None,
+            )
+            .map_err(|e| Error::Stream(e.to_string()))?;
+
+        input_stream.play().map_err(|e| Error::Stream(e.to_string()))?;
+        output_stream.play().map_err(|e| Error::Stream(e.to_string()))?;
+
+        self._input_stream = Some(input_stream);
+        self._output_stream = Some(output_stream);
+
+        // Block until stopped
+        while self.running.load(Ordering::SeqCst) {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+
+        Ok(())
+    }
+
     /// Stop the audio stream.
     pub fn stop(&self) {
         self.running.store(false, Ordering::SeqCst);
@@ -302,6 +415,73 @@ impl AudioStream {
     /// Check if the stream is running.
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
+    }
+}
+
+/// Deinterleave input samples into separate left and right channels.
+/// Handles mono input by duplicating to both channels.
+fn deinterleave(interleaved: &[f32], channels: usize) -> (Vec<f32>, Vec<f32>) {
+    let frames = interleaved.len() / channels;
+    let mut left = Vec::with_capacity(frames);
+    let mut right = Vec::with_capacity(frames);
+
+    match channels {
+        1 => {
+            // Mono: duplicate to both channels
+            for &sample in interleaved {
+                left.push(sample);
+                right.push(sample);
+            }
+        }
+        _ => {
+            // Stereo or more: take first two channels
+            for chunk in interleaved.chunks(channels) {
+                left.push(chunk[0]);
+                right.push(chunk.get(1).copied().unwrap_or(chunk[0]));
+            }
+        }
+    }
+
+    (left, right)
+}
+
+/// Interleave left and right channels into an output buffer.
+/// Handles output with different channel counts.
+fn interleave_into(left: &[f32], right: &[f32], output: &mut [f32], channels: usize) {
+    let frames = left.len().min(right.len());
+
+    match channels {
+        1 => {
+            // Mono output: mix L+R
+            for (i, (l, r)) in left.iter().zip(right.iter()).enumerate() {
+                if i < output.len() {
+                    output[i] = (l + r) * 0.5;
+                }
+            }
+        }
+        2 => {
+            // Stereo output: interleave L, R
+            for i in 0..frames {
+                let idx = i * 2;
+                if idx + 1 < output.len() {
+                    output[idx] = left[i];
+                    output[idx + 1] = right[i];
+                }
+            }
+        }
+        _ => {
+            // Multi-channel: put L/R in first two channels, silence the rest
+            for i in 0..frames {
+                let idx = i * channels;
+                if idx + channels <= output.len() {
+                    output[idx] = left[i];
+                    output[idx + 1] = right[i];
+                    for c in 2..channels {
+                        output[idx + c] = 0.0;
+                    }
+                }
+            }
+        }
     }
 }
 

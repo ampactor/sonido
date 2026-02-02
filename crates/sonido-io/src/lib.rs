@@ -28,7 +28,7 @@ mod wav;
 mod stream;
 mod engine;
 
-pub use wav::{read_wav, write_wav, WavSpec};
+pub use wav::{read_wav, write_wav, read_wav_stereo, write_wav_stereo, WavSpec, StereoSamples};
 pub use stream::{AudioStream, AudioDevice, StreamConfig, list_devices, default_device};
 pub use engine::ProcessingEngine;
 

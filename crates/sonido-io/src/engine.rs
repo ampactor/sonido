@@ -1,6 +1,7 @@
 //! Effect chain processing engine.
 
 use sonido_core::Effect;
+use crate::StereoSamples;
 
 /// Processing engine that runs an effect chain.
 ///
@@ -116,6 +117,79 @@ impl ProcessingEngine {
 
         output
     }
+
+    // --- Stereo processing methods ---
+
+    /// Process a single stereo sample through the chain.
+    pub fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+        let mut l = left;
+        let mut r = right;
+        for effect in &mut self.effects {
+            (l, r) = effect.process_stereo(l, r);
+        }
+        (l, r)
+    }
+
+    /// Process a block of stereo samples through the chain.
+    ///
+    /// Output buffers must be at least as large as input buffers.
+    pub fn process_block_stereo(
+        &mut self,
+        left_in: &[f32],
+        right_in: &[f32],
+        left_out: &mut [f32],
+        right_out: &mut [f32],
+    ) {
+        debug_assert_eq!(left_in.len(), right_in.len());
+        debug_assert!(left_out.len() >= left_in.len());
+        debug_assert!(right_out.len() >= right_in.len());
+
+        let len = left_in.len();
+
+        if self.effects.is_empty() {
+            left_out[..len].copy_from_slice(left_in);
+            right_out[..len].copy_from_slice(right_in);
+            return;
+        }
+
+        // First effect: input -> output
+        self.effects[0].process_block_stereo(left_in, right_in, left_out, right_out);
+
+        // Remaining effects: output -> output (in-place)
+        for effect in &mut self.effects[1..] {
+            effect.process_block_stereo_inplace(&mut left_out[..len], &mut right_out[..len]);
+        }
+    }
+
+    /// Process a block of stereo samples in-place.
+    pub fn process_block_stereo_inplace(&mut self, left: &mut [f32], right: &mut [f32]) {
+        for effect in &mut self.effects {
+            effect.process_block_stereo_inplace(left, right);
+        }
+    }
+
+    /// Process an entire stereo file's worth of samples.
+    ///
+    /// Returns new StereoSamples with processed audio.
+    pub fn process_file_stereo(&mut self, input: &StereoSamples, block_size: usize) -> StereoSamples {
+        let len = input.len();
+        let mut left_out = vec![0.0; len];
+        let mut right_out = vec![0.0; len];
+
+        for i in (0..len).step_by(block_size) {
+            let chunk_len = (block_size).min(len - i);
+            let end = i + chunk_len;
+
+            self.process_block_stereo(
+                &input.left[i..end],
+                &input.right[i..end],
+                &mut left_out[i..end],
+                &mut right_out[i..end],
+            );
+        }
+
+        StereoSamples::new(left_out, right_out)
+    }
 }
 
 impl Default for ProcessingEngine {
@@ -200,5 +274,67 @@ mod tests {
         for (i, &sample) in output.iter().enumerate() {
             assert_eq!(sample, i as f32 * 0.5);
         }
+    }
+
+    #[test]
+    fn test_process_stereo() {
+        let mut engine = ProcessingEngine::new(48000.0);
+        engine.add_effect(Box::new(Gain { factor: 2.0 }));
+
+        let (l, r) = engine.process_stereo(1.0, 0.5);
+        assert_eq!(l, 2.0);
+        assert_eq!(r, 1.0);
+    }
+
+    #[test]
+    fn test_process_block_stereo() {
+        let mut engine = ProcessingEngine::new(48000.0);
+        engine.add_effect(Box::new(Gain { factor: 2.0 }));
+
+        let left_in = [1.0, 2.0, 3.0];
+        let right_in = [0.5, 1.0, 1.5];
+        let mut left_out = [0.0; 3];
+        let mut right_out = [0.0; 3];
+
+        engine.process_block_stereo(&left_in, &right_in, &mut left_out, &mut right_out);
+
+        assert_eq!(left_out, [2.0, 4.0, 6.0]);
+        assert_eq!(right_out, [1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn test_process_file_stereo() {
+        let mut engine = ProcessingEngine::new(48000.0);
+        engine.add_effect(Box::new(Gain { factor: 0.5 }));
+
+        let left: Vec<f32> = (0..1000).map(|i| i as f32).collect();
+        let right: Vec<f32> = (0..1000).map(|i| (i as f32) * 2.0).collect();
+        let input = StereoSamples::new(left.clone(), right.clone());
+
+        let output = engine.process_file_stereo(&input, 64);
+
+        assert_eq!(output.len(), input.len());
+        for i in 0..output.len() {
+            assert_eq!(output.left[i], left[i] * 0.5);
+            assert_eq!(output.right[i], right[i] * 0.5);
+        }
+    }
+
+    #[test]
+    fn test_empty_engine_stereo() {
+        let mut engine = ProcessingEngine::new(48000.0);
+
+        let (l, r) = engine.process_stereo(1.0, 2.0);
+        assert_eq!(l, 1.0);
+        assert_eq!(r, 2.0);
+
+        let left_in = [1.0, 2.0];
+        let right_in = [3.0, 4.0];
+        let mut left_out = [0.0; 2];
+        let mut right_out = [0.0; 2];
+
+        engine.process_block_stereo(&left_in, &right_in, &mut left_out, &mut right_out);
+        assert_eq!(left_out, [1.0, 2.0]);
+        assert_eq!(right_out, [3.0, 4.0]);
     }
 }
