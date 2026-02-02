@@ -3658,6 +3658,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonido-platform"
+version = "0.1.0"
+dependencies = [
+ "sonido-core",
+]
+
+[[package]]
 name = "sonido-registry"
 version = "0.1.0"
 dependencies = [

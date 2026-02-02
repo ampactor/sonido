@@ -9,22 +9,39 @@ Production-grade DSP library in Rust for audio effects, plugins, and embedded sy
 | sonido-core | Effect trait, ParameterInfo, SmoothedParam, delays, filters, LFOs | Yes |
 | sonido-effects | Distortion, Compressor, Chorus, Delay, Reverb, etc. (all implement ParameterInfo) | Yes |
 | sonido-registry | Effect factory and discovery by name/category | Yes |
+| sonido-platform | Hardware abstraction: PlatformController trait, ControlMapper, ControlId | Yes |
 | sonido-analysis | FFT, spectral analysis, transfer functions | No |
-| sonido-io | WAV I/O, real-time audio streaming (cpal) | No |
+| sonido-io | WAV I/O, real-time audio streaming (cpal), stereo support | No |
 | sonido-cli | Command-line processor and analyzer | No |
 | sonido-gui | egui-based real-time effects GUI | No |
 
 ## Effect Trait
 
+Stereo-first design with backwards compatibility:
+
 ```rust
 pub trait Effect {
+    // Primary stereo processing (implement for true stereo effects)
+    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32);
+
+    // Mono processing (implement for mono effects, or use default)
     fn process(&mut self, input: f32) -> f32;
+
+    // Block processing
     fn process_block(&mut self, input: &[f32], output: &mut [f32]);
+    fn process_block_stereo(&mut self, left_in: &[f32], right_in: &[f32],
+                            left_out: &mut [f32], right_out: &mut [f32]);
+
+    // Metadata
+    fn is_true_stereo(&self) -> bool;  // true for decorrelated L/R processing
     fn set_sample_rate(&mut self, sample_rate: f32);
     fn reset(&mut self);
     fn latency_samples(&self) -> usize;
 }
 ```
+
+**True stereo effects** (decorrelated L/R): Reverb, Chorus, Delay (ping-pong), Phaser, Flanger
+**Dual-mono effects** (independent L/R): Distortion, Compressor, Filter, Gate, Tremolo, etc.
 
 ## Key Patterns
 
@@ -87,7 +104,7 @@ cargo run -p sonido-cli -- --help   # CLI help
 
 ## Hardware Context
 
-See `docs/HARDWARE.md` for embedded target details (Daisy Seed, bkshepherd 125B pedal).
+See `docs/HARDWARE.md` for embedded target details (Daisy Seed, Hothouse DIY pedal platform).
 
 ## audioDNA RE Priority
 

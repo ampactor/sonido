@@ -8,6 +8,7 @@ members = [
     "crates/sonido-cli",
     "crates/sonido-gui",
     "crates/sonido-registry",
+    "crates/sonido-platform",
 ]
 
 [workspace.package]
@@ -36,6 +37,7 @@ sonido-effects = { path = "crates/sonido-effects", default-features = false }
 sonido-analysis = { path = "crates/sonido-analysis" }
 sonido-io = { path = "crates/sonido-io" }
 sonido-registry = { path = "crates/sonido-registry", default-features = false }
+sonido-platform = { path = "crates/sonido-platform", default-features = false }
 
 # CLI dependencies
 clap = { version = "4", features = ["derive"] }
