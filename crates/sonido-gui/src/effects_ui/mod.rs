@@ -4,21 +4,33 @@ mod chorus;
 mod compressor;
 mod delay;
 mod distortion;
+mod eq;
 mod filter;
+mod flanger;
+mod gate;
 mod multivibrato;
+mod phaser;
 mod preamp;
 mod reverb;
 mod tape;
+mod tremolo;
+mod wah;
 
 pub use chorus::ChorusPanel;
 pub use compressor::CompressorPanel;
 pub use delay::DelayPanel;
 pub use distortion::DistortionPanel;
+pub use eq::ParametricEqPanel;
 pub use filter::FilterPanel;
+pub use flanger::FlangerPanel;
+pub use gate::GatePanel;
 pub use multivibrato::MultiVibratoPanel;
+pub use phaser::PhaserPanel;
 pub use preamp::PreampPanel;
 pub use reverb::ReverbPanel;
 pub use tape::TapePanel;
+pub use tremolo::TremoloPanel;
+pub use wah::WahPanel;
 
 use crate::audio_bridge::SharedParams;
 use egui::Ui;
@@ -48,7 +60,13 @@ pub enum EffectType {
     Preamp,
     Distortion,
     Compressor,
+    Gate,
+    ParametricEq,
+    Wah,
     Chorus,
+    Flanger,
+    Phaser,
+    Tremolo,
     Delay,
     Filter,
     MultiVibrato,
@@ -63,7 +81,13 @@ impl EffectType {
             Self::Preamp => "Preamp",
             Self::Distortion => "Distortion",
             Self::Compressor => "Compressor",
+            Self::Gate => "Gate",
+            Self::ParametricEq => "Parametric EQ",
+            Self::Wah => "Wah",
             Self::Chorus => "Chorus",
+            Self::Flanger => "Flanger",
+            Self::Phaser => "Phaser",
+            Self::Tremolo => "Tremolo",
             Self::Delay => "Delay",
             Self::Filter => "Filter",
             Self::MultiVibrato => "Vibrato",
@@ -78,7 +102,13 @@ impl EffectType {
             Self::Preamp => "Pre",
             Self::Distortion => "Dist",
             Self::Compressor => "Comp",
+            Self::Gate => "Gate",
+            Self::ParametricEq => "EQ",
+            Self::Wah => "Wah",
             Self::Chorus => "Chor",
+            Self::Flanger => "Flgr",
+            Self::Phaser => "Phsr",
+            Self::Tremolo => "Trem",
             Self::Delay => "Dly",
             Self::Filter => "Flt",
             Self::MultiVibrato => "Vib",
@@ -93,7 +123,13 @@ impl EffectType {
             Self::Preamp,
             Self::Distortion,
             Self::Compressor,
+            Self::Gate,
+            Self::ParametricEq,
+            Self::Wah,
             Self::Chorus,
+            Self::Flanger,
+            Self::Phaser,
+            Self::Tremolo,
             Self::Delay,
             Self::Filter,
             Self::MultiVibrato,
@@ -108,12 +144,18 @@ impl EffectType {
             Self::Preamp => 0,
             Self::Distortion => 1,
             Self::Compressor => 2,
-            Self::Chorus => 3,
-            Self::Delay => 4,
-            Self::Filter => 5,
-            Self::MultiVibrato => 6,
-            Self::Tape => 7,
-            Self::Reverb => 8,
+            Self::Gate => 3,
+            Self::ParametricEq => 4,
+            Self::Wah => 5,
+            Self::Chorus => 6,
+            Self::Flanger => 7,
+            Self::Phaser => 8,
+            Self::Tremolo => 9,
+            Self::Delay => 10,
+            Self::Filter => 11,
+            Self::MultiVibrato => 12,
+            Self::Tape => 13,
+            Self::Reverb => 14,
         }
     }
 
