@@ -74,6 +74,16 @@ enum PresetsCommand {
         name: Option<String>,
     },
 
+    /// Export all factory presets to a directory as TOML files
+    ExportFactory {
+        /// Output directory for preset files
+        output_dir: PathBuf,
+
+        /// Overwrite existing files
+        #[arg(long)]
+        force: bool,
+    },
+
     /// Show preset directories
     Paths,
 }
@@ -87,6 +97,7 @@ pub fn run(args: PresetsArgs) -> anyhow::Result<()> {
         }
         PresetsCommand::Delete { name, force } => delete_preset(&name, force),
         PresetsCommand::Copy { source, name } => copy_preset(&source, name.as_deref()),
+        PresetsCommand::ExportFactory { output_dir, force } => export_factory(&output_dir, force),
         PresetsCommand::Paths => show_paths(),
     }
 }
@@ -278,6 +289,44 @@ fn show_paths() -> anyhow::Result<()> {
     println!("User presets:   {}", user_presets_dir().display());
     println!("System presets: {}", sonido_config::system_presets_dir().display());
     println!("Config dir:     {}", sonido_config::user_config_dir().display());
+
+    Ok(())
+}
+
+fn export_factory(output_dir: &PathBuf, force: bool) -> anyhow::Result<()> {
+    use sonido_config::factory_presets::factory_preset_names;
+
+    // Create output directory if it doesn't exist
+    if !output_dir.exists() {
+        std::fs::create_dir_all(output_dir)?;
+        println!("Created directory: {}", output_dir.display());
+    }
+
+    let presets = factory_presets();
+    let names = factory_preset_names();
+
+    if presets.len() != names.len() {
+        anyhow::bail!("Mismatch between preset count and name count");
+    }
+
+    println!("Exporting {} factory presets to {}", presets.len(), output_dir.display());
+    println!();
+
+    for (preset, name) in presets.iter().zip(names.iter()) {
+        let filename = format!("{}.toml", name);
+        let path = output_dir.join(&filename);
+
+        if path.exists() && !force {
+            println!("  [skip] {} (already exists, use --force to overwrite)", filename);
+            continue;
+        }
+
+        preset.save(&path)?;
+        println!("  [ok]   {} - {}", filename, preset.name);
+    }
+
+    println!();
+    println!("Done! Exported {} presets.", presets.len());
 
     Ok(())
 }
