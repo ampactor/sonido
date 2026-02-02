@@ -10,8 +10,14 @@ use libm::{roundf, ceilf};
 /// These are mutually prime to avoid resonances.
 const COMB_TUNINGS_44K: [usize; 8] = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617];
 
+/// Right channel comb filter delay times (slightly offset for stereo decorrelation).
+const COMB_TUNINGS_44K_R: [usize; 8] = [1139, 1211, 1300, 1379, 1445, 1514, 1580, 1640];
+
 /// Freeverb allpass filter delay times (at 44.1kHz reference).
 const ALLPASS_TUNINGS_44K: [usize; 4] = [556, 441, 341, 225];
+
+/// Right channel allpass filter delay times (slightly offset for stereo).
+const ALLPASS_TUNINGS_44K_R: [usize; 4] = [579, 464, 364, 248];
 
 /// Reference sample rate for tuning constants.
 const REFERENCE_RATE: f32 = 44100.0;
@@ -74,12 +80,17 @@ impl ReverbType {
 /// let output = reverb.process(0.5);
 /// ```
 pub struct Reverb {
-    // Freeverb structure
+    // Freeverb structure (left channel)
     combs: [CombFilter; 8],
     allpasses: [AllpassFilter; 4],
 
-    // Pre-delay
+    // Right channel (separate tanks for true stereo)
+    combs_r: [CombFilter; 8],
+    allpasses_r: [AllpassFilter; 4],
+
+    // Pre-delay (stereo)
     predelay_line: InterpolatedDelay,
+    predelay_line_r: InterpolatedDelay,
     predelay_samples: SmoothedParam,
 
     // Smoothed parameters
@@ -87,6 +98,9 @@ pub struct Reverb {
     decay: SmoothedParam,
     damping: SmoothedParam,
     mix: SmoothedParam,
+
+    /// Stereo width (0 = mono, 1 = full stereo)
+    stereo_width: f32,
 
     // Configuration
     sample_rate: f32,
@@ -101,13 +115,19 @@ pub struct Reverb {
 impl Reverb {
     /// Create a new reverb effect at the given sample rate.
     pub fn new(sample_rate: f32) -> Self {
-        // Create comb filters with scaled delay times
+        // Create comb filters with scaled delay times (left channel)
         let combs = core::array::from_fn(|i| {
             let delay = scale_to_rate(COMB_TUNINGS_44K[i], sample_rate);
             CombFilter::new(delay)
         });
 
-        // Create allpass filters with scaled delay times
+        // Create comb filters for right channel (slightly different tunings)
+        let combs_r = core::array::from_fn(|i| {
+            let delay = scale_to_rate(COMB_TUNINGS_44K_R[i], sample_rate);
+            CombFilter::new(delay)
+        });
+
+        // Create allpass filters with scaled delay times (left channel)
         let allpasses = core::array::from_fn(|i| {
             let delay = scale_to_rate(ALLPASS_TUNINGS_44K[i], sample_rate);
             let mut ap = AllpassFilter::new(delay);
@@ -115,9 +135,18 @@ impl Reverb {
             ap
         });
 
-        // Pre-delay: up to 100ms
+        // Create allpass filters for right channel
+        let allpasses_r = core::array::from_fn(|i| {
+            let delay = scale_to_rate(ALLPASS_TUNINGS_44K_R[i], sample_rate);
+            let mut ap = AllpassFilter::new(delay);
+            ap.set_feedback(0.5);
+            ap
+        });
+
+        // Pre-delay: up to 100ms (stereo)
         let max_predelay = ceilf(MAX_PREDELAY_MS / 1000.0 * sample_rate) as usize;
         let predelay_line = InterpolatedDelay::new(max_predelay.max(1));
+        let predelay_line_r = InterpolatedDelay::new(max_predelay.max(1));
 
         // Default to Room preset
         let (room, decay, damp, predelay_ms) = ReverbType::Room.defaults();
@@ -126,12 +155,16 @@ impl Reverb {
         let mut reverb = Self {
             combs,
             allpasses,
+            combs_r,
+            allpasses_r,
             predelay_line,
+            predelay_line_r,
             predelay_samples: SmoothedParam::with_config(predelay_samps, sample_rate, 50.0),
             room_size: SmoothedParam::with_config(room, sample_rate, 20.0),
             decay: SmoothedParam::with_config(decay, sample_rate, 20.0),
             damping: SmoothedParam::with_config(damp, sample_rate, 20.0),
             mix: SmoothedParam::with_config(0.5, sample_rate, 10.0),
+            stereo_width: 1.0,
             sample_rate,
             reverb_type: ReverbType::Room,
             cached_room: -1.0,
@@ -141,6 +174,16 @@ impl Reverb {
 
         reverb.update_comb_params();
         reverb
+    }
+
+    /// Set stereo width (0 = mono, 1 = full stereo).
+    pub fn set_stereo_width(&mut self, width: f32) {
+        self.stereo_width = width.clamp(0.0, 1.0);
+    }
+
+    /// Get current stereo width.
+    pub fn stereo_width(&self) -> f32 {
+        self.stereo_width
     }
 
     /// Set the room size (0.0 to 1.0).
@@ -250,6 +293,11 @@ impl Reverb {
             comb.set_feedback(feedback);
             comb.set_damp(damp);
         }
+        // Update right channel combs with same parameters
+        for comb in &mut self.combs_r {
+            comb.set_feedback(feedback);
+            comb.set_damp(damp);
+        }
     }
 }
 
@@ -291,6 +339,73 @@ impl Effect for Reverb {
         input * (1.0 - mix) + wet * mix
     }
 
+    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+        // True stereo: separate reverb tanks for L/R with stereo width control
+        self.room_size.advance();
+        self.decay.advance();
+        self.damping.advance();
+        let predelay = self.predelay_samples.advance();
+        let mix = self.mix.advance();
+
+        self.update_comb_params();
+
+        // Apply pre-delay (stereo)
+        let predelayed_l = if predelay > 0.5 {
+            self.predelay_line.read_write(left, predelay)
+        } else {
+            self.predelay_line.write(left);
+            left
+        };
+
+        let predelayed_r = if predelay > 0.5 {
+            self.predelay_line_r.read_write(right, predelay)
+        } else {
+            self.predelay_line_r.write(right);
+            right
+        };
+
+        // Process left channel through its tank
+        let mut comb_sum_l = 0.0f32;
+        for comb in &mut self.combs {
+            comb_sum_l += comb.process(predelayed_l);
+        }
+        comb_sum_l *= 0.125;
+
+        let mut diffused_l = comb_sum_l;
+        for allpass in &mut self.allpasses {
+            diffused_l = allpass.process(diffused_l);
+        }
+
+        // Process right channel through its tank
+        let mut comb_sum_r = 0.0f32;
+        for comb in &mut self.combs_r {
+            comb_sum_r += comb.process(predelayed_r);
+        }
+        comb_sum_r *= 0.125;
+
+        let mut diffused_r = comb_sum_r;
+        for allpass in &mut self.allpasses_r {
+            diffused_r = allpass.process(diffused_r);
+        }
+
+        // Apply stereo width (0 = mono, 1 = full stereo)
+        // At width=0, both channels get the average
+        // At width=1, channels are fully independent
+        let mid = (diffused_l + diffused_r) * 0.5;
+        let side = (diffused_l - diffused_r) * 0.5;
+        let wet_l = mid + side * self.stereo_width;
+        let wet_r = mid - side * self.stereo_width;
+
+        let out_l = left * (1.0 - mix) + wet_l * mix;
+        let out_r = right * (1.0 - mix) + wet_r * mix;
+
+        (out_l, out_r)
+    }
+
+    fn is_true_stereo(&self) -> bool {
+        true
+    }
+
     fn process_block(&mut self, input: &[f32], output: &mut [f32]) {
         for (inp, out) in input.iter().zip(output.iter_mut()) {
             *out = self.process(*inp);
@@ -300,7 +415,7 @@ impl Effect for Reverb {
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
 
-        // Recreate delay structures for new sample rate
+        // Recreate delay structures for new sample rate (left channel)
         self.combs = core::array::from_fn(|i| {
             let delay = scale_to_rate(COMB_TUNINGS_44K[i], sample_rate);
             CombFilter::new(delay)
@@ -313,8 +428,22 @@ impl Effect for Reverb {
             ap
         });
 
+        // Recreate right channel structures
+        self.combs_r = core::array::from_fn(|i| {
+            let delay = scale_to_rate(COMB_TUNINGS_44K_R[i], sample_rate);
+            CombFilter::new(delay)
+        });
+
+        self.allpasses_r = core::array::from_fn(|i| {
+            let delay = scale_to_rate(ALLPASS_TUNINGS_44K_R[i], sample_rate);
+            let mut ap = AllpassFilter::new(delay);
+            ap.set_feedback(0.5);
+            ap
+        });
+
         let max_predelay = ceilf(MAX_PREDELAY_MS / 1000.0 * sample_rate) as usize;
         self.predelay_line = InterpolatedDelay::new(max_predelay.max(1));
+        self.predelay_line_r = InterpolatedDelay::new(max_predelay.max(1));
 
         // Update parameter sample rates
         self.room_size.set_sample_rate(sample_rate);
@@ -332,10 +461,17 @@ impl Effect for Reverb {
         for comb in &mut self.combs {
             comb.clear();
         }
+        for comb in &mut self.combs_r {
+            comb.clear();
+        }
         for allpass in &mut self.allpasses {
             allpass.clear();
         }
+        for allpass in &mut self.allpasses_r {
+            allpass.clear();
+        }
         self.predelay_line.clear();
+        self.predelay_line_r.clear();
 
         self.room_size.snap_to_target();
         self.decay.snap_to_target();
@@ -564,5 +700,79 @@ mod tests {
         // Verify clamping
         reverb.set_predelay_ms(200.0); // Max is 100ms
         assert!(reverb.predelay_ms() <= 100.0);
+    }
+
+    #[test]
+    fn test_reverb_stereo_processing() {
+        let mut reverb = Reverb::new(48000.0);
+        reverb.set_mix(1.0);
+        reverb.reset();
+
+        // Process stereo impulse
+        let (l, r) = reverb.process_stereo(1.0, 1.0);
+        assert!(l.is_finite());
+        assert!(r.is_finite());
+
+        // Process more samples
+        for _ in 0..10000 {
+            let (l, r) = reverb.process_stereo(0.0, 0.0);
+            assert!(l.is_finite());
+            assert!(r.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_reverb_is_true_stereo() {
+        let reverb = Reverb::new(48000.0);
+        assert!(reverb.is_true_stereo());
+    }
+
+    #[test]
+    fn test_reverb_stereo_width() {
+        let mut reverb = Reverb::new(48000.0);
+
+        reverb.set_stereo_width(0.5);
+        assert!((reverb.stereo_width() - 0.5).abs() < 0.01);
+
+        reverb.set_stereo_width(0.0);
+        assert!((reverb.stereo_width() - 0.0).abs() < 0.01);
+
+        reverb.set_stereo_width(1.0);
+        assert!((reverb.stereo_width() - 1.0).abs() < 0.01);
+
+        // Clamping
+        reverb.set_stereo_width(2.0);
+        assert!(reverb.stereo_width() <= 1.0);
+    }
+
+    #[test]
+    fn test_reverb_stereo_decorrelation() {
+        let mut reverb = Reverb::new(48000.0);
+        reverb.set_mix(1.0);
+        reverb.set_decay(0.8);
+        reverb.set_stereo_width(1.0);
+        reverb.reset();
+
+        // Process stereo impulse with DIFFERENT values to each channel
+        // This will excite the different tanks with different signals
+        reverb.process_stereo(1.0, 0.5);
+
+        // Let the reverb develop for a bit
+        for _ in 0..5000 {
+            reverb.process_stereo(0.0, 0.0);
+        }
+
+        // Now collect samples and check decorrelation
+        let mut diff_count = 0;
+        for _ in 0..1000 {
+            let (l, r) = reverb.process_stereo(0.0, 0.0);
+            // Check if L and R are different (accounting for stereo width effect)
+            if (l - r).abs() > 0.0001 {
+                diff_count += 1;
+            }
+        }
+
+        // With true stereo (different tanks) and different inputs, L and R should differ
+        assert!(diff_count > 100, "L and R should be decorrelated, but only {} samples differed", diff_count);
     }
 }

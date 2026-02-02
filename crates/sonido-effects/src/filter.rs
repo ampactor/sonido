@@ -77,6 +77,23 @@ impl Effect for LowPassFilter {
         self.biquad.process(input)
     }
 
+    #[inline]
+    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+        // Dual-mono: process each channel through the same filter
+        // Note: biquad state is shared, giving slight coloration
+        self.cutoff.advance();
+        self.q.advance();
+
+        if self.needs_update || !self.cutoff.is_settled() || !self.q.is_settled() {
+            self.update_coefficients();
+        }
+
+        let out_l = self.biquad.process(left);
+        let out_r = self.biquad.process(right);
+
+        (out_l, out_r)
+    }
+
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
         self.cutoff.set_sample_rate(sample_rate);

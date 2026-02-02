@@ -100,6 +100,32 @@ impl Effect for CleanPreamp {
         output * output_level
     }
 
+    #[inline]
+    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+        // Dual-mono: process each channel independently with same settings
+        let gain = self.gain.advance();
+        let output_level = self.output.advance();
+        let threshold = powf(10.0, self.headroom_db / 20.0);
+
+        // Process left
+        let gained_l = left * gain;
+        let out_l = if gained_l.abs() > threshold {
+            threshold * gained_l.signum() * (1.0 + tanhf(gained_l.abs() / threshold - 1.0))
+        } else {
+            gained_l
+        } * output_level;
+
+        // Process right
+        let gained_r = right * gain;
+        let out_r = if gained_r.abs() > threshold {
+            threshold * gained_r.signum() * (1.0 + tanhf(gained_r.abs() / threshold - 1.0))
+        } else {
+            gained_r
+        } * output_level;
+
+        (out_l, out_r)
+    }
+
     fn reset(&mut self) {
         self.gain.snap_to_target();
         self.output.snap_to_target();

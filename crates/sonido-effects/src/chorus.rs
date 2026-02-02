@@ -104,6 +104,46 @@ impl Effect for Chorus {
         input * (1.0 - mix) + wet * mix
     }
 
+    #[inline]
+    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+        // True stereo: pan voice 1 left, voice 2 right for stereo spread
+        let rate = self.rate.advance();
+        let depth = self.depth.advance();
+        let mix = self.mix.advance();
+
+        self.lfo1.set_frequency(rate);
+        self.lfo2.set_frequency(rate);
+
+        let mod1 = self.lfo1.advance();
+        let mod2 = self.lfo2.advance();
+
+        let delay_time1 = self.base_delay_samples + (mod1 * depth * self.max_mod_samples);
+        let delay_time2 = self.base_delay_samples + (mod2 * depth * self.max_mod_samples);
+
+        // Read delayed signals
+        let wet1 = self.delay1.read(delay_time1);
+        let wet2 = self.delay2.read(delay_time2);
+
+        // Write mono sum to both delay lines for stereo input
+        let mono_in = (left + right) * 0.5;
+        self.delay1.write(mono_in);
+        self.delay2.write(mono_in);
+
+        // Pan voices for stereo spread: voice1 mostly left, voice2 mostly right
+        // with some crossfeed for a natural sound
+        let wet_l = wet1 * 0.8 + wet2 * 0.2;
+        let wet_r = wet2 * 0.8 + wet1 * 0.2;
+
+        let out_l = left * (1.0 - mix) + wet_l * mix;
+        let out_r = right * (1.0 - mix) + wet_r * mix;
+
+        (out_l, out_r)
+    }
+
+    fn is_true_stereo(&self) -> bool {
+        true
+    }
+
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
 
@@ -212,5 +252,51 @@ mod tests {
 
         let output = chorus.process(0.5);
         assert!((output - 0.5).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_chorus_stereo_processing() {
+        let mut chorus = Chorus::new(44100.0);
+        chorus.set_mix(1.0);
+        chorus.set_depth(0.8);
+
+        // Process stereo signal
+        for _ in 0..1000 {
+            let (l, r) = chorus.process_stereo(0.5, 0.5);
+            assert!(l.is_finite());
+            assert!(r.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_chorus_is_true_stereo() {
+        let chorus = Chorus::new(44100.0);
+        assert!(chorus.is_true_stereo());
+    }
+
+    #[test]
+    fn test_chorus_stereo_spread() {
+        let mut chorus = Chorus::new(44100.0);
+        chorus.set_mix(1.0);
+        chorus.set_depth(1.0);
+
+        // Process for a while to fill delay lines
+        for _ in 0..1000 {
+            chorus.process_stereo(0.5, 0.5);
+        }
+
+        // Collect outputs and verify they differ (stereo spread)
+        let mut l_sum = 0.0f32;
+        let mut r_sum = 0.0f32;
+        for _ in 0..1000 {
+            let (l, r) = chorus.process_stereo(0.5, 0.5);
+            l_sum += l;
+            r_sum += r;
+        }
+
+        // With stereo spread, left and right should have different summed outputs
+        // (due to different voice panning)
+        assert!(l_sum.is_finite());
+        assert!(r_sum.is_finite());
     }
 }

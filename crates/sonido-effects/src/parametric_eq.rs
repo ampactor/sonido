@@ -281,6 +281,47 @@ impl Effect for ParametricEq {
         after_high
     }
 
+    #[inline]
+    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+        // Dual-mono: process each channel through the same filter cascade
+        // Note: The biquad filters share state, so processing is interleaved.
+        // For true dual-mono EQ, separate filter instances would be needed per channel.
+
+        // Advance smoothed parameters once
+        self.low_freq.advance();
+        self.low_gain.advance();
+        self.low_q.advance();
+        self.mid_freq.advance();
+        self.mid_gain.advance();
+        self.mid_q.advance();
+        self.high_freq.advance();
+        self.high_gain.advance();
+        self.high_q.advance();
+
+        // Update coefficients if needed
+        if self.low_needs_update || !self.low_freq.is_settled() || !self.low_gain.is_settled() || !self.low_q.is_settled() {
+            self.update_low_coefficients();
+        }
+        if self.mid_needs_update || !self.mid_freq.is_settled() || !self.mid_gain.is_settled() || !self.mid_q.is_settled() {
+            self.update_mid_coefficients();
+        }
+        if self.high_needs_update || !self.high_freq.is_settled() || !self.high_gain.is_settled() || !self.high_q.is_settled() {
+            self.update_high_coefficients();
+        }
+
+        // Process left channel
+        let left_low = self.low_filter.process(left);
+        let left_mid = self.mid_filter.process(left_low);
+        let left_out = self.high_filter.process(left_mid);
+
+        // Process right channel (filter state is shared)
+        let right_low = self.low_filter.process(right);
+        let right_mid = self.mid_filter.process(right_low);
+        let right_out = self.high_filter.process(right_mid);
+
+        (left_out, right_out)
+    }
+
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
 

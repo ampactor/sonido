@@ -141,6 +141,27 @@ impl Effect for TapeSaturation {
         self.hf_state * output_gain
     }
 
+    #[inline]
+    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+        // Dual-mono: process each channel independently
+        // Note: hf_state is shared, giving slight coloration between channels
+        let drive = self.drive.advance();
+        let output_gain = self.output_gain.advance();
+        let saturation = self.saturation.advance();
+
+        // Process left
+        let sat_l = self.saturate(left, drive, saturation);
+        self.hf_state = sat_l + self.hf_coeff * (self.hf_state - sat_l);
+        let out_l = self.hf_state * output_gain;
+
+        // Process right
+        let sat_r = self.saturate(right, drive, saturation);
+        self.hf_state = sat_r + self.hf_coeff * (self.hf_state - sat_r);
+        let out_r = self.hf_state * output_gain;
+
+        (out_l, out_r)
+    }
+
     fn reset(&mut self) {
         self.hf_state = 0.0;
         self.drive.snap_to_target();

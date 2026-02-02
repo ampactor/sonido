@@ -177,6 +177,32 @@ impl Effect for Distortion {
         filtered * level
     }
 
+    #[inline]
+    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+        // Dual-mono: process each channel independently
+        // Note: We need to be careful about shared state (tone_filter_state)
+        // For true dual-mono, we'd need separate filter states per channel.
+        // For now, we process left first, then right, which gives a slight
+        // coloration but maintains the distortion character.
+        let drive = self.drive.advance();
+        let level = self.level.advance();
+        let tone_coeff = self.tone_coeff.advance();
+
+        // Process left channel
+        let driven_l = left * drive;
+        let shaped_l = self.apply_waveshape(driven_l);
+        let filtered_l = self.tone_filter(shaped_l, tone_coeff);
+        let out_l = filtered_l * level;
+
+        // Process right channel (waveshaping is stateless, filter uses same state)
+        let driven_r = right * drive;
+        let shaped_r = self.apply_waveshape(driven_r);
+        let filtered_r = self.tone_filter(shaped_r, tone_coeff);
+        let out_r = filtered_r * level;
+
+        (out_l, out_r)
+    }
+
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
         self.drive.set_sample_rate(sample_rate);

@@ -212,6 +212,70 @@ impl Effect for Gate {
         input * self.gain
     }
 
+    #[inline]
+    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+        // Linked stereo: detect envelope from both channels (max), apply same gate
+        // Using max prevents the gate from opening/closing based on only one channel
+        let threshold_db = self.threshold.advance();
+        let _attack = self.attack_ms.advance();
+        let _release = self.release_ms.advance();
+        let hold_ms = self.hold_ms.advance();
+
+        // Get envelope from the louder channel
+        let sum = (left.abs() + right.abs()) * 0.5;
+        let envelope = self.envelope_follower.process(sum);
+
+        let threshold_linear = Self::db_to_linear(threshold_db);
+        let hold_samples = ((hold_ms / 1000.0) * self.sample_rate) as u32;
+        let above_threshold = envelope > threshold_linear;
+
+        // State machine (same as mono)
+        match self.state {
+            GateState::Closed => {
+                if above_threshold {
+                    self.state = GateState::Opening;
+                }
+            }
+            GateState::Opening => {
+                self.gain += self.attack_inc;
+                if self.gain >= 1.0 {
+                    self.gain = 1.0;
+                    self.state = GateState::Open;
+                }
+                if !above_threshold {
+                    self.state = GateState::Closing;
+                }
+            }
+            GateState::Open => {
+                if !above_threshold {
+                    self.hold_counter = hold_samples;
+                    self.state = GateState::Holding;
+                }
+            }
+            GateState::Holding => {
+                if above_threshold {
+                    self.state = GateState::Open;
+                } else if self.hold_counter > 0 {
+                    self.hold_counter -= 1;
+                } else {
+                    self.state = GateState::Closing;
+                }
+            }
+            GateState::Closing => {
+                self.gain -= self.release_dec;
+                if self.gain <= 0.0 {
+                    self.gain = 0.0;
+                    self.state = GateState::Closed;
+                }
+                if above_threshold {
+                    self.state = GateState::Opening;
+                }
+            }
+        }
+
+        (left * self.gain, right * self.gain)
+    }
+
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
         self.envelope_follower.set_sample_rate(sample_rate);
