@@ -190,18 +190,82 @@ cargo test --no-default-features -p sonido-core
 cargo test --no-default-features -p sonido-effects
 ```
 
+## Performance
+
+Measured on Intel Core i5-6300U @ 2.40 GHz, block size 256 samples at 48 kHz:
+
+| Effect | µs/block (256) | ns/sample | CPU % (mono, 48 kHz) |
+|--------|---------------|-----------|---------------------|
+| CleanPreamp | 2.2 | 9 | 0.04% |
+| LowPassFilter | 3.4 | 13 | 0.06% |
+| Delay | 3.1 | 12 | 0.06% |
+| TapeSaturation | 6.7 | 26 | 0.13% |
+| Distortion | 14.4 | 56 | 0.27% |
+| Chorus | 20.4 | 80 | 0.38% |
+| Compressor | 29.1 | 113 | 0.54% |
+| Reverb | 44.5 | 174 | 0.83% |
+| MultiVibrato | 73.4 | 287 | 1.38% |
+| EffectChain (5 effects) | 42.8 | 167 | 0.80% |
+
+CPU % = `ns_per_sample / (1e9 / 48000) × 100`. All effects comfortably fit within a real-time audio callback budget. Run your own: `cargo bench -p sonido-effects`
+
+## Audio Demos
+
+Pre-generated audio samples demonstrating synthesis and effect processing are in [`demos/`](demos/):
+
+| File | Description |
+|------|-------------|
+| `src_sine_440.wav` | Clean 440 Hz sine tone (dry reference) |
+| `src_saw_chord.wav` | PolyBLEP sawtooth C major chord with ADSR envelope |
+| `src_perc_adsr.wav` | Short percussive hit for reverb/delay demos |
+| `fx_distortion_soft.wav` | Soft-clip distortion — harmonic generation |
+| `fx_distortion_hard.wav` | Hard-clip distortion — aggressive saturation |
+| `fx_chorus.wav` | Stereo chorus on saw chord |
+| `fx_reverb_hall.wav` | Hall reverb on percussive transient |
+| `fx_delay.wav` | Tempo-synced delay with feedback |
+| `fx_full_chain.wav` | 5-effect chain: preamp → distortion → chorus → delay → reverb |
+
+Regenerate all: `./scripts/generate_demos.sh`
+
 ## Documentation
 
-- [Architecture Overview](docs/ARCHITECTURE.md)
+### Design & Theory
+- [DSP Fundamentals](docs/DSP_FUNDAMENTALS.md) -- signal processing theory behind the implementations
+- [Design Decisions](docs/DESIGN_DECISIONS.md) -- architecture decision records with rationale
+- [Architecture Overview](docs/ARCHITECTURE.md) -- crate structure and data flow
+
+### User Guides
 - [Getting Started Guide](docs/GETTING_STARTED.md)
 - [CLI Guide](docs/CLI_GUIDE.md)
 - [Effects Reference](docs/EFFECTS_REFERENCE.md)
 - [Synthesis Guide](docs/SYNTHESIS.md)
+- [GUI Documentation](docs/GUI.md)
+
+### Specialized Topics
 - [CFC/PAC Analysis Guide](docs/CFC_ANALYSIS.md)
 - [Biosignal Analysis](docs/BIOSIGNAL_ANALYSIS.md)
+- [Hardware Targets](docs/HARDWARE.md)
+
+### Development
 - [Contributing](docs/CONTRIBUTING.md)
+- [Testing](docs/TESTING.md)
+- [Benchmarks](docs/BENCHMARKS.md)
 - [Changelog](docs/CHANGELOG.md)
-- [GUI Documentation](docs/GUI.md)
+
+## audioDNA: Reverse-Engineering Reference Implementations
+
+Sonido's effect algorithms are informed by analysis of commercial DSP products.
+These are clean-room implementations -- no proprietary code or firmware was used.
+The goal is to demonstrate deep understanding of production DSP architectures.
+
+| Target Product | DSP Domain | Sonido Implementation |
+|----------------|------------|----------------------|
+| DigiTech Ventura / Modela | Modulation (chorus, vibrato, rotary) | `Chorus`, `MultiVibrato`, LFO engine |
+| DigiTech Obscura | Delay (analog, tape, lo-fi modes) | `Delay` with feedback coloring, `TapeSaturation` |
+| DigiTech Dirty Robot | Envelope-following filter / synth | `Wah` (auto-wah mode), `LowPassFilter`, synth engine |
+| DigiTech Polara / Supernatural | Reverb (room, hall, plate, spring) | `Reverb` (Freeverb topology with stereo decorrelation) |
+
+See `sonido compare` CLI command for A/B measurement between hardware captures and Sonido output.
 
 ## License
 
