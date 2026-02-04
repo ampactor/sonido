@@ -7,6 +7,7 @@ use core::f32::consts::PI;
 use libm::tanf;
 
 use crate::Effect;
+use crate::flush_denormal;
 
 /// State Variable Filter output type
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -120,8 +121,8 @@ impl StateVariableFilter {
         let v1 = (self.g * v3 + self.ic1eq) / (1.0 + self.g * (self.g + self.k));
         let v2 = self.ic2eq + self.g * v1;
 
-        self.ic1eq = 2.0 * v1 - self.ic1eq;
-        self.ic2eq = 2.0 * v2 - self.ic2eq;
+        self.ic1eq = flush_denormal(2.0 * v1 - self.ic1eq);
+        self.ic2eq = flush_denormal(2.0 * v2 - self.ic2eq);
 
         let lp = v2;
         let bp = v1;

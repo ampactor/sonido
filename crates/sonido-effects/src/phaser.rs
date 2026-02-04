@@ -5,7 +5,7 @@
 //! cascading multiple allpass filters, whose frequencies are modulated by an LFO.
 //! This creates notches in the frequency spectrum that sweep up and down.
 
-use sonido_core::{Effect, SmoothedParam, Lfo, ParameterInfo, ParamDescriptor, ParamUnit};
+use sonido_core::{Effect, SmoothedParam, Lfo, ParameterInfo, ParamDescriptor, ParamUnit, flush_denormal};
 use core::f32::consts::PI;
 use libm::tanf;
 
@@ -14,13 +14,15 @@ const MAX_STAGES: usize = 12;
 
 /// Phaser effect with LFO-modulated allpass filters.
 ///
-/// # Parameters
+/// ## Parameter Indices (`ParameterInfo`)
 ///
-/// - **rate**: LFO speed (0.05-5 Hz)
-/// - **depth**: Frequency sweep range (0-100%)
-/// - **stages**: Number of allpass stages (2-12)
-/// - **feedback**: Resonance/regeneration (0-95%)
-/// - **mix**: Wet/dry balance (0-100%)
+/// | Index | Name | Range | Default |
+/// |-------|------|-------|---------|
+/// | 0 | Rate | 0.05–5.0 Hz | 0.3 |
+/// | 1 | Depth | 0–100% | 50.0 |
+/// | 2 | Stages | 2–12 | 6 |
+/// | 3 | Feedback | 0–95% | 50.0 |
+/// | 4 | Mix | 0–100% | 50.0 |
 ///
 /// # Algorithm
 ///
@@ -258,7 +260,7 @@ impl Effect for Phaser {
         }
 
         // Store for next iteration
-        self.feedback_sample = wet;
+        self.feedback_sample = flush_denormal(wet);
 
         // Mix dry and wet signals
         input * (1.0 - mix) + wet * mix
@@ -300,7 +302,7 @@ impl Effect for Phaser {
         for i in 0..self.stages {
             wet_l = self.allpass[i].process(wet_l);
         }
-        self.feedback_sample = wet_l;
+        self.feedback_sample = flush_denormal(wet_l);
 
         // Process right channel
         let input_r = right + self.feedback_sample_r * feedback;
@@ -308,7 +310,7 @@ impl Effect for Phaser {
         for i in 0..self.stages {
             wet_r = self.allpass_r[i].process(wet_r);
         }
-        self.feedback_sample_r = wet_r;
+        self.feedback_sample_r = flush_denormal(wet_r);
 
         let out_l = left * (1.0 - mix) + wet_l * mix;
         let out_r = right * (1.0 - mix) + wet_r * mix;

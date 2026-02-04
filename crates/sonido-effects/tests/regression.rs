@@ -29,9 +29,40 @@ const SAMPLE_RATE: f32 = 48000.0;
 const TEST_DURATION_SAMPLES: usize = 4800; // 100ms at 48kHz
 const GOLDEN_DIR: &str = "tests/golden";
 
-// Thresholds for regression detection
+/// Mean Squared Error threshold for regression detection.
+///
+/// Chosen at 1e-6 based on f32 precision characteristics:
+/// - f32 mantissa provides ~7 decimal digits of precision (~1.2e-7 relative error)
+/// - 24-bit audio has a noise floor around -144 dBFS, corresponding to ~1e-7 amplitude
+/// - 1e-6 provides approximately 1 bit of margin above the f32 precision limit,
+///   allowing for minor floating-point rounding differences across compiler versions
+///   or instruction reordering while still catching any meaningful algorithmic change
 const MSE_THRESHOLD: f32 = 1e-6;
+
+/// Signal-to-Noise Ratio threshold in decibels for regression detection.
+///
+/// Set at 60 dB, which corresponds to ~10-bit effective resolution (2^10 = 1024,
+/// 20*log10(1024) ≈ 60 dB). This threshold accounts for accumulated f32 rounding
+/// errors across multi-stage DSP chains (biquad coefficient calculations, feedback
+/// paths, parameter smoothing), where each stage contributes small rounding errors
+/// that compound. 60 dB is well above perceptual thresholds (~40 dB for subtle
+/// artifacts) while allowing the headroom needed for legitimate floating-point
+/// variation across platforms and optimization levels.
 const SNR_THRESHOLD_DB: f32 = 60.0;
+
+/// Spectral correlation threshold for regression detection.
+///
+/// Set at 0.9999 (four nines) to ensure the frequency-domain content is virtually
+/// identical between current and golden outputs. This metric is sensitive to:
+/// - New harmonics introduced by algorithm changes (e.g., distortion mode tweaks)
+/// - Shifted resonance peaks from filter coefficient modifications
+/// - Spectral smearing from changes to windowing or interpolation
+///
+/// A correlation below 0.9999 indicates measurable spectral deviation that would
+/// be audible in A/B comparison. The threshold is stricter than time-domain MSE
+/// because small phase shifts (inaudible) inflate MSE but leave spectral
+/// correlation intact, making this metric a more targeted detector of timbral
+/// changes.
 const SPECTRAL_CORRELATION_THRESHOLD: f32 = 0.9999;
 
 /// Generate a deterministic test signal (multi-frequency sine)

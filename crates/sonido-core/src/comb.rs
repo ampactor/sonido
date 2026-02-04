@@ -4,6 +4,7 @@
 //! Essential building block for Schroeder and Freeverb-style reverbs.
 
 use crate::InterpolatedDelay;
+use crate::flush_denormal;
 
 /// Comb filter with feedback and damping.
 ///
@@ -89,7 +90,7 @@ impl CombFilter {
 
         // One-pole lowpass in feedback path (damping)
         // filterstore = output * (1 - damp) + filterstore * damp
-        self.filterstore = output * self.damp2 + self.filterstore * self.damp1;
+        self.filterstore = flush_denormal(output * self.damp2 + self.filterstore * self.damp1);
 
         // Write input + filtered feedback to delay line
         self.delay.write(input + self.filterstore * self.feedback);
@@ -200,5 +201,33 @@ mod tests {
 
         // Damped should have less total energy (due to HF loss)
         assert!(dark_sum < bright_sum, "Damped should have less energy");
+    }
+
+    #[test]
+    fn test_no_denormals_after_silence() {
+        let mut comb = CombFilter::new(100);
+        comb.set_feedback(0.9);
+        comb.set_damp(0.3);
+
+        // Feed signal for 1000 samples to fill delay line and build up feedback
+        for _ in 0..1000 {
+            comb.process(0.5);
+        }
+
+        // Feed silence for 100k samples -- signal should decay cleanly without
+        // producing IEEE 754 subnormal values (which start below ~1.2e-38 and
+        // cause severe CPU performance degradation on most architectures).
+        // The flush_denormal() guard in the feedback path uses a 1e-20 threshold,
+        // so we check that no output falls into the actual subnormal range.
+        for i in 0..100_000 {
+            let out = comb.process(0.0);
+            assert!(
+                out == 0.0 || out.abs() > f32::MIN_POSITIVE,
+                "Denormal detected at sample {}: {:.2e} (below f32::MIN_POSITIVE {:.2e})",
+                i,
+                out,
+                f32::MIN_POSITIVE
+            );
+        }
     }
 }
