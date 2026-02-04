@@ -4,6 +4,7 @@
 //! frequency response. Essential for creating dense, smooth reverb tails.
 
 use crate::InterpolatedDelay;
+use crate::flush_denormal;
 
 /// Schroeder allpass filter for diffusion.
 ///
@@ -69,7 +70,7 @@ impl AllpassFilter {
         let output = -input + delayed;
 
         // Feed forward: input + delayed * feedback
-        self.delay.write(input + delayed * self.feedback);
+        self.delay.write(flush_denormal(input + delayed * self.feedback));
 
         output
     }
@@ -157,5 +158,30 @@ mod tests {
         // Delayed impulse should appear
         let delayed = allpass.process(0.0);
         assert!(delayed.abs() > 0.3, "Should have delayed output");
+    }
+
+    #[test]
+    fn test_no_denormals_after_silence() {
+        let mut allpass = AllpassFilter::new(100);
+        allpass.set_feedback(0.7);
+
+        // Feed signal for 1000 samples to build up internal state
+        for _ in 0..1000 {
+            allpass.process(0.5);
+        }
+
+        // Feed silence for 100k samples -- output should decay cleanly without
+        // producing IEEE 754 subnormal values (which start below ~1.2e-38 and
+        // cause severe CPU performance degradation on most architectures).
+        for i in 0..100_000 {
+            let out = allpass.process(0.0);
+            assert!(
+                out == 0.0 || out.abs() > f32::MIN_POSITIVE,
+                "Denormal detected at sample {}: {:.2e} (below f32::MIN_POSITIVE {:.2e})",
+                i,
+                out,
+                f32::MIN_POSITIVE
+            );
+        }
     }
 }

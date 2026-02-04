@@ -7,6 +7,7 @@
 
 use core::f32::consts::PI;
 use libm::{cosf, sinf};
+use crate::flush_denormal;
 
 /// Generic biquad filter coefficients and state.
 ///
@@ -83,11 +84,11 @@ impl Biquad {
         let output = self.b0 * input + self.b1 * self.x1 + self.b2 * self.x2
                                      - self.a1 * self.y1 - self.a2 * self.y2;
 
-        // Update delay lines
+        // Update delay lines (flush denormals to prevent CPU slowdown in feedback)
         self.x2 = self.x1;
         self.x1 = input;
         self.y2 = self.y1;
-        self.y1 = output;
+        self.y1 = flush_denormal(output);
 
         output
     }

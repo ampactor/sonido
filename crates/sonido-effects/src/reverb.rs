@@ -57,13 +57,15 @@ impl ReverbType {
 /// Based on the Freeverb algorithm with 8 parallel comb filters and
 /// 4 series allpass filters. Includes pre-delay and adjustable damping.
 ///
-/// # Parameters
+/// ## Parameter Indices (`ParameterInfo`)
 ///
-/// - `room_size`: 0.0-1.0, affects early reflection density
-/// - `decay`: 0.0-1.0, controls reverb tail length
-/// - `damping`: 0.0-1.0, high-frequency absorption (0=bright, 1=dark)
-/// - `predelay`: 0-100ms, gap before reverb starts
-/// - `mix`: 0.0-1.0, wet/dry balance
+/// | Index | Name | Range | Default |
+/// |-------|------|-------|---------|
+/// | 0 | Room Size | 0–100% | 50.0 |
+/// | 1 | Decay | 0–100% | 50.0 |
+/// | 2 | Damping | 0–100% | 50.0 |
+/// | 3 | Pre-Delay | 0.0–100.0 ms | 10.0 |
+/// | 4 | Mix | 0–100% | 50.0 |
 ///
 /// # Example
 ///
@@ -774,5 +776,63 @@ mod tests {
 
         // With true stereo (different tanks) and different inputs, L and R should differ
         assert!(diff_count > 100, "L and R should be decorrelated, but only {} samples differed", diff_count);
+    }
+
+    #[test]
+    fn test_no_denormals_after_silence() {
+        let mut reverb = Reverb::new(48000.0);
+        reverb.set_decay(0.9);
+        reverb.set_mix(1.0);
+        reverb.reset();
+
+        // Feed signal for 1000 samples to fill the reverb tanks
+        for _ in 0..1000 {
+            reverb.process(0.5);
+        }
+
+        // Feed silence for 200k samples -- reverb tail should decay to exact
+        // zero, not linger as denormal values (which cause severe CPU penalty)
+        for i in 0..200_000 {
+            let out = reverb.process(0.0);
+            assert!(
+                out == 0.0 || out.abs() > f32::MIN_POSITIVE,
+                "Denormal detected at sample {}: {:.2e} (below f32::MIN_POSITIVE {:.2e})",
+                i,
+                out,
+                f32::MIN_POSITIVE
+            );
+        }
+    }
+
+    #[test]
+    fn test_no_denormals_stereo_after_silence() {
+        let mut reverb = Reverb::new(48000.0);
+        reverb.set_decay(0.9);
+        reverb.set_mix(1.0);
+        reverb.reset();
+
+        // Feed stereo signal
+        for _ in 0..1000 {
+            reverb.process_stereo(0.5, 0.5);
+        }
+
+        // Feed silence and check both channels
+        for i in 0..200_000 {
+            let (l, r) = reverb.process_stereo(0.0, 0.0);
+            assert!(
+                l == 0.0 || l.abs() > f32::MIN_POSITIVE,
+                "Left denormal detected at sample {}: {:.2e} (below f32::MIN_POSITIVE {:.2e})",
+                i,
+                l,
+                f32::MIN_POSITIVE
+            );
+            assert!(
+                r == 0.0 || r.abs() > f32::MIN_POSITIVE,
+                "Right denormal detected at sample {}: {:.2e} (below f32::MIN_POSITIVE {:.2e})",
+                i,
+                r,
+                f32::MIN_POSITIVE
+            );
+        }
     }
 }

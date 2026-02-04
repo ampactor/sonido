@@ -5,17 +5,19 @@
 //! time sweeps between approximately 1-10ms, creating comb filtering
 //! effects that sweep through the frequency spectrum.
 
-use sonido_core::{Effect, SmoothedParam, InterpolatedDelay, Lfo, ParameterInfo, ParamDescriptor, ParamUnit};
+use sonido_core::{Effect, SmoothedParam, InterpolatedDelay, Lfo, ParameterInfo, ParamDescriptor, ParamUnit, flush_denormal};
 use libm::ceilf;
 
 /// Flanger effect with LFO-modulated delay.
 ///
-/// # Parameters
+/// ## Parameter Indices (`ParameterInfo`)
 ///
-/// - **rate**: LFO speed (0.05-5 Hz)
-/// - **depth**: Delay modulation amount (0-100%)
-/// - **feedback**: Regeneration amount (0-95%)
-/// - **mix**: Wet/dry balance (0-100%)
+/// | Index | Name | Range | Default |
+/// |-------|------|-------|---------|
+/// | 0 | Rate | 0.05–5.0 Hz | 0.5 |
+/// | 1 | Depth | 0–100% | 50.0 |
+/// | 2 | Feedback | 0–95% | 50.0 |
+/// | 3 | Mix | 0–100% | 50.0 |
 ///
 /// # Example
 ///
@@ -164,7 +166,7 @@ impl Effect for Flanger {
         self.delay.write(delay_input);
 
         // Store for next iteration
-        self.feedback_sample = delayed;
+        self.feedback_sample = flush_denormal(delayed);
 
         // Mix dry and wet signals
         input * (1.0 - mix) + delayed * mix
@@ -205,8 +207,8 @@ impl Effect for Flanger {
         self.delay_r.write(input_r);
 
         // Store for next iteration
-        self.feedback_sample = delayed_l;
-        self.feedback_sample_r = delayed_r;
+        self.feedback_sample = flush_denormal(delayed_l);
+        self.feedback_sample_r = flush_denormal(delayed_r);
 
         // Mix dry and wet signals
         let out_l = left * (1.0 - mix) + delayed_l * mix;

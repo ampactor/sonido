@@ -234,6 +234,22 @@ pub fn samples_to_ms(samples: f32, sample_rate: f32) -> f32 {
     samples * 1000.0 / sample_rate
 }
 
+/// Flush subnormal (denormalized) floats to zero.
+///
+/// Subnormal floats (~1e-38 to 1e-45) cause severe CPU performance
+/// degradation on most architectures (up to 100x slowdown). This function
+/// replaces values below 1e-20 with zero, providing margin before the
+/// IEEE 754 subnormal range begins.
+///
+/// Use this in feedback loops (comb filters, delay lines, allpass chains)
+/// where signal can decay indefinitely toward zero.
+///
+/// Reference: IEEE 754-2008, Section 3.4 (Subnormal numbers)
+#[inline(always)]
+pub fn flush_denormal(x: f32) -> f32 {
+    if x.abs() < 1e-20 { 0.0 } else { x }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -295,5 +311,19 @@ mod tests {
         assert_eq!(samples, 480.0);
         let back = samples_to_ms(samples, sample_rate);
         assert!((back - ms).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_flush_denormal() {
+        // Normal values pass through
+        assert_eq!(flush_denormal(1.0), 1.0);
+        assert_eq!(flush_denormal(-0.5), -0.5);
+        assert_eq!(flush_denormal(1e-10), 1e-10);
+
+        // Subnormal-range values are flushed to zero
+        assert_eq!(flush_denormal(1e-21), 0.0);
+        assert_eq!(flush_denormal(-1e-21), 0.0);
+        assert_eq!(flush_denormal(1e-38), 0.0);
+        assert_eq!(flush_denormal(0.0), 0.0);
     }
 }

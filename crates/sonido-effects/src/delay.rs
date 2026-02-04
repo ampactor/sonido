@@ -1,12 +1,20 @@
 //! Classic delay effect with feedback control and stereo ping-pong mode.
 
-use sonido_core::{Effect, SmoothedParam, InterpolatedDelay, ParameterInfo, ParamDescriptor, ParamUnit};
+use sonido_core::{Effect, SmoothedParam, InterpolatedDelay, ParameterInfo, ParamDescriptor, ParamUnit, flush_denormal};
 use libm::ceilf;
 
 /// Classic delay effect with feedback and optional ping-pong stereo mode.
 ///
 /// In mono mode, operates as a standard feedback delay.
 /// In stereo mode with ping_pong enabled, creates alternating L/R repeats.
+///
+/// ## Parameter Indices (`ParameterInfo`)
+///
+/// | Index | Name | Range | Default |
+/// |-------|------|-------|---------|
+/// | 0 | Delay Time | 1.0–2000.0 ms | 300.0 |
+/// | 1 | Feedback | 0–95% | 40.0 |
+/// | 2 | Mix | 0–100% | 50.0 |
 ///
 /// # Example
 ///
@@ -99,7 +107,7 @@ impl Effect for Delay {
         let mix = self.mix.advance();
 
         let delayed = self.delay_line.read(delay_samples);
-        let feedback_signal = input + (delayed * feedback);
+        let feedback_signal = flush_denormal(input + (delayed * feedback));
         self.delay_line.write(feedback_signal);
 
         input * (1.0 - mix) + delayed * mix
@@ -118,14 +126,14 @@ impl Effect for Delay {
         if self.ping_pong {
             // Ping-pong: feedback crosses channels
             // Left delay feeds back to right, right feeds back to left
-            let feedback_l = left + (delayed_r * feedback);
-            let feedback_r = right + (delayed_l * feedback);
+            let feedback_l = flush_denormal(left + (delayed_r * feedback));
+            let feedback_r = flush_denormal(right + (delayed_l * feedback));
             self.delay_line.write(feedback_l);
             self.delay_line_r.write(feedback_r);
         } else {
             // Standard stereo: independent delay lines
-            let feedback_l = left + (delayed_l * feedback);
-            let feedback_r = right + (delayed_r * feedback);
+            let feedback_l = flush_denormal(left + (delayed_l * feedback));
+            let feedback_r = flush_denormal(right + (delayed_r * feedback));
             self.delay_line.write(feedback_l);
             self.delay_line_r.write(feedback_r);
         }
@@ -299,7 +307,7 @@ mod tests {
         // So we need to wait 2x delay time (200ms = 8820 samples) to see right echo
         let mut first_l_echo = false;
         let mut first_r_echo = false;
-        for i in 0..15000 {
+        for _i in 0..15000 {
             let (l, r) = delay.process_stereo(0.0, 0.0);
             if !first_l_echo && l.abs() > 0.5 {
                 first_l_echo = true;

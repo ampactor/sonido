@@ -43,6 +43,15 @@ pub enum WaveShape {
 
 /// Distortion effect with waveshaping and tone control.
 ///
+/// ## Parameter Indices (`ParameterInfo`)
+///
+/// | Index | Name | Range | Default |
+/// |-------|------|-------|---------|
+/// | 0 | Drive | 0.0–40.0 dB | 12.0 |
+/// | 1 | Tone | 500.0–10000.0 Hz | 4000.0 |
+/// | 2 | Level | -20.0–0.0 dB | -6.0 |
+/// | 3 | Waveshape | 0–3 (SoftClip, HardClip, Foldback, Asymmetric) | 0 |
+///
 /// # Example
 ///
 /// ```rust
@@ -73,6 +82,7 @@ pub struct Distortion {
 
     // Filter state
     tone_filter_state: f32,
+    tone_filter_state_r: f32,
 }
 
 impl Distortion {
@@ -89,6 +99,7 @@ impl Distortion {
             waveshape: WaveShape::default(),
             foldback_threshold: 0.8,
             tone_filter_state: 0.0,
+            tone_filter_state_r: 0.0,
         };
         dist.recalculate_tone_coeff();
         dist
@@ -157,9 +168,9 @@ impl Distortion {
     }
 
     #[inline]
-    fn tone_filter(&mut self, input: f32, coeff: f32) -> f32 {
-        self.tone_filter_state += coeff * (input - self.tone_filter_state);
-        self.tone_filter_state
+    fn tone_filter(state: &mut f32, input: f32, coeff: f32) -> f32 {
+        *state += coeff * (input - *state);
+        *state
     }
 }
 
@@ -172,18 +183,14 @@ impl Effect for Distortion {
 
         let driven = input * drive;
         let shaped = self.apply_waveshape(driven);
-        let filtered = self.tone_filter(shaped, tone_coeff);
+        let filtered = Self::tone_filter(&mut self.tone_filter_state, shaped, tone_coeff);
 
         filtered * level
     }
 
     #[inline]
     fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
-        // Dual-mono: process each channel independently
-        // Note: We need to be careful about shared state (tone_filter_state)
-        // For true dual-mono, we'd need separate filter states per channel.
-        // For now, we process left first, then right, which gives a slight
-        // coloration but maintains the distortion character.
+        // Dual-mono: process each channel independently with separate filter states
         let drive = self.drive.advance();
         let level = self.level.advance();
         let tone_coeff = self.tone_coeff.advance();
@@ -191,13 +198,13 @@ impl Effect for Distortion {
         // Process left channel
         let driven_l = left * drive;
         let shaped_l = self.apply_waveshape(driven_l);
-        let filtered_l = self.tone_filter(shaped_l, tone_coeff);
+        let filtered_l = Self::tone_filter(&mut self.tone_filter_state, shaped_l, tone_coeff);
         let out_l = filtered_l * level;
 
-        // Process right channel (waveshaping is stateless, filter uses same state)
+        // Process right channel with separate filter state
         let driven_r = right * drive;
         let shaped_r = self.apply_waveshape(driven_r);
-        let filtered_r = self.tone_filter(shaped_r, tone_coeff);
+        let filtered_r = Self::tone_filter(&mut self.tone_filter_state_r, shaped_r, tone_coeff);
         let out_r = filtered_r * level;
 
         (out_l, out_r)
@@ -213,6 +220,7 @@ impl Effect for Distortion {
 
     fn reset(&mut self) {
         self.tone_filter_state = 0.0;
+        self.tone_filter_state_r = 0.0;
         self.drive.snap_to_target();
         self.level.snap_to_target();
         self.tone_coeff.snap_to_target();

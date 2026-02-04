@@ -12,6 +12,20 @@ use sonido_core::{
 /// Each band has independent frequency, gain, and Q (bandwidth) controls.
 /// Uses cascaded biquad filters in peaking EQ mode for high-quality equalization.
 ///
+/// ## Parameter Indices (`ParameterInfo`)
+///
+/// | Index | Name | Range | Default |
+/// |-------|------|-------|---------|
+/// | 0 | Low Frequency | 20.0–500.0 Hz | 100.0 |
+/// | 1 | Low Gain | -12.0–12.0 dB | 0.0 |
+/// | 2 | Low Q | 0.5–5.0 | 1.0 |
+/// | 3 | Mid Frequency | 200.0–5000.0 Hz | 1000.0 |
+/// | 4 | Mid Gain | -12.0–12.0 dB | 0.0 |
+/// | 5 | Mid Q | 0.5–5.0 | 1.0 |
+/// | 6 | High Frequency | 1000.0–15000.0 Hz | 5000.0 |
+/// | 7 | High Gain | -12.0–12.0 dB | 0.0 |
+/// | 8 | High Q | 0.5–5.0 | 1.0 |
+///
 /// # Example
 ///
 /// ```rust
@@ -211,8 +225,16 @@ impl ParametricEq {
         self.high_q.target()
     }
 
+    /// Clamp frequency to stay below Nyquist (with margin) to prevent
+    /// unstable biquad coefficients when sample rate is low.
+    fn clamp_to_nyquist(&self, freq: f32) -> f32 {
+        // Clamp to 95% of Nyquist to avoid numerical instability near the limit
+        let max_freq = self.sample_rate * 0.475;
+        if freq > max_freq { max_freq } else { freq }
+    }
+
     fn update_low_coefficients(&mut self) {
-        let freq = self.low_freq.get();
+        let freq = self.clamp_to_nyquist(self.low_freq.get());
         let gain = self.low_gain.get();
         let q = self.low_q.get();
 
@@ -222,7 +244,7 @@ impl ParametricEq {
     }
 
     fn update_mid_coefficients(&mut self) {
-        let freq = self.mid_freq.get();
+        let freq = self.clamp_to_nyquist(self.mid_freq.get());
         let gain = self.mid_gain.get();
         let q = self.mid_q.get();
 
@@ -232,7 +254,7 @@ impl ParametricEq {
     }
 
     fn update_high_coefficients(&mut self) {
-        let freq = self.high_freq.get();
+        let freq = self.clamp_to_nyquist(self.high_freq.get());
         let gain = self.high_gain.get();
         let q = self.high_q.get();
 
@@ -276,9 +298,7 @@ impl Effect for ParametricEq {
         // Process through cascaded filters
         let after_low = self.low_filter.process(input);
         let after_mid = self.mid_filter.process(after_low);
-        let after_high = self.high_filter.process(after_mid);
-
-        after_high
+        self.high_filter.process(after_mid)
     }
 
     #[inline]
