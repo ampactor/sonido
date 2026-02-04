@@ -43,8 +43,8 @@ impl EffectConfig {
     /// If the type starts with `!`, the effect will be marked as bypassed.
     pub fn new(effect_type: impl Into<String>) -> Self {
         let type_str = effect_type.into();
-        let (effect_type, bypassed) = if type_str.starts_with('!') {
-            (type_str[1..].to_string(), true)
+        let (effect_type, bypassed) = if let Some(stripped) = type_str.strip_prefix('!') {
+            (stripped.to_string(), true)
         } else {
             (type_str, false)
         };

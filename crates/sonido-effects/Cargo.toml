@@ -16,6 +16,9 @@ std = ["sonido-core/std"]
 sonido-core = { workspace = true }
 libm = { workspace = true }
 
+[lints]
+workspace = true
+
 [dev-dependencies]
 criterion = { workspace = true }
 sonido-analysis = { workspace = true }

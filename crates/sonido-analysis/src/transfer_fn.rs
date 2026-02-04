@@ -187,7 +187,7 @@ impl TransferFunction {
     /// # Arguments
     /// * `window_size` - Number of bins to average (must be odd, will be made odd if even)
     pub fn smooth(&self, window_size: usize) -> TransferFunction {
-        let window = if window_size % 2 == 0 {
+        let window = if window_size.is_multiple_of(2) {
             window_size + 1
         } else {
             window_size

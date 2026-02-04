@@ -99,11 +99,12 @@ pub mod comb;
 pub mod allpass;
 pub mod tempo;
 pub mod modulation;
+pub mod dc_blocker;
 
 // Re-export main types at crate root
 pub use effect::{Effect, EffectExt, Chain};
 pub use param::{SmoothedParam, LinearSmoothedParam};
-pub use math::{db_to_linear, linear_to_db, fast_tanh, soft_clip, hard_clip, foldback, asymmetric_clip};
+pub use math::{db_to_linear, linear_to_db, fast_tanh, soft_clip, hard_clip, foldback, asymmetric_clip, flush_denormal};
 pub use biquad::{Biquad, lowpass_coefficients, highpass_coefficients, bandpass_coefficients, notch_coefficients, peaking_eq_coefficients};
 pub use svf::{StateVariableFilter, SvfOutput};
 pub use lfo::{Lfo, LfoWaveform};
@@ -115,3 +116,4 @@ pub use allpass::AllpassFilter;
 pub use param_info::{ParameterInfo, ParamDescriptor, ParamUnit};
 pub use tempo::{TempoManager, NoteDivision, TransportState};
 pub use modulation::{ModulationSource, ModulationAmount};
+pub use dc_blocker::DcBlocker;

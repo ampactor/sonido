@@ -51,6 +51,14 @@ impl TremoloWaveform {
 ///
 /// Classic amplitude modulation effect using an LFO to modulate gain.
 ///
+/// ## Parameter Indices (`ParameterInfo`)
+///
+/// | Index | Name | Range | Default |
+/// |-------|------|-------|---------|
+/// | 0 | Rate | 0.5–20.0 Hz | 5.0 |
+/// | 1 | Depth | 0–100% | 50.0 |
+/// | 2 | Waveform | 0–3 (Sine, Triangle, Square, SampleHold) | 0 |
+///
 /// # Example
 ///
 /// ```rust
@@ -237,7 +245,7 @@ mod tests {
         for _ in 0..1000 {
             let output = tremolo.process(1.0);
             assert!(output.is_finite());
-            assert!(output >= 0.0 && output <= 1.0);
+            assert!((0.0..=1.0).contains(&output));
         }
     }
 
@@ -295,7 +303,7 @@ mod tests {
             for _ in 0..1000 {
                 let output = tremolo.process(1.0);
                 assert!(output.is_finite(), "Waveform {:?} produced non-finite output", waveform);
-                assert!(output >= 0.0 && output <= 1.0, "Waveform {:?} out of range", waveform);
+                assert!((0.0..=1.0).contains(&output), "Waveform {:?} out of range", waveform);
             }
         }
     }

@@ -387,8 +387,8 @@ mod tests {
         // Create a signal with a transient
         let mut signal = vec![0.1; 4000];
         // Add loud burst
-        for i in 2000..2500 {
-            signal[i] = 0.9;
+        for sample in signal.iter_mut().take(2500).skip(2000) {
+            *sample = 0.9;
         }
 
         let transients = detect_transients(&signal, 256, 128, 6.0);

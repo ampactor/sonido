@@ -16,6 +16,9 @@ std = ["sonido-core/std"]
 sonido-core = { path = "../sonido-core", default-features = false }
 libm = { workspace = true }
 
+[lints]
+workspace = true
+
 [dev-dependencies]
 criterion = { workspace = true }
 

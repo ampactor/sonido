@@ -161,14 +161,24 @@ impl SmoothedParam {
         self.current = self.target;
     }
 
-    /// Recalculate coefficient based on sample rate and smoothing time.
+    /// Recalculate the smoothing coefficient from sample rate and smoothing time.
     ///
-    /// Uses the formula for a one-pole lowpass time constant:
-    /// coeff = 1 - exp(-1 / (time_constant * sample_rate))
+    /// The coefficient controls the speed of the one-pole lowpass filter that
+    /// smooths parameter transitions. The derivation:
     ///
-    /// For smoothing_time_ms, we use time_constant = smoothing_time_ms / 1000
-    /// This means after smoothing_time_ms, the value reaches ~63% of the way
-    /// to the target.
+    /// A one-pole lowpass has the difference equation:
+    ///   `y[n] = y[n-1] + coeff * (target - y[n-1])`
+    ///
+    /// This is equivalent to `y[n] = (1-coeff) * y[n-1] + coeff * target`,
+    /// a first-order IIR with pole at `(1-coeff)`. The time constant tau
+    /// (time to reach 63.2% of target) relates to the coefficient by:
+    ///
+    ///   `coeff = 1 - exp(-1 / (tau * sample_rate))`
+    ///
+    /// where `tau = smoothing_time_ms / 1000`. After 5*tau, the parameter
+    /// reaches 99.3% of the target -- effectively settled for audio purposes.
+    ///
+    /// When smoothing_time_ms is 0, coeff is set to 1.0 for instant response.
     fn recalculate_coeff(&mut self) {
         if self.smoothing_time_ms <= 0.0 || self.sample_rate <= 0.0 {
             self.coeff = 1.0; // Instant (no smoothing)

@@ -106,6 +106,20 @@ pub trait Effect {
     /// For mono effects, the default implementation calls `process()` twice,
     /// once for each channel, which is correct for independent processing.
     ///
+    /// # Mutual Recursion Safety
+    ///
+    /// `process()` and `process_stereo()` have default implementations that
+    /// call each other. This is safe because every concrete effect must
+    /// implement at least one of the two methods, breaking the recursion:
+    ///
+    /// - **Mono effects** implement `process()`. The default `process_stereo()`
+    ///   calls `process()` twice (once per channel) -- no recursion.
+    /// - **True stereo effects** implement `process_stereo()`. The default
+    ///   `process()` calls `process_stereo(input, input).0` -- no recursion.
+    ///
+    /// An effect that overrides neither method would infinite-loop, but this
+    /// is a logic error (an effect must do something).
+    ///
     /// # Arguments
     /// * `left` - Left channel input sample
     /// * `right` - Right channel input sample

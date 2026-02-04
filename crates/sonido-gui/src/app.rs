@@ -149,11 +149,10 @@ impl SonidoApp {
         if let Some(ref audio) = self.audio_thread {
             audio.running.store(false, Ordering::SeqCst);
         }
-        if let Some(mut audio) = self.audio_thread.take() {
-            if let Some(handle) = audio.handle.take() {
+        if let Some(mut audio) = self.audio_thread.take()
+            && let Some(handle) = audio.handle.take() {
                 let _ = handle.join();
             }
-        }
     }
 
     /// Render the header/toolbar.
@@ -411,8 +410,8 @@ impl SonidoApp {
                         self.show_save_dialog = false;
                     }
 
-                    if ui.button("Save").clicked() {
-                        if !self.new_preset_name.is_empty() {
+                    if ui.button("Save").clicked()
+                        && !self.new_preset_name.is_empty() {
                             let description = if self.new_preset_description.is_empty() {
                                 None
                             } else {
@@ -427,7 +426,6 @@ impl SonidoApp {
                             }
                             self.show_save_dialog = false;
                         }
-                    }
                 });
             });
     }
@@ -773,7 +771,7 @@ fn run_audio_thread(
                     input_rms: (input_rms_sum / count).sqrt(),
                     output_peak,
                     output_rms: (output_rms_sum / count).sqrt(),
-                    gain_reduction: 0.0, // TODO: Get from compressor
+                    gain_reduction: compressor.gain_reduction_db()
                 });
             },
             |err| log::error!("Output stream error: {}", err),

@@ -259,9 +259,153 @@ fn process_audio(filter: &mut LowPassFilter) {
 }
 ```
 
+## Basic Synthesis
+
+Sonido includes a synthesis engine with anti-aliased oscillators (PolyBLEP), ADSR envelopes, and FM synthesis support.
+
+```rust
+use sonido_synth::{Oscillator, OscillatorWaveform, AdsrEnvelope};
+
+fn main() {
+    let sample_rate = 48000.0;
+
+    // Create an oscillator
+    let mut osc = Oscillator::new(sample_rate);
+    osc.set_frequency(440.0);
+    osc.set_waveform(OscillatorWaveform::Saw);
+
+    // Shape it with an ADSR envelope
+    let mut env = AdsrEnvelope::new(sample_rate);
+    env.set_attack_ms(10.0);
+    env.set_decay_ms(100.0);
+    env.set_sustain(0.7);
+    env.set_release_ms(200.0);
+
+    // Play a note
+    env.gate_on();
+    let mut output = Vec::new();
+    for _ in 0..48000 {
+        let level = env.advance();
+        let sample = osc.advance();
+        output.push(sample * level);
+    }
+    env.gate_off();
+
+    // FM synthesis: modulator controls carrier phase
+    let mut carrier = Oscillator::new(sample_rate);
+    carrier.set_frequency(440.0);
+    carrier.set_waveform(OscillatorWaveform::Sine);
+
+    let mut modulator = Oscillator::new(sample_rate);
+    modulator.set_frequency(880.0); // 2:1 ratio
+    modulator.set_waveform(OscillatorWaveform::Sine);
+
+    let mod_index = 2.0; // modulation depth in radians
+    let fm_sample = carrier.advance_with_pm(modulator.advance() * mod_index);
+}
+```
+
+See `crates/sonido-synth/examples/synthesis_demo.rs` for a full demo:
+
+```bash
+cargo run -p sonido-synth --example synthesis_demo
+```
+
+## Tempo-Synced Effects
+
+The `TempoManager` converts BPM and note divisions into delay times, LFO rates, and sample counts:
+
+```rust
+use sonido_core::{TempoManager, NoteDivision, Lfo, LfoWaveform};
+
+fn main() {
+    let sample_rate = 48000.0;
+    let mut tempo = TempoManager::new(sample_rate, 120.0);
+    tempo.play();
+
+    // Get delay time for a dotted eighth note
+    let delay_ms = tempo.division_to_ms(NoteDivision::DottedEighth); // 375ms at 120 BPM
+
+    // Get LFO rate for quarter notes
+    let lfo_hz = tempo.division_to_hz(NoteDivision::Quarter); // 2 Hz at 120 BPM
+
+    // Sync an LFO to tempo
+    let mut lfo = Lfo::new(sample_rate, 1.0);
+    lfo.set_waveform(LfoWaveform::Sine);
+    lfo.sync_to_tempo(120.0, NoteDivision::Eighth); // 4 Hz at 120 BPM
+
+    // Change BPM and all timing values update
+    tempo.set_bpm(140.0);
+    let new_delay = tempo.division_to_ms(NoteDivision::DottedEighth); // 321.4ms at 140 BPM
+}
+```
+
+See `crates/sonido-core/examples/tempo_sync_demo.rs` for a full demo:
+
+```bash
+cargo run -p sonido-core --example tempo_sync_demo
+```
+
+## Analysis Toolkit
+
+The analysis crate provides FFT, spectral analysis, dynamics measurement, and filter banks:
+
+```rust
+use sonido_analysis::{
+    Fft, Window, magnitude_spectrum, spectral_centroid,
+    rms, rms_db, peak, crest_factor,
+};
+use sonido_analysis::filterbank::{FilterBank, eeg_bands};
+use std::f32::consts::PI;
+
+fn main() {
+    let sample_rate = 48000.0;
+    let fft_size = 4096;
+
+    // Generate a 1 kHz sine wave
+    let signal: Vec<f32> = (0..fft_size)
+        .map(|i| (2.0 * PI * 1000.0 * i as f32 / sample_rate).sin())
+        .collect();
+
+    // FFT spectrum with Hann window
+    let mag = magnitude_spectrum(&signal, fft_size, Window::Hann);
+    let centroid = spectral_centroid(&mag, sample_rate);
+    println!("Spectral centroid: {:.1} Hz", centroid);
+
+    // Dynamics
+    println!("RMS: {:.1} dB, Peak: {:.4}", rms_db(&signal), peak(&signal));
+    println!("Crest factor: {:.2}", crest_factor(&signal));
+
+    // Filter bank for frequency band extraction
+    let bands = [eeg_bands::THETA, eeg_bands::ALPHA, eeg_bands::BETA];
+    let mut bank = FilterBank::new(1000.0, &bands); // 1 kHz sample rate for EEG
+    let extracted = bank.extract(&signal);
+}
+```
+
+See `crates/sonido-analysis/examples/analysis_demo.rs` for a full demo:
+
+```bash
+cargo run -p sonido-analysis --example analysis_demo
+```
+
+## Examples
+
+All runnable examples with their `cargo run` commands:
+
+| Example | Crate | Command |
+|---------|-------|---------|
+| Synthesis (oscillators, envelopes, FM) | sonido-synth | `cargo run -p sonido-synth --example synthesis_demo` |
+| Modulation (mod matrix, LFO routing) | sonido-synth | `cargo run -p sonido-synth --example modulation_demo` |
+| Tempo sync (BPM, note divisions) | sonido-core | `cargo run -p sonido-core --example tempo_sync_demo` |
+| Presets and config (factory presets, chains) | sonido-config | `cargo run -p sonido-config --example preset_demo` |
+| Analysis (FFT, dynamics, filter banks) | sonido-analysis | `cargo run -p sonido-analysis --example analysis_demo` |
+
 ## Next Steps
 
 - See [GUI.md](GUI.md) for graphical interface documentation
 - See [Effects Reference](EFFECTS_REFERENCE.md) for all effects and their parameters
 - See [CLI Guide](CLI_GUIDE.md) for detailed CLI usage
 - See [Architecture](ARCHITECTURE.md) for understanding the codebase
+- See [DSP Fundamentals](DSP_FUNDAMENTALS.md) for signal processing theory
+- See [Synthesis](SYNTHESIS.md) for oscillator and envelope details

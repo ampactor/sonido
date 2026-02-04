@@ -8,7 +8,7 @@ use crate::fft::{Fft, Window};
 /// Spectrogram data structure
 #[derive(Debug, Clone)]
 pub struct Spectrogram {
-    /// 2D magnitude data [time_frame][frequency_bin]
+    /// 2D magnitude data `[time_frame][frequency_bin]`
     pub data: Vec<Vec<f32>>,
     /// FFT size used
     pub fft_size: usize,
@@ -310,7 +310,7 @@ impl StftAnalyzer {
 
 /// Mel-scaled spectrogram
 pub struct MelSpectrogram {
-    /// Mel-scaled magnitude data [time_frame][mel_bin]
+    /// Mel-scaled magnitude data `[time_frame][mel_bin]`
     pub data: Vec<Vec<f32>>,
     /// Number of mel bins
     pub num_mel_bins: usize,
@@ -378,16 +378,16 @@ impl MelFilterbank {
             let right = bin_points[m + 2];
 
             // Rising edge
-            for k in left..center {
-                if k < num_fft_bins && center > left {
-                    filters[m][k] = (k - left) as f32 / (center - left) as f32;
+            if center > left {
+                for (k, val) in filters[m].iter_mut().enumerate().take(center.min(num_fft_bins)).skip(left) {
+                    *val = (k - left) as f32 / (center - left) as f32;
                 }
             }
 
             // Falling edge
-            for k in center..right {
-                if k < num_fft_bins && right > center {
-                    filters[m][k] = (right - k) as f32 / (right - center) as f32;
+            if right > center {
+                for (k, val) in filters[m].iter_mut().enumerate().take(right.min(num_fft_bins)).skip(center) {
+                    *val = (right - k) as f32 / (right - center) as f32;
                 }
             }
         }

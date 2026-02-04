@@ -256,10 +256,8 @@ impl AudioGate {
             if envelope < self.close_threshold {
                 self.gate_open = false;
             }
-        } else {
-            if envelope > self.open_threshold {
-                self.gate_open = true;
-            }
+        } else if envelope > self.open_threshold {
+            self.gate_open = true;
         }
 
         self.gate_open
@@ -347,7 +345,7 @@ mod tests {
 
         let mod_value = audio_mod.mod_value();
         assert!(audio_mod.is_bipolar());
-        assert!(mod_value >= -1.0 && mod_value <= 1.0);
+        assert!((-1.0..=1.0).contains(&mod_value));
     }
 
     #[test]

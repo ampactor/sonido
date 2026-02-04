@@ -393,8 +393,8 @@ fn parse_chain_to_configs(chain: &str) -> anyhow::Result<Vec<EffectConfig>> {
         }
 
         // Check for bypass suffix
-        let (spec, bypassed) = if effect_spec.ends_with('!') {
-            (&effect_spec[..effect_spec.len() - 1], true)
+        let (spec, bypassed) = if let Some(stripped) = effect_spec.strip_suffix('!') {
+            (stripped, true)
         } else {
             (effect_spec, false)
         };

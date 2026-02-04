@@ -322,7 +322,7 @@ pub struct Comodulogram {
     pub phase_frequencies: Vec<f32>,
     /// Center frequencies for amplitude bands (Hz)
     pub amplitude_frequencies: Vec<f32>,
-    /// Coupling matrix: coupling_matrix[phase_idx][amp_idx] = MI
+    /// Coupling matrix: `coupling_matrix[phase_idx][amp_idx]` = MI
     pub coupling_matrix: Vec<Vec<f32>>,
     /// Sample rate used for computation
     pub sample_rate: f32,
@@ -698,9 +698,9 @@ mod tests {
         let (peak_phase, peak_amp, peak_mi) = como.peak_coupling();
 
         // Peak should be within the searched range
-        assert!(peak_phase >= 4.0 && peak_phase <= 10.0,
+        assert!((4.0..=10.0).contains(&peak_phase),
             "Peak phase {} should be in range [4, 10] Hz", peak_phase);
-        assert!(peak_amp >= 30.0 && peak_amp <= 70.0,
+        assert!((30.0..=70.0).contains(&peak_amp),
             "Peak amp {} should be in range [30, 70] Hz", peak_amp);
         assert!(peak_mi > 0.0, "Peak MI should be positive");
 

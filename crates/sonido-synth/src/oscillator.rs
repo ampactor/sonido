@@ -4,7 +4,14 @@
 //! (Polynomial Band-Limited Step) to reduce aliasing artifacts.
 
 use core::f32::consts::PI;
-use libm::sinf;
+use libm::{floorf, sinf};
+
+/// Euclidean remainder for f32, compatible with no_std.
+#[inline]
+fn rem_euclid_f32(a: f32, b: f32) -> f32 {
+    let r = a - b * floorf(a / b);
+    if r < 0.0 { r + b } else { r }
+}
 
 /// Oscillator waveform types
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -149,7 +156,7 @@ impl Oscillator {
     pub fn advance_with_pm(&mut self, phase_mod: f32) -> f32 {
         // Convert radians to normalized phase
         let mod_phase = phase_mod / (2.0 * PI);
-        let modulated_phase = (self.phase + mod_phase).rem_euclid(1.0);
+        let modulated_phase = rem_euclid_f32(self.phase + mod_phase, 1.0);
 
         let output = self.generate_sample_at_phase(modulated_phase);
         self.advance_phase();
@@ -169,6 +176,17 @@ impl Oscillator {
         self.generate_sample_at_phase(self.phase)
     }
 
+    /// Generate a sample at a specific phase position.
+    ///
+    /// Each waveform uses a different anti-aliasing strategy:
+    /// - **Sine**: No aliasing possible (single harmonic), uses `sinf` directly.
+    /// - **Saw**: Naive ramp with PolyBLEP correction at the phase-wrap discontinuity.
+    /// - **Square/Pulse**: Naive bipolar signal with PolyBLEP at both rising and falling edges.
+    /// - **Triangle**: Leaky integration of a PolyBLEP-corrected square wave. This
+    ///   produces better results than direct PolyBLEP on a triangle because the triangle's
+    ///   discontinuity is in the derivative (slope change), not the waveform itself.
+    ///   The leaky integrator (coefficient 0.999) provides DC blocking at ~7 Hz.
+    /// - **Noise**: Xorshift32 PRNG, inherently broadband with no aliasing concern.
     #[inline]
     fn generate_sample_at_phase(&mut self, phase: f32) -> f32 {
         match self.waveform {
@@ -195,7 +213,7 @@ impl Oscillator {
                 let square = if phase < 0.5 { 1.0 } else { -1.0 };
                 let blep_square = square
                     + poly_blep(phase, self.phase_inc)
-                    - poly_blep((phase + 0.5).rem_euclid(1.0), self.phase_inc);
+                    - poly_blep(rem_euclid_f32(phase + 0.5, 1.0), self.phase_inc);
 
                 // Leaky integrator for DC stability
                 self.prev_output = 0.999 * self.prev_output + blep_square * self.phase_inc * 4.0;
@@ -216,7 +234,7 @@ impl Oscillator {
         // PolyBLEP at rising edge (phase = 0)
         let blep1 = poly_blep(phase, self.phase_inc);
         // PolyBLEP at falling edge (phase = duty)
-        let blep2 = poly_blep((phase - duty + 1.0).rem_euclid(1.0), self.phase_inc);
+        let blep2 = poly_blep(rem_euclid_f32(phase - duty + 1.0, 1.0), self.phase_inc);
 
         naive + blep1 - blep2
     }
@@ -237,8 +255,22 @@ impl Oscillator {
 
 /// PolyBLEP (Polynomial Band-Limited Step) correction.
 ///
-/// Applies a polynomial correction near discontinuities to reduce aliasing.
-/// `t` is the phase position, `dt` is the phase increment.
+/// Applies a 2nd-order polynomial correction near waveform discontinuities
+/// to suppress aliasing. The correction is non-zero only within one sample
+/// of the discontinuity (width = dt = frequency/sample_rate), making it
+/// extremely cheap to compute.
+///
+/// The polynomial approximates the residual between a naive (infinite-bandwidth)
+/// step function and an ideal band-limited step. The 2nd-order approximation
+/// provides roughly 30 dB of alias suppression relative to naive generation.
+///
+/// # Arguments
+/// * `t` - Current phase position in [0.0, 1.0)
+/// * `dt` - Phase increment per sample (frequency / sample_rate)
+///
+/// # Returns
+/// Correction value to subtract from (or add to) the naive waveform.
+/// Returns 0.0 when phase is far from a discontinuity.
 #[inline]
 fn poly_blep(t: f32, dt: f32) -> f32 {
     if t < dt {
@@ -265,7 +297,7 @@ mod tests {
         osc.set_waveform(OscillatorWaveform::Sine);
 
         // Count zero crossings to verify frequency
-        let mut zero_crossings = 0;
+        let mut zero_crossings: i32 = 0;
         let mut prev = 0.0;
         let samples = 48000; // 1 second
 
@@ -279,7 +311,7 @@ mod tests {
 
         // Should have ~440 positive zero crossings (one per cycle)
         assert!(
-            (zero_crossings as i32 - 440).abs() <= 2,
+            (zero_crossings - 440).abs() <= 2,
             "Expected ~440 zero crossings, got {}",
             zero_crossings
         );
@@ -291,7 +323,7 @@ mod tests {
         osc.set_frequency(1000.0);
         osc.set_waveform(OscillatorWaveform::Sine);
 
-        let mut zero_crossings = 0;
+        let mut zero_crossings: i32 = 0;
         let mut prev = 0.0;
 
         for _ in 0..48000 {
@@ -303,7 +335,7 @@ mod tests {
         }
 
         assert!(
-            (zero_crossings as i32 - 1000).abs() <= 2,
+            (zero_crossings - 1000).abs() <= 2,
             "Expected ~1000 zero crossings, got {}",
             zero_crossings
         );
@@ -315,7 +347,7 @@ mod tests {
         osc.set_frequency(10000.0);
         osc.set_waveform(OscillatorWaveform::Sine);
 
-        let mut zero_crossings = 0;
+        let mut zero_crossings: i32 = 0;
         let mut prev = 0.0;
 
         for _ in 0..48000 {
@@ -327,7 +359,7 @@ mod tests {
         }
 
         assert!(
-            (zero_crossings as i32 - 10000).abs() <= 5,
+            (zero_crossings - 10000).abs() <= 5,
             "Expected ~10000 zero crossings, got {}",
             zero_crossings
         );
@@ -341,7 +373,7 @@ mod tests {
         for _ in 0..10000 {
             let sample = osc.advance();
             assert!(
-                sample >= -1.0 && sample <= 1.0,
+                (-1.0..=1.0).contains(&sample),
                 "Sine out of range: {}",
                 sample
             );
@@ -356,7 +388,7 @@ mod tests {
         for _ in 0..10000 {
             let sample = osc.advance();
             assert!(
-                sample >= -1.5 && sample <= 1.5,
+                (-1.5..=1.5).contains(&sample),
                 "Saw out of range: {}",
                 sample
             );
@@ -371,7 +403,7 @@ mod tests {
         for _ in 0..10000 {
             let sample = osc.advance();
             assert!(
-                sample >= -1.5 && sample <= 1.5,
+                (-1.5..=1.5).contains(&sample),
                 "Square out of range: {}",
                 sample
             );
@@ -386,7 +418,7 @@ mod tests {
         for _ in 0..10000 {
             let sample = osc.advance();
             assert!(
-                sample >= -1.0 && sample <= 1.0,
+                (-1.0..=1.0).contains(&sample),
                 "Noise out of range: {}",
                 sample
             );

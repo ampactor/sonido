@@ -109,12 +109,11 @@ impl Preset {
         let path = path.as_ref();
 
         // Ensure parent directory exists
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
+        if let Some(parent) = path.parent()
+            && !parent.exists() {
                 std::fs::create_dir_all(parent)
                     .map_err(|e| ConfigError::create_dir(parent, e))?;
             }
-        }
 
         let content = toml::to_string_pretty(self)?;
         std::fs::write(path, content)

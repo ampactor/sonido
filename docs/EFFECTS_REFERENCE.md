@@ -25,6 +25,13 @@ sonido process in.wav out.wav --effect lowpass --param cutoff=2000  # Same effec
 
 Waveshaping distortion with multiple modes.
 
+**Signal flow** (`crates/sonido-effects/src/distortion.rs`):
+```
+Input -> Drive (gain) -> Waveshaper -> Tone Filter -> Output Level
+```
+
+The distortion applies a static nonlinear transfer function (waveshaper) to the input signal, preceded by a gain stage (drive) to push the signal into the nonlinear region. All parameters use `SmoothedParam` with 5ms smoothing to prevent zipper noise during adjustment.
+
 | Parameter | Description | Default | Range |
 |-----------|-------------|---------|-------|
 | `drive` | Drive amount in dB | 12.0 | 0-40 |
@@ -32,12 +39,20 @@ Waveshaping distortion with multiple modes.
 | `level` | Output level in dB | -6.0 | -20 to 0 |
 | `waveshape` | Waveshape type | softclip | softclip, hardclip, foldback, asymmetric |
 
-### Waveshape Types
+### Waveshape Types and Their Harmonic Character
 
-- **softclip**: Gentle saturation, natural tube-like overdrive
-- **hardclip**: Aggressive clipping, more "transistor" sound
-- **foldback**: Signal folds back on itself, creates harmonics
-- **asymmetric**: Different positive/negative clipping, odd harmonics
+- **softclip** (`tanh`): Hyperbolic tangent soft clipping. Produces primarily odd harmonics (3rd, 5th, 7th...) with a smooth rolloff. The gentle compression curve means the signal transitions gradually into saturation, mimicking tube amplifier behavior. Odd harmonics are musically consonant (octave + fifth, etc.).
+- **hardclip**: Flat clipping at +/-1.0. Produces a dense series of odd harmonics with slower rolloff than tanh, giving a harsher, more aggressive character. Equivalent to transistor clipping stages.
+- **foldback**: When the signal exceeds a threshold (default 0.8), it folds back toward zero rather than clipping. This creates both even and odd harmonics with a complex, sometimes unpredictable spectral signature. The resulting timbres are buzzy and metallic -- useful for synth processing and experimental sound design.
+- **asymmetric**: Different clipping curves for positive and negative half-cycles. Asymmetric nonlinearities generate even harmonics (2nd, 4th...) in addition to odd harmonics. Even harmonics add warmth and are characteristic of single-ended tube amplifier stages (Class A).
+
+### Tone Filter
+
+The tone control is a one-pole lowpass filter (`distortion.rs:116-118`) placed after the waveshaper. The coefficient is computed as `1 - exp(-2*pi*freq/sample_rate)`. This tames the harsh high-frequency harmonics created by waveshaping, which is essential because nonlinear processing can generate significant energy above the original signal's bandwidth.
+
+**Stereo processing**: In stereo mode (`process_stereo`), each channel has its own independent tone filter state (`tone_filter_state` for left, `tone_filter_state_r` for right). This ensures proper dual-mono behavior -- each channel's filtering history is independent, preventing cross-channel artifacts that would occur if a single filter state were shared between channels.
+
+**Aliasing note**: For critical applications, wrap the distortion in `Oversampled<4, Distortion>` to suppress harmonic aliasing from the nonlinear waveshaper. At 48 kHz base rate, 4x oversampling processes at 192 kHz, keeping generated harmonics below the effective Nyquist.
 
 ### Example
 
@@ -52,13 +67,25 @@ sonido process in.wav out.wav --effect distortion \
 
 Dynamics compressor with soft knee.
 
+**Architecture** (`crates/sonido-effects/src/compressor.rs`): Feed-forward design with envelope follower, gain computer, and smoothed makeup gain.
+
+```
+Input -> Envelope Follower -> Gain Computer -> Gain Reduction -> Output
+                                    |
+                              Makeup Gain
+```
+
+The gain computer implements a soft-knee transfer curve (`compressor.rs:58-72`). Below the knee region, no gain reduction occurs. Within the knee (default 6 dB wide), compression increases quadratically -- this smooth transition avoids the audible "threshold artifact" of hard-knee compressors. Above the knee, full ratio compression applies.
+
+**Stereo linking** (`compressor.rs:121-128`): In stereo mode, the envelope is derived from the sum of both channels `(L+R)/2`, and identical gain reduction is applied to both. This preserves the stereo image -- independent per-channel compression would cause phantom center shifts when one channel is louder than the other.
+
 | Parameter | Description | Default | Range |
 |-----------|-------------|---------|-------|
-| `threshold` | Threshold in dB | -18.0 | -40 to 0 |
+| `threshold` | Threshold in dB | -18.0 | -60 to 0 |
 | `ratio` | Compression ratio | 4.0 | 1-20 |
 | `attack` | Attack time in ms | 10.0 | 0.1-100 |
 | `release` | Release time in ms | 100.0 | 10-1000 |
-| `makeup` | Makeup gain in dB | 0.0 | 0-20 |
+| `makeup` | Makeup gain in dB | 0.0 | 0-24 |
 
 ### Tips
 
@@ -79,6 +106,12 @@ sonido process in.wav out.wav --effect compressor \
 ## chorus
 
 Dual-voice modulated delay chorus.
+
+**How chorus works**: A chorus effect creates the illusion of multiple instruments playing in unison by mixing the dry signal with copies that have slightly varying pitch. The pitch variation is achieved by modulating a short delay time with an LFO. When a delay time changes over time, it effectively time-stretches or compresses the signal, producing a Doppler-like pitch shift.
+
+**Implementation** (`crates/sonido-effects/src/chorus.rs`): Two `InterpolatedDelay` lines with independent LFOs provide two modulated voices. The base delay is 15 ms with up to 5 ms of LFO modulation, sweeping the total delay between 10-20 ms. The two LFOs are phase-offset by 90 degrees (`lfo2.set_phase(0.25)` at line 43) so the voices move independently, creating a richer effect.
+
+**Stereo processing** (`chorus.rs:99-119`): In stereo mode, voice 1 is panned 80% left / 20% right and voice 2 is 20% left / 80% right. This creates a wide stereo image from a mono source -- a classic technique for thickening synth pads and guitar tracks.
 
 | Parameter | Description | Default | Range |
 |-----------|-------------|---------|-------|
@@ -103,7 +136,13 @@ sonido process in.wav out.wav --effect chorus \
 
 ## delay
 
-Tape-style feedback delay.
+Feedback delay with optional ping-pong stereo mode.
+
+**Architecture** (`crates/sonido-effects/src/delay.rs`): Two `InterpolatedDelay` lines (left/right) with feedback and smoothed parameter control. The delay time parameter uses 50 ms smoothing to prevent audible pitch artifacts when changing delay time during playback.
+
+**Ping-pong mode** (`delay.rs:110-117`): When enabled, the feedback path crosses channels -- the left delay line's output feeds back into the right delay line, and vice versa. This creates alternating left-right echoes that "bounce" across the stereo field. The effect reports `is_true_stereo() -> true` only when ping-pong is active.
+
+**Feedback stability**: Feedback is clamped to 0.95 maximum to prevent runaway oscillation. At feedback=0.95, each echo is 95% of the previous, so the signal decays by ~0.45 dB per repeat. Complete decay below -60 dB takes approximately 130 repeats.
 
 | Parameter | Description | Default | Range |
 |-----------|-------------|---------|-------|
@@ -223,6 +262,32 @@ sonido process in.wav out.wav --effect preamp --param gain=6
 
 Freeverb-style algorithmic reverb with 8 parallel comb filters and 4 series allpass filters.
 
+**Freeverb topology** (`crates/sonido-effects/src/reverb.rs`): The Freeverb algorithm, originally by Jezar at Dreampoint, is one of the most widely used algorithmic reverb designs. The signal flow is:
+
+```
+Input -> Pre-delay -> [8 parallel comb filters] -> sum -> [4 series allpass filters] -> Output
+```
+
+The 8 comb filters run in parallel and their outputs are summed. Each comb filter has a different delay length, chosen to be mutually prime to avoid reinforcing resonances. The delay lengths are specified at 44.1 kHz (`reverb.rs:11-12`) and scaled to the actual sample rate:
+
+```
+Left:  1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617 samples (at 44.1 kHz)
+Right: 1139, 1211, 1300, 1379, 1445, 1514, 1580, 1640 samples
+```
+
+The right channel uses slightly offset tunings (`reverb.rs:15-16`) for stereo decorrelation. This means the left and right reverb tails evolve independently, creating a wide stereo image without artificial panning.
+
+The 4 series allpass filters provide diffusion -- they smear the distinct echoes from the comb filters into a dense, smooth reverb tail. The allpass feedback coefficient is fixed at 0.5 (`reverb.rs:135`).
+
+**Comb filter feedback** (`reverb.rs:223-226`): The feedback coefficient combines room_size and decay parameters:
+```
+scaled_room = 0.28 + room_size * 0.7    (range: 0.28 to 0.98)
+feedback = scaled_room + decay * (0.98 - scaled_room)
+```
+This mapping ensures the feedback stays below 1.0 (stable) while providing a wide range of decay times. The damping parameter controls a one-pole lowpass filter inside each comb, simulating the frequency-dependent absorption of real room surfaces -- higher damping means more high-frequency absorption per reflection, producing a darker reverb tail.
+
+**Stereo width** (`reverb.rs:268-272`): A mid/side matrix controls stereo width. At width=0, both channels receive the average (mono). At width=1, channels are fully independent.
+
 | Parameter | Description | Default | Range |
 |-----------|-------------|---------|-------|
 | `room_size` | Room size (affects early reflection density) | 0.5 | 0-1 |
@@ -327,12 +392,28 @@ sonido process in.wav out.wav --effect gate \
 
 Classic flanger with modulated short delay.
 
+**How flanging works**: Flanging is a comb filtering effect created by mixing a signal with a short, time-varying delayed copy. The delay sweeps between ~1-10 ms, producing a series of notches in the frequency spectrum at multiples of 1/delay_time. As the delay changes, the notches sweep through the spectrum, creating the characteristic "jet" or "whoosh" sound.
+
+**Implementation** (`crates/sonido-effects/src/flanger.rs`): Base delay of 5 ms with up to 5 ms of LFO modulation (total range 1-10 ms). The feedback path feeds the delayed output back into the delay input, which deepens the comb filter notches and creates a more resonant, metallic character. At high feedback values, the comb filter approaches self-oscillation, producing pitched metallic tones.
+
+**Stereo** (`flanger.rs:117-148`): The right channel LFO is phase-offset by 90 degrees from the left. This means the comb filter notches sweep at different times in each channel, creating a spatial motion effect. Each channel has its own delay line and feedback state.
+
 | Parameter | Description | Default | Range |
 |-----------|-------------|---------|-------|
 | `rate` | LFO rate in Hz | 0.5 | 0.05-5 |
 | `depth` | Modulation depth (0-1) | 0.5 | 0-1 |
 | `feedback` | Feedback amount (0-1) | 0.5 | 0-0.95 |
 | `mix` | Wet/dry mix (0-1) | 0.5 | 0-1 |
+
+### Flanger vs. Chorus vs. Phaser
+
+All three are modulation effects, but they differ in mechanism:
+
+| Effect | Delay Range | Creates | Characteristic |
+|--------|-------------|---------|----------------|
+| Flanger | 1-10 ms | Comb filter (evenly-spaced notches) | Metallic, jet sweep |
+| Chorus | 10-25 ms | Pitch detuning (Doppler) | Thickening, ensemble |
+| Phaser | N/A (allpass) | Unevenly-spaced notches | Organic, swooshing |
 
 ### Tips
 
@@ -353,6 +434,16 @@ sonido process in.wav out.wav --effect flanger \
 ## phaser
 
 Multi-stage allpass phaser with LFO modulation.
+
+**How phasing works**: A phaser creates notches in the frequency spectrum by mixing the input with a phase-shifted copy of itself. Unlike flanging (which uses comb filters with evenly-spaced notches), phasing uses cascaded first-order allpass filters whose notch positions are unevenly spaced. This produces a more organic, less metallic sound.
+
+**Allpass filter theory** (`crates/sonido-effects/src/phaser.rs:117-135`): Each first-order allpass filter shifts the phase of the signal by up to 180 degrees, with the transition centered at a specific frequency. The coefficient is computed as:
+```
+a = (tan(pi * fc / fs) - 1) / (tan(pi * fc / fs) + 1)
+```
+When the allpass-shifted signal is mixed with the original, a notch appears at the frequency where the phase difference equals 180 degrees. Each pair of allpass stages produces one notch, so 6 stages (the default) creates 3 notches.
+
+**Frequency sweep** (`phaser.rs:216-220`): The center frequencies use exponential mapping for a natural-sounding sweep: `freq = min_freq * (max_freq/min_freq)^(lfo * depth)`. This ensures equal time is spent per octave rather than per Hz, matching human pitch perception. The default sweep range is 200 Hz to 4000 Hz. Each stage is slightly offset by a factor of `1 + stage_index * 0.1`, spreading the notches for a richer effect.
 
 | Parameter | Description | Default | Range |
 |-----------|-------------|---------|-------|

@@ -9,6 +9,13 @@ use core::f32::consts::PI;
 
 /// Tape saturation effect
 ///
+/// ## Parameter Indices (`ParameterInfo`)
+///
+/// | Index | Name | Range | Default |
+/// |-------|------|-------|---------|
+/// | 0 | Drive | 0.0–24.0 dB | 6.0 |
+/// | 1 | Saturation | 0–100% | 50.0 |
+///
 /// # Example
 ///
 /// ```rust

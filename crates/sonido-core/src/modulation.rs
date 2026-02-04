@@ -7,9 +7,21 @@ use crate::{Lfo, EnvelopeFollower};
 
 /// Trait for anything that can generate modulation signals.
 ///
-/// Modulation sources produce values that control effect parameters
-/// over time. They can be bipolar (range -1.0 to 1.0) or unipolar
-/// (range 0.0 to 1.0).
+/// Modulation sources produce time-varying values used to control effect
+/// parameters (filter cutoff, amplitude, pitch, etc.). The trait provides
+/// a unified interface across fundamentally different signal generators:
+///
+/// - **LFOs** (bipolar, free-running periodic signals)
+/// - **Envelope followers** (unipolar, input-dependent amplitude tracking)
+/// - **ADSR envelopes** (unipolar, gate-triggered)
+/// - **Audio-rate modulators** (bipolar, for FM/AM synthesis)
+///
+/// The bipolar/unipolar distinction matters for correct modulation routing.
+/// A bipolar LFO (-1 to 1) centered around zero creates symmetric modulation
+/// (vibrato). A unipolar envelope (0 to 1) creates one-directional modulation
+/// (filter sweep from low to high). The `mod_advance_unipolar()` and
+/// `mod_advance_bipolar()` conversion methods handle the math so that
+/// modulation destinations don't need to know the source type.
 ///
 /// # Example
 ///
@@ -122,6 +134,11 @@ impl ModulationSource for EnvelopeFollower {
 /// A modulation amount that can be applied to a parameter.
 ///
 /// Combines a modulation source with depth and optional inversion.
+/// The `apply()` method computes `base + mod_value * depth * range`,
+/// where `range` is in the parameter's native units (Hz for filter cutoff,
+/// semitones for pitch, etc.). This additive model is standard in synth
+/// architectures and matches user expectations: depth=0.5 with range=1000 Hz
+/// means the filter sweeps +/- 500 Hz from the base cutoff.
 #[derive(Debug, Clone, Copy)]
 pub struct ModulationAmount {
     /// Modulation depth (0.0 to 1.0)
@@ -182,7 +199,7 @@ mod tests {
         assert!(lfo.is_bipolar());
 
         let value = lfo.mod_advance();
-        assert!(value >= -1.0 && value <= 1.0);
+        assert!((-1.0..=1.0).contains(&value));
     }
 
     #[test]
@@ -192,7 +209,7 @@ mod tests {
         for _ in 0..1000 {
             let value = lfo.mod_advance_unipolar();
             assert!(
-                value >= 0.0 && value <= 1.0,
+                (0.0..=1.0).contains(&value),
                 "Unipolar value {} out of range",
                 value
             );
@@ -211,7 +228,7 @@ mod tests {
         }
 
         let value = env.mod_value();
-        assert!(value >= 0.0 && value <= 1.0);
+        assert!((0.0..=1.0).contains(&value));
     }
 
     #[test]

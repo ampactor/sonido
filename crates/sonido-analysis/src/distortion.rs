@@ -209,7 +209,7 @@ impl ThdAnalyzer {
             for h in 1..=self.max_harmonics {
                 let harmonic_freq = fundamental * h as f32;
                 let harmonic_bin = (harmonic_freq / bin_width).round() as i32;
-                if (i as i32 - harmonic_bin).abs() <= exclusion_width as i32 {
+                if (i as i32 - harmonic_bin).abs() <= exclusion_width {
                     is_harmonic = true;
                     break;
                 }
@@ -226,8 +226,8 @@ impl ThdAnalyzer {
         }
 
         // RMS of noise bins
-        let rms = (noise_bins.iter().map(|m| m * m).sum::<f32>() / noise_bins.len() as f32).sqrt();
-        rms
+        
+        (noise_bins.iter().map(|m| m * m).sum::<f32>() / noise_bins.len() as f32).sqrt()
     }
 }
 

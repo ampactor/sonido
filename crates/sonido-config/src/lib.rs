@@ -69,4 +69,4 @@ pub use error::ConfigError;
 pub use factory_presets::{factory_presets, get_factory_preset, factory_preset_names, is_factory_preset, FACTORY_PRESET_NAMES};
 
 /// Re-export commonly used types from sonido-registry
-pub use sonido_registry::{EffectRegistry, EffectCategory, EffectDescriptor};
+pub use sonido_registry::{EffectRegistry, EffectCategory, EffectDescriptor, EffectWithParams};

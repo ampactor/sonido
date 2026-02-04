@@ -26,6 +26,15 @@ enum GateState {
 /// Attenuates signals below a threshold with smooth attack/release transitions.
 /// Includes a hold time to prevent rapid gate chatter.
 ///
+/// ## Parameter Indices (`ParameterInfo`)
+///
+/// | Index | Name | Range | Default |
+/// |-------|------|-------|---------|
+/// | 0 | Threshold | -80.0–0.0 dB | -40.0 |
+/// | 1 | Attack | 0.1–50.0 ms | 1.0 |
+/// | 2 | Release | 10.0–1000.0 ms | 100.0 |
+/// | 3 | Hold | 0.0–500.0 ms | 50.0 |
+///
 /// # Example
 ///
 /// ```rust

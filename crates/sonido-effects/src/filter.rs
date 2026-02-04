@@ -4,6 +4,13 @@ use sonido_core::{Effect, SmoothedParam, Biquad, lowpass_coefficients, Parameter
 
 /// Low-pass filter effect with smoothed parameter control.
 ///
+/// ## Parameter Indices (`ParameterInfo`)
+///
+/// | Index | Name | Range | Default |
+/// |-------|------|-------|---------|
+/// | 0 | Cutoff | 20.0–20000.0 Hz | 1000.0 |
+/// | 1 | Resonance | 0.1–20.0 | 0.707 |
+///
 /// # Example
 ///
 /// ```rust

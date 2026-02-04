@@ -22,7 +22,7 @@
 //! ```
 
 use sonido_core::Effect;
-use sonido_registry::EffectRegistry;
+use sonido_registry::{EffectRegistry, EffectWithParams};
 
 use crate::effect_config::EffectConfig;
 use crate::error::ConfigError;
@@ -31,8 +31,8 @@ use crate::validation::validate_effect;
 
 /// An entry in the effect chain.
 struct ChainEntry {
-    /// The effect instance.
-    effect: Box<dyn Effect + Send>,
+    /// The effect instance (supports both processing and parameter access).
+    effect: Box<dyn EffectWithParams + Send>,
     /// Whether the effect is bypassed.
     bypassed: bool,
     /// The effect type name.
@@ -112,7 +112,7 @@ impl EffectChain {
         let effect_type = config.canonical_type();
 
         // Validate the effect type
-        validate_effect(effect_type).map_err(|e| ConfigError::Validation(e))?;
+        validate_effect(effect_type).map_err(ConfigError::Validation)?;
 
         // Create the effect
         let mut effect = self.registry.create(effect_type, self.sample_rate)
@@ -133,48 +133,17 @@ impl EffectChain {
     /// Apply parameters from config to an effect.
     fn apply_params(
         &self,
-        effect: &mut Box<dyn Effect + Send>,
+        effect: &mut Box<dyn EffectWithParams + Send>,
         config: &EffectConfig,
     ) -> Result<(), ConfigError> {
-        // Get the effect descriptor to access parameter info
-        let descriptor = self.registry.get(config.canonical_type());
-
-        if let Some(desc) = descriptor {
-            // We need to set parameters by index since Effect doesn't expose set_param directly
-            // For now, we iterate through known parameters and try to match by name
-            for (param_name, param_value) in &config.params {
-                if let Some(value) = crate::effect_config::parse_param_value(param_value) {
-                    // Try to find the parameter index by name
-                    if let Some(idx) = self.find_param_index(desc.id, param_name) {
-                        // Use a workaround since we can't directly call set_param on Box<dyn Effect>
-                        // We'll need to process this differently - for now, store for later
-                        self.set_effect_param(effect.as_mut(), idx, value);
-                    }
+        for (param_name, param_value) in &config.params {
+            if let Some(value) = crate::effect_config::parse_param_value(param_value)
+                && let Some(idx) = self.registry.param_index_by_name(config.canonical_type(), param_name) {
+                    effect.effect_set_param(idx, value);
                 }
-            }
         }
 
         Ok(())
-    }
-
-    /// Find parameter index by name for an effect type.
-    ///
-    /// Note: Parameter setting requires trait object downcasting which isn't
-    /// straightforward with Box<dyn Effect>. For now, this returns None.
-    /// Future work: Use EffectWithParams trait from sonido-registry.
-    #[allow(unused)]
-    fn find_param_index(&self, _effect_type: &str, _param_name: &str) -> Option<usize> {
-        // TODO: Implement parameter lookup when EffectWithParams is available
-        None
-    }
-
-    /// Set a parameter on an effect by index.
-    ///
-    /// Note: This is a no-op currently. Parameter setting requires access to
-    /// the ParameterInfo trait which isn't available through Box<dyn Effect>.
-    #[allow(unused)]
-    fn set_effect_param(&self, _effect: &mut dyn Effect, _index: usize, _value: f32) {
-        // TODO: Implement when trait object parameter access is available
     }
 
     /// Add an effect by type name.
@@ -188,7 +157,7 @@ impl EffectChain {
     /// Add an already-created effect instance.
     pub fn add_effect_instance(
         &mut self,
-        effect: Box<dyn Effect + Send>,
+        effect: Box<dyn EffectWithParams + Send>,
         effect_type: &str,
         bypassed: bool,
     ) {
@@ -252,7 +221,7 @@ impl EffectChain {
     }
 
     /// Remove an effect at the given index.
-    pub fn remove(&mut self, index: usize) -> Option<Box<dyn Effect + Send>> {
+    pub fn remove(&mut self, index: usize) -> Option<Box<dyn EffectWithParams + Send>> {
         if index < self.entries.len() {
             Some(self.entries.remove(index).effect)
         } else {
@@ -271,12 +240,12 @@ impl EffectChain {
     }
 
     /// Get an effect reference by index.
-    pub fn get_effect(&self, index: usize) -> Option<&(dyn Effect + Send)> {
+    pub fn get_effect(&self, index: usize) -> Option<&(dyn EffectWithParams + Send)> {
         self.entries.get(index).map(|e| e.effect.as_ref())
     }
 
     /// Get a mutable effect reference by index.
-    pub fn get_effect_mut(&mut self, index: usize) -> Option<&mut Box<dyn Effect + Send>> {
+    pub fn get_effect_mut(&mut self, index: usize) -> Option<&mut Box<dyn EffectWithParams + Send>> {
         self.entries.get_mut(index).map(|e| &mut e.effect)
     }
 }
@@ -301,9 +270,8 @@ impl Effect for EffectChain {
             if !entry.bypassed {
                 // Use the effect's block processing if available
                 // For in-place processing, we use a temporary buffer approach
-                let len = output.len();
-                for i in 0..len {
-                    output[i] = entry.effect.process(output[i]);
+                for sample in output.iter_mut() {
+                    *sample = entry.effect.process(*sample);
                 }
             }
         }

@@ -32,3 +32,6 @@ rustfft = { workspace = true }
 # TUI
 ratatui = "0.28"
 crossterm = "0.28"
+
+[lints]
+workspace = true

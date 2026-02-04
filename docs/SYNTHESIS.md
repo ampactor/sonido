@@ -49,16 +49,74 @@ for sample in buffer.iter_mut() {
 
 The `Oscillator` type generates audio-rate waveforms with PolyBLEP (Polynomial Band-Limited Step) anti-aliasing to reduce aliasing artifacts on non-sinusoidal waveforms.
 
+### The Aliasing Problem
+
+Waveforms with sharp transitions -- sawtooth, square, pulse -- contain harmonics that extend to infinity. When a digital oscillator generates these waveforms naively, harmonics above the Nyquist frequency (half the sample rate) fold back into the audible spectrum as inharmonic artifacts. A naive sawtooth at 5 kHz sampled at 48 kHz has harmonics at 10, 15, 20, 25 kHz... The 25 kHz harmonic exceeds Nyquist (24 kHz) and aliases to 23 kHz -- an inharmonic frequency unrelated to the fundamental, heard as harsh, metallic distortion.
+
+Three classical approaches exist for band-limited oscillator synthesis:
+
+1. **Additive synthesis**: Sum individual sine harmonics up to Nyquist. Produces perfect results but costs O(f_s/f_0) sine evaluations per sample -- impractical for real-time.
+2. **Wavetable oscillators (BLIT/BLEP)**: Pre-compute band-limited waveforms at multiple frequencies. Uses memory and requires interpolation between tables.
+3. **PolyBLEP**: Apply a polynomial correction to the naive waveform near discontinuities. Minimal CPU cost, no memory overhead, good quality.
+
+Sonido uses PolyBLEP (approach 3) for its balance of quality, performance, and simplicity -- especially important for `no_std` embedded targets where memory for wavetables may be limited.
+
+### PolyBLEP Theory
+
+The Band-Limited Step (BLEP) function represents the difference between an ideal (infinite-bandwidth) step and a band-limited step. Convolving each discontinuity with the BLEP residual removes the aliasing energy. However, the ideal BLEP is an infinitely long sinc function -- impractical for real-time use.
+
+PolyBLEP approximates this correction with a short polynomial applied only in the immediate vicinity of each discontinuity (within one sample on each side). The implementation in `crates/sonido-synth/src/oscillator.rs:178-190` uses a 2-sample-wide quadratic polynomial:
+
+```
+poly_blep(t, dt):
+    if t < dt:                       // Just past the discontinuity
+        t_norm = t / dt
+        return 2*t_norm - t_norm^2 - 1
+    else if t > 1 - dt:             // Just before the discontinuity
+        t_norm = (t - 1) / dt
+        return t_norm^2 + 2*t_norm + 1
+    else:
+        return 0                     // No correction away from edges
+```
+
+Here `t` is the current phase [0, 1) and `dt` is the phase increment per sample (frequency/sample_rate). The correction is proportional to `dt`, meaning higher frequencies get larger corrections -- this is correct because faster phase increments concentrate more aliasing energy near the transition.
+
+The polynomial is a 2nd-order approximation to the BLEP residual. Higher-order polynomials (PolyBLEP-4, PolyBLEP-6) would provide better attenuation of aliased harmonics at the cost of a wider correction window and more computation. The 2nd-order version used here provides roughly 30 dB of alias suppression relative to naive generation -- adequate for most synthesis applications, especially when combined with the 2x-8x oversampling available via `Oversampled<N, E>` in `sonido-core`.
+
+### Per-Waveform Implementation
+
+**Sawtooth** (`oscillator.rs:152-156`): The naive sawtooth `2*phase - 1` has a single discontinuity per cycle at the phase wrap point. One PolyBLEP correction is subtracted at phase 0:
+```
+saw = naive_saw - poly_blep(phase, phase_inc)
+```
+
+**Square / Pulse** (`oscillator.rs:171-177`): A pulse wave has two discontinuities per cycle -- the rising edge at phase 0 and the falling edge at phase = duty_cycle. PolyBLEP is applied at both:
+```
+pulse = naive_pulse + poly_blep(phase, dt) - poly_blep(phase - duty, dt)
+```
+The second `rem_euclid` in the source wraps the phase offset correctly for duty cycles near 0 or 1.
+
+**Triangle** (`oscillator.rs:160-169`): Rather than applying PolyBLEP directly to the triangle wave (which has slope discontinuities, not step discontinuities), Sonido integrates a PolyBLEP-corrected square wave. This is mathematically sound because the integral of a square wave is a triangle wave. The integration uses a leaky integrator (`0.999 * prev + ...`) rather than a pure accumulator to prevent DC drift:
+```
+blep_square = square + poly_blep(phase, dt) - poly_blep(phase + 0.5, dt)
+triangle = 0.999 * prev_output + blep_square * phase_inc * 4.0
+```
+The scaling factor `4.0` normalizes the triangle amplitude, and the leak coefficient `0.999` provides high-pass filtering with a very low cutoff (~7 Hz at 48 kHz) to eliminate DC without affecting audible content.
+
+**Sine**: No PolyBLEP needed -- sine waves are inherently band-limited (single harmonic).
+
+**Noise** (`oscillator.rs:183-192`): Uses xorshift32 PRNG for white noise generation. No anti-aliasing needed since white noise has a flat spectrum by definition.
+
 ### Waveform Types
 
-| Waveform | Description | Harmonics |
-|----------|-------------|-----------|
-| `Sine` | Pure tone | Fundamental only |
-| `Triangle` | Soft, flute-like | Odd harmonics, -12dB/octave |
-| `Saw` | Bright, brassy | All harmonics, -6dB/octave |
-| `Square` | Hollow, clarinet-like | Odd harmonics, -6dB/octave |
-| `Pulse(duty)` | Variable duty cycle | Depends on duty cycle |
-| `Noise` | White noise | Broadband |
+| Waveform | Description | Harmonics | Anti-aliasing |
+|----------|-------------|-----------|---------------|
+| `Sine` | Pure tone | Fundamental only | Not needed |
+| `Triangle` | Soft, flute-like | Odd harmonics, -12 dB/oct | Integrated PolyBLEP square |
+| `Saw` | Bright, brassy | All harmonics, -6 dB/oct | PolyBLEP at wrap point |
+| `Square` | Hollow, clarinet-like | Odd harmonics, -6 dB/oct | PolyBLEP at both edges |
+| `Pulse(duty)` | Variable duty cycle | Depends on duty cycle | PolyBLEP at both edges |
+| `Noise` | White noise | Broadband | Not needed (xorshift32) |
 
 ### Basic Usage
 
@@ -122,6 +180,20 @@ osc.set_waveform(OscillatorWaveform::Pulse(duty));
 ## ADSR Envelopes
 
 The `AdsrEnvelope` generates attack-decay-sustain-release envelopes with exponential curves for natural-sounding modulation.
+
+### Exponential Envelope Curves
+
+ADSR envelopes in Sonido use exponential curves rather than linear ramps. This matches the behavior of analog synth circuits (capacitor charge/discharge) and aligns with human loudness perception, which is logarithmic. A linear envelope sounds unnaturally abrupt at the start of attack and sluggish at the end; an exponential envelope accelerates naturally.
+
+The implementation (`crates/sonido-synth/src/envelope.rs`) computes a one-pole coefficient from the time parameter:
+
+```
+coefficient = exp(-1.0 / (time_ms/1000 * sample_rate))
+```
+
+This produces an exponential approach toward the target level, reaching approximately 63% of the way in one time constant. The envelope considers a stage complete when the level is within a small epsilon of the target, then transitions to the next stage.
+
+**Retriggering**: When `gate_on()` is called while the envelope is already active (e.g., during release), the envelope restarts from the current level rather than resetting to zero. This prevents clicks from abrupt level jumps -- a common artifact in naive envelope implementations.
 
 ### Parameters
 

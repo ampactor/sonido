@@ -3,6 +3,8 @@
 //! Provides musical timing primitives for LFO sync, delay times, and
 //! other tempo-synchronized processing.
 
+use libm::floorf;
+
 /// Musical note divisions for tempo sync.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum NoteDivision {
@@ -226,13 +228,13 @@ impl TempoManager {
     /// Get fractional position within current beat (0.0 to 1.0).
     pub fn beat_phase(&self) -> f32 {
         let beat_pos = self.beat_position();
-        beat_pos - beat_pos.floor()
+        beat_pos - floorf(beat_pos)
     }
 
     /// Get fractional position within current bar (0.0 to 1.0, assuming 4/4).
     pub fn bar_phase(&self) -> f32 {
         let bar_pos = self.bar_position();
-        bar_pos - bar_pos.floor()
+        bar_pos - floorf(bar_pos)
     }
 
     /// Get LFO frequency for a note division.

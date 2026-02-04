@@ -5,6 +5,14 @@ use libm::ceilf;
 
 /// Chorus effect with dual voices.
 ///
+/// ## Parameter Indices (`ParameterInfo`)
+///
+/// | Index | Name | Range | Default |
+/// |-------|------|-------|---------|
+/// | 0 | Rate | 0.1–10.0 Hz | 1.0 |
+/// | 1 | Depth | 0–100% | 50.0 |
+/// | 2 | Mix | 0–100% | 50.0 |
+///
 /// # Example
 ///
 /// ```rust

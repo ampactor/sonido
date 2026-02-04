@@ -15,6 +15,9 @@ default = []
 rustfft = { workspace = true }
 sonido-core = { workspace = true, features = ["std"] }
 
+[lints]
+workspace = true
+
 [dev-dependencies]
 tempfile = "3"
 criterion = { workspace = true }

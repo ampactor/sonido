@@ -164,18 +164,16 @@ impl TuiApp {
     }
 
     fn start_editing(&mut self) {
-        if self.focus == 1 {
-            if let Some(effect) = self.current_effect() {
+        if self.focus == 1
+            && let Some(effect) = self.current_effect() {
                 let param_names: Vec<_> = effect.params.keys().collect();
-                if let Some(param_name) = param_names.get(self.selected_param) {
-                    if let Some(value) = effect.params.get(*param_name) {
+                if let Some(param_name) = param_names.get(self.selected_param)
+                    && let Some(value) = effect.params.get(*param_name) {
                         self.edit_buffer = value.clone();
                         self.editing = true;
                         self.status = "Editing: Enter to confirm, Esc to cancel".to_string();
                     }
-                }
             }
-        }
     }
 
     fn confirm_edit(&mut self) {
@@ -217,15 +215,13 @@ impl TuiApp {
 
         if let Some(effect) = self.preset.effects.get_mut(selected_effect) {
             let param_names: Vec<_> = effect.params.keys().cloned().collect();
-            if let Some(param_name) = param_names.get(selected_param) {
-                if let Some(value_str) = effect.params.get(param_name).cloned() {
-                    if let Ok(value) = value_str.parse::<f32>() {
+            if let Some(param_name) = param_names.get(selected_param)
+                && let Some(value_str) = effect.params.get(param_name).cloned()
+                    && let Ok(value) = value_str.parse::<f32>() {
                         let new_value = value + delta;
                         effect.params.insert(param_name.clone(), format!("{:.2}", new_value));
                         self.status = format!("{} = {:.2}", param_name, new_value);
                     }
-                }
-            }
         }
     }
 }
@@ -440,13 +436,11 @@ fn run_app<B: ratatui::backend::Backend>(
     loop {
         terminal.draw(|f| draw_ui(f, app))?;
 
-        if event::poll(Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
+        if event::poll(Duration::from_millis(100))?
+            && let Event::Key(key) = event::read()?
+                && key.kind == KeyEventKind::Press {
                     app.handle_key(key.code, key.modifiers);
                 }
-            }
-        }
 
         if app.should_quit {
             return Ok(());

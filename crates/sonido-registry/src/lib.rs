@@ -119,7 +119,7 @@ pub struct EffectDescriptor {
 }
 
 /// Factory function type for creating effects.
-type EffectFactory = fn(f32) -> Box<dyn Effect + Send>;
+type EffectFactory = fn(f32) -> Box<dyn EffectWithParams + Send>;
 
 /// Internal entry in the registry.
 struct RegistryEntry {
@@ -363,12 +363,30 @@ impl EffectRegistry {
 
     /// Create an effect instance by ID.
     ///
-    /// Returns `None` if the effect ID is not found.
-    pub fn create(&self, id: &str, sample_rate: f32) -> Option<Box<dyn Effect + Send>> {
+    /// Returns `None` if the effect ID is not found. The returned effect
+    /// supports both audio processing (via `Effect`) and parameter access
+    /// (via `EffectWithParams`).
+    pub fn create(&self, id: &str, sample_rate: f32) -> Option<Box<dyn EffectWithParams + Send>> {
         self.entries
             .iter()
             .find(|e| e.descriptor.id == id)
             .map(|e| (e.factory)(sample_rate))
+    }
+
+    /// Find a parameter index by name for a given effect type.
+    ///
+    /// Creates a temporary effect instance to scan parameter descriptors.
+    /// Returns `None` if the effect type or parameter name is not found.
+    pub fn param_index_by_name(&self, effect_id: &str, param_name: &str) -> Option<usize> {
+        let effect = self.create(effect_id, 48000.0)?;
+        let lower = param_name.to_lowercase();
+        for i in 0..effect.effect_param_count() {
+            if let Some(desc) = effect.effect_param_info(i)
+                && (desc.name.to_lowercase() == lower || desc.short_name.to_lowercase() == lower) {
+                    return Some(i);
+                }
+        }
+        None
     }
 
     /// Returns the number of registered effects.
