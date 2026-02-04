@@ -387,7 +387,7 @@ mod tests {
         for _ in 0..2000 {
             let level = env.advance();
             assert!(
-                level >= 0.0 && level <= 1.01, // Small overshoot allowed
+                (0.0..=1.01).contains(&level), // Small overshoot allowed
                 "Level out of range: {}",
                 level
             );
@@ -398,7 +398,7 @@ mod tests {
         for _ in 0..5000 {
             let level = env.advance();
             assert!(
-                level >= 0.0 && level <= 1.0,
+                (0.0..=1.0).contains(&level),
                 "Level out of range during release: {}",
                 level
             );

@@ -46,27 +46,164 @@ This triggers the release workflow which:
 
 ## Documentation Protocol
 
+Documentation must stay in sync with code at all times. Every code change that affects
+behavior, API surface, or DSP algorithms must include corresponding documentation updates
+in the same commit or PR. This section defines exactly what to update and when.
+
+### Documentation-to-Code Mapping
+
+The following table maps every documentation file to the source code it describes.
+When you change code in the "Source Files" column, you **must** update the corresponding doc.
+
+| Documentation File | Source Files | What to Update |
+|---|---|---|
+| `CLAUDE.md` (Key Files table) | Any new module or crate | Add row to Key Files table |
+| `CLAUDE.md` (Crates table) | Workspace `Cargo.toml`, new crate | Add/update crate row |
+| `CLAUDE.md` (Key Patterns) | `effect.rs`, `param.rs`, `modulation.rs`, `tempo.rs` | Update code examples if API changes |
+| `README.md` (features list) | Any user-facing feature | Update bullet points |
+| `README.md` (Why Sonido table) | Test count, feature additions | Update comparison table |
+| `docs/EFFECTS_REFERENCE.md` | `crates/sonido-effects/src/*.rs` | Add/update effect entry with parameters, ranges, DSP theory |
+| `docs/SYNTHESIS.md` | `crates/sonido-synth/src/*.rs` | Update oscillator, envelope, voice, mod matrix docs |
+| `docs/ARCHITECTURE.md` | Crate structure, dependency graph | Update crate diagram and dependency descriptions |
+| `docs/CLI_GUIDE.md` | `crates/sonido-cli/src/**/*.rs` | Update command examples, add new subcommands |
+| `docs/HARDWARE.md` | `crates/sonido-platform/src/*.rs` | Update platform traits, control mapping |
+| `docs/BIOSIGNAL_ANALYSIS.md` | `crates/sonido-analysis/src/cfc.rs`, `filterbank.rs`, `hilbert.rs` | Update analysis pipeline docs |
+| `docs/BENCHMARKS.md` | `benches/*.rs` | Update benchmark results after optimization |
+| `docs/CHANGELOG.md` | Any user-visible change | Add entry under current version |
+| `docs/TESTING.md` | Test infrastructure changes | Update test patterns, CI steps |
+| `docs/GUI.md` | `crates/sonido-gui/src/*.rs` | Update GUI feature docs |
+| `docs/DSP_FUNDAMENTALS.md` | Core DSP modules (`biquad.rs`, `svf.rs`, `oversample.rs`, `comb.rs`, `allpass.rs`) | Update theory sections when algorithms change |
+| `docs/DESIGN_DECISIONS.md` | Any architectural decision | Add new ADR entry |
+| `docs/CONTRIBUTING.md` | CI config, dev workflow changes | Update setup/CI/checklist sections |
+
 ### When to Update Docs
 
-- **New public API**: Update EFFECTS_REFERENCE.md or relevant crate docs
-- **New CLI command**: Update CLI_GUIDE.md
-- **Breaking change**: Update CHANGELOG.md with migration notes
-- **New feature**: Update README.md features list
+| Change Type | Required Documentation Updates |
+|---|---|
+| New effect | `EFFECTS_REFERENCE.md`, `README.md` features list, `CLAUDE.md` Key Files, registry entry |
+| New CLI command | `CLI_GUIDE.md`, clap help text |
+| New public trait/struct | Rustdoc with `///` comments, `CLAUDE.md` Key Patterns if it's a core abstraction |
+| New DSP algorithm | `DSP_FUNDAMENTALS.md` theory section, inline `///` explaining the math |
+| Parameter range change | `EFFECTS_REFERENCE.md` parameter table, rustdoc on setter |
+| Breaking API change | `CHANGELOG.md` with migration notes, `CLAUDE.md` pattern update |
+| New crate | `CLAUDE.md` Crates table, `ARCHITECTURE.md` diagram, workspace `Cargo.toml` |
+| Bug fix | `CHANGELOG.md` entry |
+| Performance improvement | `BENCHMARKS.md` with before/after numbers |
+| New analysis feature | `BIOSIGNAL_ANALYSIS.md` or `CFC_ANALYSIS.md` |
+| Architectural decision | `DESIGN_DECISIONS.md` ADR entry |
 
 ### Doc Checklist (before PR merge)
 
-- [ ] Rustdoc on all public items
-- [ ] Example in rustdoc if non-obvious
-- [ ] CLI help text updated (clap derives)
-- [ ] README updated if user-facing change
-- [ ] CHANGELOG entry added
+#### Inline Documentation (every PR)
+
+- [ ] All new public items have `///` rustdoc comments
+- [ ] Rustdoc includes usage example if the API is non-obvious
+- [ ] DSP algorithm comments explain the math (what the formula does, not just variable names)
+- [ ] Safety invariants documented on any `unsafe` code
+- [ ] Parameter ranges documented on setter methods (e.g., `/// Sets drive in dB. Range: 0.0 to 40.0`)
+
+#### Markdown Documentation (when applicable)
+
+- [ ] `EFFECTS_REFERENCE.md` updated if any effect was added or modified
+- [ ] `CLI_GUIDE.md` updated if CLI commands changed
+- [ ] `README.md` features list updated if user-facing feature was added
+- [ ] `CHANGELOG.md` entry added for any user-visible change
+- [ ] `CLAUDE.md` Key Files table updated if new modules were added
+- [ ] `DSP_FUNDAMENTALS.md` updated if a new DSP algorithm was introduced
+- [ ] `DESIGN_DECISIONS.md` updated if an architectural choice was made
+
+#### Verification
+
+- [ ] `cargo doc --no-deps --all-features` builds without warnings
+- [ ] `cargo test --doc` passes (all rustdoc examples compile and run)
+- [ ] No stale references to renamed/removed items in any `.md` file
+- [ ] Code examples in docs use current API (not deprecated patterns)
+
+### Inline Doc Comment Standards
+
+#### Module-level docs
+
+Every module file should start with a `//!` doc comment explaining purpose and key concepts:
+
+```rust
+//! # Biquad Filter
+//!
+//! Second-order IIR filter using the RBJ Audio EQ Cookbook coefficients.
+//! Supports lowpass, highpass, bandpass, notch, allpass, peaking, low shelf,
+//! and high shelf responses.
+//!
+//! ## Theory
+//!
+//! The biquad implements the transfer function:
+//!   H(z) = (b0 + b1*z^-1 + b2*z^-2) / (1 + a1*z^-1 + a2*z^-2)
+//!
+//! Coefficients are computed from analog prototypes via the bilinear transform.
+//! See: Robert Bristow-Johnson, "Audio EQ Cookbook"
+```
+
+#### Struct-level docs
+
+```rust
+/// Freeverb-style reverb with 8 parallel comb filters feeding 4 series allpass filters.
+///
+/// Based on Jezar's Freeverb algorithm. Each comb filter uses a different delay length
+/// (prime-adjacent values) to avoid metallic resonances. The allpass diffusers spread
+/// energy across the time domain for a dense, natural tail.
+///
+/// ## Parameters
+/// - `room_size`: Controls comb filter feedback (0.0 to 1.0, default 0.5)
+/// - `damping`: Low-pass filtering in feedback path (0.0 to 1.0, default 0.5)
+/// - `wet`: Wet signal level (0.0 to 1.0, default 0.33)
+/// - `dry`: Dry signal level (0.0 to 1.0, default 1.0)
+/// - `width`: Stereo spread (0.0 to 1.0, default 1.0)
+pub struct Reverb { /* ... */ }
+```
+
+#### Function-level docs for DSP
+
+```rust
+/// Compute the PolyBLEP (Polynomal Band-Limited Step) correction.
+///
+/// Reduces aliasing at waveform discontinuities by subtracting a polynomial
+/// approximation of the band-limited step function. The correction is applied
+/// within one sample of the discontinuity on each side.
+///
+/// # Arguments
+/// * `t` - Phase position normalized to [0, 1) within the waveform period
+/// * `dt` - Phase increment per sample (frequency / sample_rate)
+///
+/// # Returns
+/// Correction value to subtract from the naive waveform sample.
+fn poly_blep(t: f32, dt: f32) -> f32 { /* ... */ }
+```
 
 ### Running Doc Checks
 
 ```bash
-cargo doc --no-deps --all-features
+# Build all rustdocs and check for warnings
+cargo doc --no-deps --all-features 2>&1 | grep -i warning
+
+# Run doc tests
 cargo test --doc
+
+# Check for broken internal links (manual)
+grep -rn '\[.*\](.*\.md)' docs/ | while read line; do
+  file=$(echo "$line" | sed 's/.*(\(.*\.md\)).*/\1/')
+  if [ ! -f "docs/$file" ] && [ ! -f "$file" ]; then
+    echo "BROKEN: $line"
+  fi
+done
 ```
+
+### Adding a New DSP Algorithm
+
+When introducing a new DSP algorithm (filter topology, waveshaper, modulation technique, etc.):
+
+1. **Inline docs**: Add `///` comments explaining the mathematical basis, not just what variables mean
+2. **Reference the source**: Cite the paper, textbook, or reference implementation (e.g., "Based on RBJ Audio EQ Cookbook")
+3. **Document trade-offs**: Why this algorithm over alternatives? (e.g., "SVF chosen over biquad for modulation stability")
+4. **Update DSP_FUNDAMENTALS.md**: Add a theory section if the algorithm introduces a new concept
+5. **Update DESIGN_DECISIONS.md**: Add an ADR if the choice has architectural implications
 
 ## Commit Guidelines
 
@@ -159,8 +296,10 @@ fn bench_effect(c: &mut Criterion) {
 2. Make your changes
 3. Ensure tests pass: `cargo test`
 4. Ensure clippy passes: `cargo clippy --all-targets`
-5. Update documentation as needed
-6. Submit PR with clear description
+5. Run `cargo doc --no-deps --all-features` and fix any doc warnings
+6. Complete the documentation checklist above (inline docs + markdown updates)
+7. Run `cargo test --doc` to verify doc examples compile
+8. Submit PR with clear description
 
 ### PR Title Format
 
@@ -173,14 +312,27 @@ fix: Correct compressor attack time calculation
 
 ## Adding a New Effect
 
+### Code Steps
+
 1. Create the effect in `crates/sonido-effects/src/`
 2. Implement the `Effect` trait from `sonido-core`
-3. Use `SmoothedParam` for parameters
-4. Add tests in a `#[cfg(test)] mod tests` block
-5. Export from `crates/sonido-effects/src/lib.rs`
-6. Add to CLI in `crates/sonido-cli/src/effects.rs`
-7. Document in `docs/EFFECTS_REFERENCE.md`
-8. Add to README.md features list
+3. Implement the `ParameterInfo` trait for runtime introspection
+4. Use `SmoothedParam` for all user-controllable parameters
+5. Implement `process_stereo()` if the effect has decorrelated L/R processing
+6. Add tests in a `#[cfg(test)] mod tests` block
+7. Export from `crates/sonido-effects/src/lib.rs`
+8. Register in `crates/sonido-registry/src/lib.rs`
+9. Add to CLI in `crates/sonido-cli/src/effects.rs`
+
+### Documentation Steps (all required)
+
+10. Add `///` rustdoc on the struct explaining the DSP algorithm and parameters
+11. Add `///` rustdoc on each public method with parameter ranges
+12. Add entry to `docs/EFFECTS_REFERENCE.md` with: description, parameter table, DSP theory, usage example
+13. Add row to `CLAUDE.md` Key Files table
+14. Update `README.md` features list and effect count
+15. Add `docs/CHANGELOG.md` entry
+16. If the effect introduces a new DSP concept, add a section to `docs/DSP_FUNDAMENTALS.md`
 
 ### Effect Template
 

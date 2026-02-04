@@ -75,7 +75,7 @@ pub struct ParamValidationInfo {
 pub struct EffectValidator {
     registry: EffectRegistry,
     /// Cached parameter info for each effect type.
-    /// Maps effect_id -> Vec<ParamValidationInfo>
+    /// Maps effect_id -> `Vec<ParamValidationInfo>`
     param_cache: HashMap<String, Vec<ParamValidationInfo>>,
 }
 
@@ -222,8 +222,7 @@ impl EffectValidator {
 /// Converts to lowercase and replaces spaces/underscores with underscores.
 fn normalize_param_name(name: &str) -> String {
     name.to_lowercase()
-        .replace(' ', "_")
-        .replace('-', "_")
+        .replace([' ', '-'], "_")
 }
 
 /// Parse a parameter value from a string.

@@ -8,6 +8,12 @@ use libm::{powf, tanhf};
 
 /// Clean preamp stage
 ///
+/// ## Parameter Indices (`ParameterInfo`)
+///
+/// | Index | Name | Range | Default |
+/// |-------|------|-------|---------|
+/// | 0 | Gain | -20.0–20.0 dB | 0.0 |
+///
 /// # Example
 ///
 /// ```rust
@@ -170,9 +176,8 @@ impl ParameterInfo for CleanPreamp {
     }
 
     fn set_param(&mut self, index: usize, value: f32) {
-        match index {
-            0 => self.set_gain_db(value.clamp(-20.0, 20.0)),
-            _ => {}
+        if index == 0 {
+            self.set_gain_db(value.clamp(-20.0, 20.0));
         }
     }
 }

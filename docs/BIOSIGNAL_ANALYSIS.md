@@ -2,6 +2,55 @@
 
 While designed for audio, sonido-analysis works for any time-series signal. The mathematics of spectral analysis are timescale-agnostic.
 
+## Cross-Frequency Coupling (CFC) and Phase-Amplitude Coupling (PAC)
+
+Phase-Amplitude Coupling is a phenomenon where the phase of a slow oscillation modulates the amplitude envelope of a faster oscillation. It is observed across many biological systems: theta-gamma coupling during memory encoding in the hippocampus, communication chirps in weakly electric fish, and oscillatory coordination in slime mold networks.
+
+### Mathematical Framework
+
+The PAC analysis pipeline (`crates/sonido-analysis/src/cfc.rs`) implements two established methods:
+
+**Mean Vector Length (MVL)** (Canolty et al., 2006): For each time point, the instantaneous amplitude of the high-frequency band is represented as a vector at the angle of the low-frequency phase. The modulation index is the length of the mean resultant vector:
+
+```
+MI = |mean(amplitude * exp(i * phase))|
+```
+
+If amplitude is uniformly distributed across all phases, the vectors cancel and MI approaches 0. If amplitude concentrates at a preferred phase, the vectors reinforce and MI is large.
+
+**Kullback-Leibler Divergence** (Tort et al., 2010): Phase is binned into 18 bins of 20 degrees each (`cfc.rs:7`). The mean amplitude in each bin forms a distribution. The KL divergence between this distribution and a uniform distribution measures coupling strength:
+
+```
+MI = KL(P || U) / log(N_bins)
+```
+
+The KL method is more robust to signal length and less sensitive to outliers than MVL, but requires binning which loses phase resolution.
+
+### Signal Processing Pipeline
+
+1. **Band extraction** (`crates/sonido-analysis/src/filterbank.rs`): 4th-order Butterworth bandpass filters (two cascaded biquad sections per cutoff) isolate the phase and amplitude bands. The Q values 0.541 and 1.307 are the Butterworth cascade values for 4th-order response -- they provide maximally flat passband with steep rolloff.
+
+2. **Hilbert transform** (`crates/sonido-analysis/src/hilbert.rs`): FFT-based computation of the analytic signal. Positive frequencies are doubled, negative frequencies zeroed, then IFFT produces the complex analytic signal. Instantaneous amplitude = magnitude, instantaneous phase = argument.
+
+3. **Coupling computation**: MVL or KL method as described above.
+
+### Comodulogram
+
+The `Comodulogram` (`cfc.rs`) computes PAC for a grid of frequency pairs, producing a 2D matrix where each cell shows coupling strength between a phase frequency and an amplitude frequency. This reveals which frequency pairs have the strongest coupling -- for example, theta-phase / gamma-amplitude coupling in EEG data typically shows as a hot spot around (6 Hz, 40-80 Hz).
+
+### EEG Frequency Bands
+
+The `filterbank::eeg_bands` module defines standard clinical/research bands:
+
+| Band | Range | Associated State |
+|------|-------|-----------------|
+| Delta | 0.5-4 Hz | Deep sleep, unconscious processes |
+| Theta | 4-8 Hz | Drowsiness, memory encoding |
+| Alpha | 8-13 Hz | Relaxed wakefulness, eyes closed |
+| Beta | 13-30 Hz | Active thinking, focus |
+| Low Gamma | 30-80 Hz | Cognitive processing, perception |
+| High Gamma | 80-200 Hz | Fine motor control, sensory processing |
+
 ## Electric Fish (Weakly Electric)
 
 Electric Organ Discharge (EOD) signals from gymnotiform and mormyrid fish are ideal candidates - they occupy the audio frequency range (50-1000 Hz).

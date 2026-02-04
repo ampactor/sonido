@@ -58,6 +58,12 @@ impl VibratoUnit {
 /// Each individual vibrato is nearly imperceptible, but combined they
 /// create the organic, living quality of real tape.
 ///
+/// ## Parameter Indices (`ParameterInfo`)
+///
+/// | Index | Name | Range | Default |
+/// |-------|------|-------|---------|
+/// | 0 | Depth | 0–200% | 100.0 |
+///
 /// # Example
 ///
 /// ```rust
@@ -227,9 +233,8 @@ impl ParameterInfo for MultiVibrato {
     }
 
     fn set_param(&mut self, index: usize, value: f32) {
-        match index {
-            0 => self.set_depth(value / 100.0),
-            _ => {}
+        if index == 0 {
+            self.set_depth(value / 100.0);
         }
     }
 }

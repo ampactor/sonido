@@ -395,11 +395,10 @@ pub fn get_factory_preset(name: &str) -> Option<Preset> {
 
     // Also try matching against the preset's actual name field
     for (_, toml) in FACTORY_PRESETS_TOML {
-        if let Ok(preset) = Preset::from_toml(toml) {
-            if preset.name.to_lowercase() == name_lower {
+        if let Ok(preset) = Preset::from_toml(toml)
+            && preset.name.to_lowercase() == name_lower {
                 return Some(preset);
             }
-        }
     }
 
     None
@@ -446,11 +445,10 @@ pub fn is_factory_preset(name: &str) -> bool {
 
     // Also check against display names in the presets
     for (_, toml) in FACTORY_PRESETS_TOML {
-        if let Ok(preset) = Preset::from_toml(toml) {
-            if preset.name.to_lowercase() == name_lower {
+        if let Ok(preset) = Preset::from_toml(toml)
+            && preset.name.to_lowercase() == name_lower {
                 return true;
             }
-        }
     }
 
     false

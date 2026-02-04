@@ -66,6 +66,9 @@ jobs:
       - name: Check sonido-effects (no_std)
         run: cargo test --no-default-features -p sonido-effects
 
+      - name: Check sonido-synth (no_std)
+        run: cargo test --no-default-features -p sonido-synth
+
       - name: Check sonido-registry (no_std)
         run: cargo test --no-default-features -p sonido-registry
 
@@ -100,6 +103,37 @@ jobs:
       - name: Run clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ubuntu-latest-cargo-docs-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ubuntu-latest-cargo-docs-
+
+      - name: Build documentation
+        run: cargo doc --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+
+      - name: Run doc tests
+        run: cargo test --workspace --doc
+
   fmt:
     name: Format
     runs-on: ubuntu-latest
@@ -113,3 +147,12 @@ jobs:
 
       - name: Check formatting
         run: cargo fmt --all -- --check
+
+  deny:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v1

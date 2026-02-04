@@ -222,8 +222,8 @@ impl ConstantQTransform {
                 let bandwidth = (self.fft_size as f32 / self.kernels[k].length as f32).ceil() as usize;
                 let half_bw = bandwidth / 2;
 
-                for i in bin.saturating_sub(half_bw)..=(bin + half_bw).min(padded.len() - 1) {
-                    sum += padded[i];
+                for &sample in padded.iter().take((bin + half_bw).min(padded.len() - 1) + 1).skip(bin.saturating_sub(half_bw)) {
+                    sum += sample;
                 }
 
                 magnitudes.push(sum.norm() / bandwidth as f32);
@@ -286,7 +286,7 @@ impl ConstantQTransform {
 /// CQT-based spectrogram (chromagram-like)
 #[derive(Debug, Clone)]
 pub struct CqtSpectrogram {
-    /// CQT data [time_frame][frequency_bin]
+    /// CQT data `[time_frame][frequency_bin]`
     pub data: Vec<CqtResult>,
     /// Hop size in samples
     pub hop_size: usize,
@@ -357,7 +357,7 @@ pub struct Chromagram {
 impl Chromagram {
     /// Compute chromagram from CQT spectrogram
     pub fn from_cqt_spectrogram(cqt_spec: &CqtSpectrogram, bins_per_octave: usize) -> Self {
-        if bins_per_octave % 12 != 0 {
+        if !bins_per_octave.is_multiple_of(12) {
             // Non-standard bins per octave, use simple folding
             return Self::from_cqt_spectrogram_simple(cqt_spec);
         }

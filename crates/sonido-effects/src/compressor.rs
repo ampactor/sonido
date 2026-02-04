@@ -79,6 +79,16 @@ impl GainComputer {
 
 /// Dynamics compressor effect.
 ///
+/// ## Parameter Indices (`ParameterInfo`)
+///
+/// | Index | Name | Range | Default |
+/// |-------|------|-------|---------|
+/// | 0 | Threshold | -60.0–0.0 dB | -18.0 |
+/// | 1 | Ratio | 1.0–20.0 | 4.0 |
+/// | 2 | Attack | 0.1–100.0 ms | 10.0 |
+/// | 3 | Release | 10.0–1000.0 ms | 100.0 |
+/// | 4 | Makeup Gain | 0.0–24.0 dB | 0.0 |
+///
 /// # Example
 ///
 /// ```rust
@@ -100,6 +110,8 @@ pub struct Compressor {
     gain_computer: GainComputer,
     makeup_gain: SmoothedParam,
     sample_rate: f32,
+    /// Last computed gain reduction in dB (always non-positive).
+    last_gain_reduction_db: f32,
 }
 
 impl Compressor {
@@ -110,6 +122,7 @@ impl Compressor {
             gain_computer: GainComputer::new(),
             makeup_gain: SmoothedParam::with_config(1.0, sample_rate, 10.0),
             sample_rate,
+            last_gain_reduction_db: 0.0,
         }
     }
 
@@ -143,6 +156,14 @@ impl Compressor {
         let linear = db_to_linear(gain_db.clamp(0.0, 24.0));
         self.makeup_gain.set_target(linear);
     }
+
+    /// Returns the last computed gain reduction in dB (always non-positive).
+    ///
+    /// A value of 0.0 means no compression is occurring. A value of -6.0
+    /// means the signal is being reduced by 6 dB.
+    pub fn gain_reduction_db(&self) -> f32 {
+        self.last_gain_reduction_db
+    }
 }
 
 impl Effect for Compressor {
@@ -151,6 +172,7 @@ impl Effect for Compressor {
         let envelope = self.envelope_follower.process(input);
         let envelope_db = linear_to_db(envelope);
         let gain_reduction_db = self.gain_computer.compute_gain_db(envelope_db);
+        self.last_gain_reduction_db = gain_reduction_db;
         let gain_linear = db_to_linear(gain_reduction_db);
         let makeup = self.makeup_gain.advance();
 
@@ -165,6 +187,7 @@ impl Effect for Compressor {
         let envelope = self.envelope_follower.process(sum);
         let envelope_db = linear_to_db(envelope);
         let gain_reduction_db = self.gain_computer.compute_gain_db(envelope_db);
+        self.last_gain_reduction_db = gain_reduction_db;
         let gain_linear = db_to_linear(gain_reduction_db);
         let makeup = self.makeup_gain.advance();
 

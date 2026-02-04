@@ -68,8 +68,8 @@ pub fn import_frd(path: impl AsRef<Path>) -> std::io::Result<TransferFunction> {
         }
 
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 3 {
-            if let (Ok(freq), Ok(mag), Ok(phase_deg)) = (
+        if parts.len() >= 3
+            && let (Ok(freq), Ok(mag), Ok(phase_deg)) = (
                 parts[0].parse::<f32>(),
                 parts[1].parse::<f32>(),
                 parts[2].parse::<f32>(),
@@ -78,7 +78,6 @@ pub fn import_frd(path: impl AsRef<Path>) -> std::io::Result<TransferFunction> {
                 magnitude_db.push(mag);
                 phase_rad.push(phase_deg.to_radians());
             }
-        }
     }
 
     // FRD format doesn't include coherence, so we set it to 1.0 (perfect)
@@ -315,7 +314,7 @@ mod tests {
         let tf = TransferFunction {
             frequencies: vec![1000.0],
             magnitude_db: vec![-3.5],
-            phase_rad: vec![-0.785398], // -45 degrees
+            phase_rad: vec![-std::f32::consts::FRAC_PI_4], // -45 degrees
             coherence: vec![1.0],
         };
 

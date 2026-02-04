@@ -498,7 +498,7 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
                 let mut mid_gd_count = 0;
                 for (i, &gd_val) in gd_ms.iter().enumerate() {
                     let freq = result.frequencies[i];
-                    if freq >= 300.0 && freq <= 3000.0 && gd_val.is_finite() {
+                    if (300.0..=3000.0).contains(&freq) && gd_val.is_finite() {
                         mid_gd += gd_val;
                         mid_gd_count += 1;
                     }
@@ -1082,7 +1082,7 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
                     .map(|&p| p / std::f32::consts::PI)
                     .collect();
 
-                write_wav(&phase_path, &phase_normalized, out_spec.clone())?;
+                write_wav(phase_path, &phase_normalized, out_spec)?;
                 println!("\nWrote phase to {}", phase_path.display());
             }
 
@@ -1095,7 +1095,7 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
                     amplitude.clone()
                 };
 
-                write_wav(&amp_path, &amp_normalized, out_spec)?;
+                write_wav(amp_path, &amp_normalized, out_spec)?;
                 println!("Wrote amplitude envelope to {}", amp_path.display());
             }
 
@@ -1311,7 +1311,7 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
 fn midi_to_note_name(midi: f32) -> String {
     let note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
     let midi_rounded = midi.round() as i32;
-    if midi_rounded < 0 || midi_rounded > 127 {
+    if !(0..=127).contains(&midi_rounded) {
         return "---".to_string();
     }
     let note = (midi_rounded % 12) as usize;
@@ -1320,6 +1320,7 @@ fn midi_to_note_name(midi: f32) -> String {
 }
 
 /// Simple pseudo-random number generator (for surrogate shuffling)
+#[allow(unsafe_code)]
 fn rand_simple() -> f64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     static mut SEED: u64 = 0;

@@ -24,6 +24,15 @@ pub enum WahMode {
 /// and sweeps the filter frequency accordingly. In manual mode, the
 /// frequency is controlled directly via the frequency parameter.
 ///
+/// ## Parameter Indices (`ParameterInfo`)
+///
+/// | Index | Name | Range | Default |
+/// |-------|------|-------|---------|
+/// | 0 | Frequency | 200.0–2000.0 Hz | 800.0 |
+/// | 1 | Resonance | 1.0–10.0 | 5.0 |
+/// | 2 | Sensitivity | 0–100% | 50.0 |
+/// | 3 | Mode | 0–1 (Auto, Manual) | 0 |
+///
 /// # Example
 ///
 /// ```rust

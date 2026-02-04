@@ -150,12 +150,10 @@ impl<const N: usize> ControlMapper<N> {
     /// Returns `true` if a mapping was removed, `false` if not found.
     pub fn unmap(&mut self, control_id: ControlId) -> bool {
         for slot in self.mappings.iter_mut() {
-            if let Some(entry) = slot {
-                if entry.control_id == control_id {
-                    *slot = None;
-                    self.count -= 1;
-                    return true;
-                }
+            if let Some(entry) = slot && entry.control_id == control_id {
+                *slot = None;
+                self.count -= 1;
+                return true;
             }
         }
         false
@@ -275,13 +273,12 @@ impl<const N: usize> ControlMapper<N> {
         normalized_value: f32,
         effect: &mut E,
     ) -> bool {
-        if let Some(param_index) = self.get_param_index(control_id) {
-            if let Some(descriptor) = effect.param_info(param_index) {
+        if let Some(param_index) = self.get_param_index(control_id)
+            && let Some(descriptor) = effect.param_info(param_index) {
                 let value = descriptor.denormalize(normalized_value);
                 effect.set_param(param_index, value);
                 return true;
             }
-        }
         false
     }
 

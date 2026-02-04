@@ -105,13 +105,13 @@ impl HilbertTransform {
         let half = self.fft_size / 2;
 
         // Double positive frequencies
-        for i in 1..half {
-            buffer[i] *= 2.0;
+        for sample in buffer.iter_mut().take(half).skip(1) {
+            *sample *= 2.0;
         }
 
         // Zero negative frequencies
-        for i in (half + 1)..self.fft_size {
-            buffer[i] = Complex::new(0.0, 0.0);
+        for sample in buffer.iter_mut().take(self.fft_size).skip(half + 1) {
+            *sample = Complex::new(0.0, 0.0);
         }
 
         // Inverse FFT
@@ -316,11 +316,11 @@ mod tests {
         let start = num_samples / 4;
         let end = 3 * num_samples / 4;
 
-        for i in start..end {
+        for (i, &amp) in amplitude.iter().enumerate().take(end).skip(start) {
             assert!(
-                (amplitude[i] - 1.0).abs() < 0.1,
+                (amp - 1.0).abs() < 0.1,
                 "Amplitude should be ~1.0, got {} at sample {}",
-                amplitude[i], i
+                amp, i
             );
         }
     }
@@ -371,11 +371,11 @@ mod tests {
         let start = num_samples / 4;
         let end = 3 * num_samples / 4;
 
-        for i in start..end.min(inst_freq.len()) {
+        for (i, &freq) in inst_freq.iter().enumerate().take(end.min(inst_freq.len())).skip(start) {
             assert!(
-                (inst_freq[i] - frequency).abs() < 2.0,
+                (freq - frequency).abs() < 2.0,
                 "Instantaneous frequency should be ~{} Hz, got {} at sample {}",
-                frequency, inst_freq[i], i
+                frequency, freq, i
             );
         }
     }

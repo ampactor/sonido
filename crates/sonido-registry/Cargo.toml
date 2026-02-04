@@ -16,4 +16,7 @@ std = ["sonido-core/std", "sonido-effects/std"]
 sonido-core = { workspace = true }
 sonido-effects = { workspace = true }
 
+[lints]
+workspace = true
+
 [dev-dependencies]

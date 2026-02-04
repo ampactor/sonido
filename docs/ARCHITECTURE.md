@@ -63,6 +63,8 @@ The library is built with stereo-first processing and no_std compatibility at it
 
 The foundation crate providing DSP primitives. Designed for `no_std` environments.
 
+**Why a separate core crate?** Every DSP system needs the same building blocks: delay lines, filters, LFOs, parameter smoothing. By isolating these into `sonido-core` with `no_std` support, the same primitives compile for desktop (x86_64) and embedded (ARM Cortex-M7) targets without conditional compilation in the effects. This mirrors the layered architecture used in commercial DSP frameworks like JUCE's `dsp` module and Faust's core library, but with Rust's zero-cost abstractions ensuring no runtime overhead from the abstraction boundary.
+
 **Key components:**
 - `Effect` trait: Object-safe interface all effects implement
 - `SmoothedParam`: Zipper-free parameter changes with exponential/linear smoothing
@@ -81,6 +83,8 @@ The foundation crate providing DSP primitives. Designed for `no_std` environment
 ### sonido-effects
 
 Audio effect implementations built on sonido-core. All `no_std` compatible with full stereo support.
+
+**Why separate effects from core?** The `Effect` trait and DSP primitives change rarely; effect implementations change often as new algorithms are added or refined. Separating them means adding a new effect never risks breaking the core infrastructure. It also means `sonido-core` can be used independently for custom DSP work without pulling in all 15 effect implementations.
 
 **15 Effects:**
 
@@ -106,6 +110,8 @@ Audio effect implementations built on sonido-core. All `no_std` compatible with 
 ### sonido-analysis
 
 Spectral analysis tools for reverse engineering hardware and biosignal research. Requires `std` for FFT.
+
+**Why include biosignal analysis in an audio DSP library?** The mathematics of spectral analysis are domain-agnostic -- an FFT doesn't care whether its input is a guitar chord or an EEG trace. Including cross-frequency coupling (CFC/PAC) analysis alongside audio tools means researchers working with biosignals can leverage the same proven filter implementations, windowing functions, and I/O infrastructure. The `sonido-analysis` crate requires `std` because FFT computation uses heap allocation for twiddle factors and scratch buffers, which is acceptable since analysis is never performed in real-time audio callbacks.
 
 **Components:**
 - `Fft`: FFT wrapper around rustfft
@@ -146,6 +152,8 @@ write_wav_stereo("output.wav", &processed, sample_rate)?;
 
 Full synthesis engine for building synthesizers. `no_std` compatible.
 
+**Why a separate synth crate?** Synthesis has different concerns from effects processing. Effects transform existing audio; synthesizers generate it. The voice management, note allocation, and modulation matrix concepts have no analog in effect processing. Keeping synthesis separate also means an embedded effects pedal can depend on `sonido-core` + `sonido-effects` without pulling in oscillator, envelope, and voice code it will never use.
+
 **Oscillators:**
 - `Oscillator`: Audio-rate oscillator with PolyBLEP anti-aliasing
 - `OscillatorWaveform`: Sine, Triangle, Saw, Square, Pulse, Noise
@@ -171,8 +179,9 @@ Full synthesis engine for building synthesizers. `no_std` compatible.
 
 ### sonido-registry
 
-Central registry for discovering and instantiating effects. Provides a unified
-API for CLI, GUI, and future hardware targets.
+Central registry for discovering and instantiating effects. Provides a unified API for CLI, GUI, and future hardware targets.
+
+**Why a registry pattern?** The CLI, GUI, and potential plugin hosts all need to create effects by name or category. Without a registry, each application would duplicate the mapping from strings to constructors. The registry centralizes this with `EffectDescriptor` metadata, enabling features like "list all modulation effects" or "create effect by name from a preset file" without the application knowing about individual effect types. This is the Factory pattern adapted for DSP -- common in plugin frameworks like VST3 (which uses a similar `IPluginFactory` interface).
 
 **Key components:**
 - `EffectRegistry`: Factory for creating effects by name
@@ -223,8 +232,9 @@ preset.save(&user_presets_dir().join("my_preset.toml"))?;
 
 ### sonido-platform
 
-Hardware abstraction layer for multi-target deployment. Provides `no_std` compatible traits
-for physical controls and parameter mapping.
+Hardware abstraction layer for multi-target deployment. Provides `no_std` compatible traits for physical controls and parameter mapping.
+
+**Why abstract hardware controls?** A physical knob on a Hothouse pedal, a GUI slider, a MIDI CC message, and a DAW automation lane all represent the same concept: a continuous control mapped to an effect parameter. The `PlatformController` trait and `ControlMapper` let effect code remain hardware-agnostic. The `ControlId` namespacing (`0x00XX` = hardware, `0x01XX` = GUI, `0x02XX` = MIDI) means the same mapping code handles all input sources without conflicts.
 
 **Key components:**
 - `PlatformController`: Trait abstracting hardware I/O (knobs, toggles, footswitches, LEDs)
@@ -352,7 +362,11 @@ The CLI automatically detects input format:
 
 ## Effect Trait
 
-All effects implement the `Effect` trait with stereo-first design:
+All effects implement the `Effect` trait with stereo-first design.
+
+**Why stereo-first?** Most real-world audio is stereo. A mono-first API forces every stereo application to manually duplicate processing or wrap effects in stereo adapters. With stereo-first, the common case (stereo processing) requires no boilerplate, while mono processing derives automatically from the stereo path. The `is_true_stereo()` method lets hosts distinguish effects that have cross-channel interaction (reverb, ping-pong delay) from those that process channels independently (distortion, compressor). This metadata enables optimization: a host can skip the stereo path for dual-mono effects when rendering to mono.
+
+**Why object-safe?** The `Effect` trait avoids associated types, const generics, and non-object-safe methods so that `Box<dyn Effect>` works for dynamic effect chains. This is critical for the GUI chain view (drag-and-drop reordering), preset loading (creating effects by name at runtime), and the CLI (parsing effect names from command-line arguments). Static dispatch via `.chain()` and generics remains available for maximum performance in known configurations.
 
 ```rust
 pub trait Effect {
@@ -407,7 +421,9 @@ Dual-mono effects process each channel independently with the same algorithm.
 
 ## ParameterInfo Trait
 
-All effects implement the `ParameterInfo` trait for runtime parameter discovery:
+All effects implement the `ParameterInfo` trait for runtime parameter discovery.
+
+**Why index-based parameters?** Indexed parameters (rather than named string lookups) enable O(1) access in the audio thread and zero-allocation parameter changes. The `ParamDescriptor` provides metadata (name, unit, range, step) for UI generation without embedding strings in the hot path. The `short_name` field (max 8 characters) exists specifically for the Hothouse hardware target, which has a 128x64 OLED display with limited horizontal space. This design is modeled after the VST3 parameter model, where parameters are identified by index for performance and by descriptor for presentation.
 
 ```rust
 pub trait ParameterInfo {
@@ -443,7 +459,9 @@ This enables:
 
 ## no_std Compatibility
 
-`sonido-core` and `sonido-effects` support `no_std` for embedded use:
+`sonido-core` and `sonido-effects` support `no_std` for embedded use.
+
+**Why `no_std`?** The target hardware (Electrosmith Daisy Seed running on ARM Cortex-M7) has no operating system, no heap allocator by default, and hard real-time constraints. Audio callbacks must complete within the buffer period (e.g., 64 samples / 48 kHz = 1.33 ms) with zero tolerance for missed deadlines. `no_std` compatibility is enforced by CI (`cargo test --no-default-features`) and ensures that no code path in the audio processing chain can call `malloc`, touch the filesystem, or panic due to OOM.
 
 ```toml
 [dependencies]
@@ -452,13 +470,18 @@ sonido-effects = { version = "0.1", default-features = false }
 ```
 
 Key design decisions for `no_std`:
-- Use `libm` for math functions instead of `std::f32`
-- Pre-allocated delay lines (no dynamic allocation in audio path)
-- All state stored in structs (no thread-locals or statics)
+- Use `libm` for math functions instead of `std::f32` (the `libm` crate provides software implementations of `sinf`, `expf`, `tanf`, etc. that work without libc)
+- Pre-allocated delay lines (maximum sizes determined at construction time, no dynamic allocation in the audio path)
+- All state stored in structs (no thread-locals, no statics, no `Rc`/`Arc`)
+- `core::array::from_fn` for fixed-size array initialization (e.g., reverb comb/allpass banks)
 
 ## Parameter Smoothing
 
-Parameters use `SmoothedParam` to avoid zipper noise:
+Parameters use `SmoothedParam` to avoid zipper noise.
+
+**Why per-sample smoothing?** When a user turns a knob, the parameter changes in discrete steps. Without smoothing, gain changes produce audible clicks ("zipper noise") and filter cutoff changes produce crackles. The `SmoothedParam` (`crates/sonido-core/src/param.rs`) implements a one-pole IIR lowpass filter on the parameter value itself: `current = current + coeff * (target - current)`. The coefficient is derived from the desired smoothing time: `coeff = 1 - exp(-1 / (time_ms/1000 * sample_rate))`. After one time constant, the value reaches 63% of the way to the target; after 5 time constants (~99.3%), it is effectively settled.
+
+**Why exponential rather than linear?** Exponential smoothing (`SmoothedParam`) is the default because it has constant computational cost (one multiply-add per sample) and naturally decelerates as it approaches the target, producing smooth-sounding transitions. Linear smoothing (`LinearSmoothedParam`) is also available for cases like crossfades where a predictable, constant-rate transition is needed.
 
 ```rust
 // Exponential smoothing (default, natural-sounding)
