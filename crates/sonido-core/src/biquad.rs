@@ -5,9 +5,9 @@
 //!
 //! Coefficient calculation uses the RBJ Audio EQ Cookbook formulas.
 
+use crate::flush_denormal;
 use core::f32::consts::PI;
 use libm::{cosf, sinf};
-use crate::flush_denormal;
 
 /// Generic biquad filter coefficients and state.
 ///
@@ -82,7 +82,8 @@ impl Biquad {
         // Calculate output: y[n] = b0*x[n] + b1*x[n-1] + b2*x[n-2]
         //                                   - a1*y[n-1] - a2*y[n-2]
         let output = self.b0 * input + self.b1 * self.x1 + self.b2 * self.x2
-                                     - self.a1 * self.y1 - self.a2 * self.y2;
+            - self.a1 * self.y1
+            - self.a2 * self.y2;
 
         // Update delay lines (flush denormals to prevent CPU slowdown in feedback)
         self.x2 = self.x1;
@@ -121,7 +122,11 @@ impl Default for Biquad {
 /// # Returns
 ///
 /// (b0, b1, b2, a0, a1, a2) coefficients
-pub fn lowpass_coefficients(frequency: f32, q: f32, sample_rate: f32) -> (f32, f32, f32, f32, f32, f32) {
+pub fn lowpass_coefficients(
+    frequency: f32,
+    q: f32,
+    sample_rate: f32,
+) -> (f32, f32, f32, f32, f32, f32) {
     let omega = 2.0 * PI * frequency / sample_rate;
     let cos_omega = cosf(omega);
     let sin_omega = sinf(omega);
@@ -148,7 +153,11 @@ pub fn lowpass_coefficients(frequency: f32, q: f32, sample_rate: f32) -> (f32, f
 /// # Returns
 ///
 /// (b0, b1, b2, a0, a1, a2) coefficients
-pub fn highpass_coefficients(frequency: f32, q: f32, sample_rate: f32) -> (f32, f32, f32, f32, f32, f32) {
+pub fn highpass_coefficients(
+    frequency: f32,
+    q: f32,
+    sample_rate: f32,
+) -> (f32, f32, f32, f32, f32, f32) {
     let omega = 2.0 * PI * frequency / sample_rate;
     let cos_omega = cosf(omega);
     let sin_omega = sinf(omega);
@@ -177,7 +186,11 @@ pub fn highpass_coefficients(frequency: f32, q: f32, sample_rate: f32) -> (f32, 
 /// # Returns
 ///
 /// (b0, b1, b2, a0, a1, a2) coefficients
-pub fn bandpass_coefficients(frequency: f32, q: f32, sample_rate: f32) -> (f32, f32, f32, f32, f32, f32) {
+pub fn bandpass_coefficients(
+    frequency: f32,
+    q: f32,
+    sample_rate: f32,
+) -> (f32, f32, f32, f32, f32, f32) {
     let omega = 2.0 * PI * frequency / sample_rate;
     let cos_omega = cosf(omega);
     let sin_omega = sinf(omega);
@@ -204,7 +217,11 @@ pub fn bandpass_coefficients(frequency: f32, q: f32, sample_rate: f32) -> (f32, 
 /// # Returns
 ///
 /// (b0, b1, b2, a0, a1, a2) coefficients
-pub fn notch_coefficients(frequency: f32, q: f32, sample_rate: f32) -> (f32, f32, f32, f32, f32, f32) {
+pub fn notch_coefficients(
+    frequency: f32,
+    q: f32,
+    sample_rate: f32,
+) -> (f32, f32, f32, f32, f32, f32) {
     let omega = 2.0 * PI * frequency / sample_rate;
     let cos_omega = cosf(omega);
     let sin_omega = sinf(omega);
@@ -235,7 +252,12 @@ pub fn notch_coefficients(frequency: f32, q: f32, sample_rate: f32) -> (f32, f32
 /// # Returns
 ///
 /// (b0, b1, b2, a0, a1, a2) coefficients
-pub fn peaking_eq_coefficients(frequency: f32, q: f32, gain_db: f32, sample_rate: f32) -> (f32, f32, f32, f32, f32, f32) {
+pub fn peaking_eq_coefficients(
+    frequency: f32,
+    q: f32,
+    gain_db: f32,
+    sample_rate: f32,
+) -> (f32, f32, f32, f32, f32, f32) {
     use libm::powf;
 
     let a = powf(10.0, gain_db / 40.0); // sqrt(10^(dB/20))
@@ -395,6 +417,10 @@ mod tests {
             output = biquad.process(1.0);
         }
 
-        assert!((output - 1.0).abs() < 0.05, "DC should pass at 0dB gain, got {}", output);
+        assert!(
+            (output - 1.0).abs() < 0.05,
+            "DC should pass at 0dB gain, got {}",
+            output
+        );
     }
 }

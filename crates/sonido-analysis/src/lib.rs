@@ -64,30 +64,32 @@
 //! let peak = spectrogram.peak_frequency(10);
 //! ```
 
-pub mod fft;
-pub mod spectrum;
-pub mod dynamics;
-pub mod ir;
-pub mod transfer_fn;
+pub mod cfc;
 pub mod compare;
-pub mod distortion;
-pub mod spectrogram;
 pub mod constant_q;
+pub mod distortion;
+pub mod dynamics;
 pub mod export;
+pub mod fft;
 pub mod filterbank;
 pub mod hilbert;
-pub mod cfc;
+pub mod ir;
+pub mod spectrogram;
+pub mod spectrum;
+pub mod transfer_fn;
 
 // Re-export main types
-pub use fft::{Fft, Window};
-pub use spectrum::{magnitude_spectrum, phase_spectrum, spectral_centroid, welch_psd, coherence};
-pub use dynamics::{rms, rms_db, peak, peak_db, crest_factor, crest_factor_db, analyze_dynamics, DynamicsAnalysis};
-pub use ir::{SineSweep, trim_ir, energy_decay_curve, estimate_rt60, Rt60Estimate};
-pub use transfer_fn::{TransferFunction, Resonance, unwrap_phase};
+pub use cfc::{Comodulogram, PacAnalyzer, PacMethod, PacResult};
 pub use compare::{spectral_correlation, spectral_difference};
-pub use distortion::{ThdAnalyzer, ThdResult, ImdAnalyzer, ImdResult, generate_test_tone};
-pub use spectrogram::{Spectrogram, StftAnalyzer, MelFilterbank, MelSpectrogram};
-pub use constant_q::{ConstantQTransform, CqtResult, CqtSpectrogram, Chromagram};
+pub use constant_q::{Chromagram, ConstantQTransform, CqtResult, CqtSpectrogram};
+pub use distortion::{ImdAnalyzer, ImdResult, ThdAnalyzer, ThdResult, generate_test_tone};
+pub use dynamics::{
+    DynamicsAnalysis, analyze_dynamics, crest_factor, crest_factor_db, peak, peak_db, rms, rms_db,
+};
+pub use fft::{Fft, Window};
 pub use filterbank::{FilterBank, FrequencyBand, eeg_bands};
 pub use hilbert::HilbertTransform;
-pub use cfc::{PacAnalyzer, PacResult, PacMethod, Comodulogram};
+pub use ir::{Rt60Estimate, SineSweep, energy_decay_curve, estimate_rt60, trim_ir};
+pub use spectrogram::{MelFilterbank, MelSpectrogram, Spectrogram, StftAnalyzer};
+pub use spectrum::{coherence, magnitude_spectrum, phase_spectrum, spectral_centroid, welch_psd};
+pub use transfer_fn::{Resonance, TransferFunction, unwrap_phase};

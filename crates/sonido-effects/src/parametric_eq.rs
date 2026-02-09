@@ -3,7 +3,7 @@
 //! Uses RBJ cookbook peaking EQ filters for precise frequency shaping.
 
 use sonido_core::{
-    Biquad, Effect, ParameterInfo, ParamDescriptor, ParamUnit, SmoothedParam,
+    Biquad, Effect, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam,
     peaking_eq_coefficients,
 };
 
@@ -285,13 +285,25 @@ impl Effect for ParametricEq {
         self.high_q.advance();
 
         // Update coefficients if needed
-        if self.low_needs_update || !self.low_freq.is_settled() || !self.low_gain.is_settled() || !self.low_q.is_settled() {
+        if self.low_needs_update
+            || !self.low_freq.is_settled()
+            || !self.low_gain.is_settled()
+            || !self.low_q.is_settled()
+        {
             self.update_low_coefficients();
         }
-        if self.mid_needs_update || !self.mid_freq.is_settled() || !self.mid_gain.is_settled() || !self.mid_q.is_settled() {
+        if self.mid_needs_update
+            || !self.mid_freq.is_settled()
+            || !self.mid_gain.is_settled()
+            || !self.mid_q.is_settled()
+        {
             self.update_mid_coefficients();
         }
-        if self.high_needs_update || !self.high_freq.is_settled() || !self.high_gain.is_settled() || !self.high_q.is_settled() {
+        if self.high_needs_update
+            || !self.high_freq.is_settled()
+            || !self.high_gain.is_settled()
+            || !self.high_q.is_settled()
+        {
             self.update_high_coefficients();
         }
 
@@ -319,13 +331,25 @@ impl Effect for ParametricEq {
         self.high_q.advance();
 
         // Update coefficients if needed
-        if self.low_needs_update || !self.low_freq.is_settled() || !self.low_gain.is_settled() || !self.low_q.is_settled() {
+        if self.low_needs_update
+            || !self.low_freq.is_settled()
+            || !self.low_gain.is_settled()
+            || !self.low_q.is_settled()
+        {
             self.update_low_coefficients();
         }
-        if self.mid_needs_update || !self.mid_freq.is_settled() || !self.mid_gain.is_settled() || !self.mid_q.is_settled() {
+        if self.mid_needs_update
+            || !self.mid_freq.is_settled()
+            || !self.mid_gain.is_settled()
+            || !self.mid_q.is_settled()
+        {
             self.update_mid_coefficients();
         }
-        if self.high_needs_update || !self.high_freq.is_settled() || !self.high_gain.is_settled() || !self.high_q.is_settled() {
+        if self.high_needs_update
+            || !self.high_freq.is_settled()
+            || !self.high_gain.is_settled()
+            || !self.high_q.is_settled()
+        {
             self.update_high_coefficients();
         }
 
@@ -523,7 +547,11 @@ mod tests {
             output = eq.process(1.0);
         }
 
-        assert!((output - 1.0).abs() < 0.05, "Flat EQ should pass DC unchanged, got {}", output);
+        assert!(
+            (output - 1.0).abs() < 0.05,
+            "Flat EQ should pass DC unchanged, got {}",
+            output
+        );
     }
 
     #[test]

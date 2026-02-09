@@ -3,8 +3,8 @@
 use crate::audio_bridge::SharedParams;
 use crate::widgets::{BypassToggle, Knob};
 use egui::Ui;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 /// UI panel for the 3-band parametric EQ effect.
 pub struct ParametricEqPanel;
@@ -27,7 +27,11 @@ impl ParametricEqPanel {
 
             // Low band
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("LOW").color(egui::Color32::from_rgb(150, 150, 160)).small());
+                ui.label(
+                    egui::RichText::new("LOW")
+                        .color(egui::Color32::from_rgb(150, 150, 160))
+                        .small(),
+                );
                 ui.add_space(8.0);
 
                 // Low frequency knob (20-500 Hz)
@@ -81,7 +85,11 @@ impl ParametricEqPanel {
 
             // Mid band
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("MID").color(egui::Color32::from_rgb(150, 150, 160)).small());
+                ui.label(
+                    egui::RichText::new("MID")
+                        .color(egui::Color32::from_rgb(150, 150, 160))
+                        .small(),
+                );
                 ui.add_space(8.0);
 
                 // Mid frequency knob (200-5000 Hz)
@@ -135,7 +143,11 @@ impl ParametricEqPanel {
 
             // High band
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("HIGH").color(egui::Color32::from_rgb(150, 150, 160)).small());
+                ui.label(
+                    egui::RichText::new("HIGH")
+                        .color(egui::Color32::from_rgb(150, 150, 160))
+                        .small(),
+                );
                 ui.add_space(4.0);
 
                 // High frequency knob (1000-15000 Hz)

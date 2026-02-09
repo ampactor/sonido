@@ -3,9 +3,11 @@
 //! J37/Kramer MPX inspired tape warmth with soft saturation,
 //! even harmonic enhancement, and high frequency rolloff.
 
-use sonido_core::{Effect, SmoothedParam, ParameterInfo, ParamDescriptor, ParamUnit, db_to_linear, linear_to_db};
-use libm::{expf, logf};
 use core::f32::consts::PI;
+use libm::{expf, logf};
+use sonido_core::{
+    Effect, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, db_to_linear, linear_to_db,
+};
 
 /// Tape saturation effect
 ///
@@ -274,7 +276,10 @@ mod tests {
         let neg = tape.process(-0.5);
 
         // Output should be slightly asymmetric
-        assert!((pos.abs() - neg.abs()).abs() > 0.001, "Should be asymmetric");
+        assert!(
+            (pos.abs() - neg.abs()).abs() > 0.001,
+            "Should be asymmetric"
+        );
     }
 
     #[test]

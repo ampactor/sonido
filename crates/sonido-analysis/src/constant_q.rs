@@ -129,8 +129,8 @@ impl ConstantQTransform {
                     let window = 0.5 * (1.0 - (2.0 * PI * n as f32 / length as f32).cos());
                     // Complex exponential at center frequency
                     let phase = 2.0 * PI * freq * n as f32 / sample_rate;
-                    let coeff = Complex::new(window * phase.cos(), window * (-phase).sin())
-                        / length as f32;
+                    let coeff =
+                        Complex::new(window * phase.cos(), window * (-phase).sin()) / length as f32;
                     coefficients.push(coeff);
                 }
 
@@ -219,10 +219,15 @@ impl ConstantQTransform {
             if bin < padded.len() {
                 // Use nearby bins for smoother result
                 let mut sum = Complex::new(0.0, 0.0);
-                let bandwidth = (self.fft_size as f32 / self.kernels[k].length as f32).ceil() as usize;
+                let bandwidth =
+                    (self.fft_size as f32 / self.kernels[k].length as f32).ceil() as usize;
                 let half_bw = bandwidth / 2;
 
-                for &sample in padded.iter().take((bin + half_bw).min(padded.len() - 1) + 1).skip(bin.saturating_sub(half_bw)) {
+                for &sample in padded
+                    .iter()
+                    .take((bin + half_bw).min(padded.len() - 1) + 1)
+                    .skip(bin.saturating_sub(half_bw))
+                {
                     sum += sample;
                 }
 
@@ -438,7 +443,9 @@ impl Chromagram {
 
     /// Get pitch class names
     pub fn pitch_class_names() -> [&'static str; 12] {
-        ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+        [
+            "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+        ]
     }
 
     /// Get the dominant pitch class for a frame
@@ -521,7 +528,11 @@ mod tests {
 
         // Should be within a semitone
         let ratio = freq_back / 440.0;
-        assert!(ratio > 0.94 && ratio < 1.06, "Frequency {} should be near 440", freq_back);
+        assert!(
+            ratio > 0.94 && ratio < 1.06,
+            "Frequency {} should be near 440",
+            freq_back
+        );
     }
 
     #[test]

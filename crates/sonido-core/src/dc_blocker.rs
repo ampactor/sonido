@@ -147,11 +147,7 @@ mod tests {
         }
 
         // DC component should be largely removed
-        assert!(
-            output.abs() < 0.01,
-            "DC should be removed, got {}",
-            output
-        );
+        assert!(output.abs() < 0.01, "DC should be removed, got {}", output);
     }
 
     #[test]

@@ -3,8 +3,10 @@
 //! High-headroom, zero-latency preamp that handles hot signals
 //! without clipping until you want it to.
 
-use sonido_core::{Effect, SmoothedParam, ParameterInfo, ParamDescriptor, ParamUnit, db_to_linear, linear_to_db};
 use libm::{powf, tanhf};
+use sonido_core::{
+    Effect, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, db_to_linear, linear_to_db,
+};
 
 /// Clean preamp stage
 ///

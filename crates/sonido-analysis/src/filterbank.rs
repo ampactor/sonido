@@ -16,7 +16,7 @@
 //! // extracted[0] contains theta band, [1] alpha, [2] beta
 //! ```
 
-use sonido_core::biquad::{Biquad, lowpass_coefficients, highpass_coefficients};
+use sonido_core::biquad::{Biquad, highpass_coefficients, lowpass_coefficients};
 
 /// A frequency band specification.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -32,7 +32,11 @@ pub struct FrequencyBand {
 impl FrequencyBand {
     /// Create a new frequency band.
     pub const fn new(name: &'static str, low_hz: f32, high_hz: f32) -> Self {
-        Self { name, low_hz, high_hz }
+        Self {
+            name,
+            low_hz,
+            high_hz,
+        }
     }
 
     /// Get the center frequency of the band.
@@ -111,7 +115,11 @@ impl BandpassFilter {
         let (b0, b1, b2, a0, a1, a2) = lowpass_coefficients(band.high_hz, q2, sample_rate);
         lowpass[1].set_coefficients(b0, b1, b2, a0, a1, a2);
 
-        Self { highpass, lowpass, band }
+        Self {
+            highpass,
+            lowpass,
+            band,
+        }
     }
 
     /// Process a single sample through the bandpass filter.
@@ -173,7 +181,10 @@ impl FilterBank {
             .map(|&band| BandpassFilter::new(sample_rate, band))
             .collect();
 
-        Self { filters, sample_rate }
+        Self {
+            filters,
+            sample_rate,
+        }
     }
 
     /// Get the number of bands in the filter bank.
@@ -299,11 +310,16 @@ mod tests {
 
         // Calculate RMS of input and output
         let input_rms: f32 = (input.iter().map(|x| x * x).sum::<f32>() / input.len() as f32).sqrt();
-        let output_rms: f32 = (output.iter().map(|x| x * x).sum::<f32>() / output.len() as f32).sqrt();
+        let output_rms: f32 =
+            (output.iter().map(|x| x * x).sum::<f32>() / output.len() as f32).sqrt();
 
         // Output should be close to input (within -3dB)
         let ratio = output_rms / input_rms;
-        assert!(ratio > 0.5, "Passband signal should pass through, ratio was {}", ratio);
+        assert!(
+            ratio > 0.5,
+            "Passband signal should pass through, ratio was {}",
+            ratio
+        );
     }
 
     #[test]
@@ -323,11 +339,16 @@ mod tests {
 
         // Calculate RMS of input and output
         let input_rms: f32 = (input.iter().map(|x| x * x).sum::<f32>() / input.len() as f32).sqrt();
-        let output_rms: f32 = (output.iter().map(|x| x * x).sum::<f32>() / output.len() as f32).sqrt();
+        let output_rms: f32 =
+            (output.iter().map(|x| x * x).sum::<f32>() / output.len() as f32).sqrt();
 
         // Output should be significantly attenuated (at least -20dB = 0.1 ratio)
         let ratio = output_rms / input_rms;
-        assert!(ratio < 0.2, "Stopband signal should be attenuated, ratio was {}", ratio);
+        assert!(
+            ratio < 0.2,
+            "Stopband signal should be attenuated, ratio was {}",
+            ratio
+        );
     }
 
     #[test]
@@ -338,7 +359,8 @@ mod tests {
         // Generate mixed signal: 6 Hz (theta) + 20 Hz (beta)
         let theta_signal = sine_wave(6.0, sample_rate, 2.0);
         let beta_signal = sine_wave(20.0, sample_rate, 2.0);
-        let mixed: Vec<f32> = theta_signal.iter()
+        let mixed: Vec<f32> = theta_signal
+            .iter()
             .zip(beta_signal.iter())
             .map(|(t, b)| t + b)
             .collect();
@@ -350,15 +372,25 @@ mod tests {
 
         // Theta extraction should have more theta than beta
         let theta_out = &extracted[0][settling_samples..];
-        let theta_rms: f32 = (theta_out.iter().map(|x| x * x).sum::<f32>() / theta_out.len() as f32).sqrt();
+        let theta_rms: f32 =
+            (theta_out.iter().map(|x| x * x).sum::<f32>() / theta_out.len() as f32).sqrt();
 
         // Beta extraction should have more beta than theta
         let beta_out = &extracted[1][settling_samples..];
-        let beta_rms: f32 = (beta_out.iter().map(|x| x * x).sum::<f32>() / beta_out.len() as f32).sqrt();
+        let beta_rms: f32 =
+            (beta_out.iter().map(|x| x * x).sum::<f32>() / beta_out.len() as f32).sqrt();
 
         // Both should have reasonable energy (not completely attenuated)
-        assert!(theta_rms > 0.3, "Theta extraction failed, RMS was {}", theta_rms);
-        assert!(beta_rms > 0.3, "Beta extraction failed, RMS was {}", beta_rms);
+        assert!(
+            theta_rms > 0.3,
+            "Theta extraction failed, RMS was {}",
+            theta_rms
+        );
+        assert!(
+            beta_rms > 0.3,
+            "Beta extraction failed, RMS was {}",
+            beta_rms
+        );
     }
 
     #[test]

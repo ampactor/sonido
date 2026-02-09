@@ -2,12 +2,11 @@
 //!
 //! Run with: cargo run -p sonido-analysis --example analysis_demo
 
-use sonido_analysis::{
-    Fft, Window, magnitude_spectrum, spectral_centroid,
-    rms, rms_db, peak, peak_db, crest_factor, crest_factor_db,
-    analyze_dynamics,
-};
 use sonido_analysis::filterbank::{FilterBank, FrequencyBand, eeg_bands};
+use sonido_analysis::{
+    Fft, Window, analyze_dynamics, crest_factor, crest_factor_db, magnitude_spectrum, peak,
+    peak_db, rms, rms_db, spectral_centroid,
+};
 use std::f32::consts::PI;
 
 fn main() {
@@ -32,7 +31,8 @@ fn main() {
 
     // Find peak bin
     let magnitudes: Vec<f32> = spectrum.iter().map(|c| c.norm()).collect();
-    let peak_bin = magnitudes.iter()
+    let peak_bin = magnitudes
+        .iter()
         .enumerate()
         .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
         .map(|(i, _)| i)
@@ -62,7 +62,10 @@ fn main() {
 
     let mag = magnitude_spectrum(&signal, fft_size, Window::Hann);
     let centroid = spectral_centroid(&mag, sample_rate);
-    println!("Spectral centroid: {:.1} Hz (expected ~{} Hz for pure sine)", centroid, freq);
+    println!(
+        "Spectral centroid: {:.1} Hz (expected ~{} Hz for pure sine)",
+        centroid, freq
+    );
 
     // --- Multi-tone signal ---
     println!("\n=== Multi-tone Signal (440 + 880 + 1320 Hz) ===\n");
@@ -111,7 +114,10 @@ fn main() {
     let window_size = 1024;
     let silence_threshold_db = -60.0;
     let dynamics = analyze_dynamics(&signal, window_size, silence_threshold_db);
-    println!("\nFull dynamics analysis (windowed, {} sample windows):", window_size);
+    println!(
+        "\nFull dynamics analysis (windowed, {} sample windows):",
+        window_size
+    );
     println!("  RMS:            {:.1} dB", dynamics.rms_db);
     println!("  Peak:           {:.1} dB", dynamics.peak_db);
     println!("  Crest factor:   {:.1} dB", dynamics.crest_factor_db);
@@ -142,9 +148,15 @@ fn main() {
     let extracted = bank.extract(&eeg_signal);
 
     println!("Signal: theta(6Hz, amp=0.5) + alpha(10Hz, amp=0.8) + beta(20Hz, amp=0.3)");
-    println!("Sample rate: {} Hz, Duration: {} samples\n", eeg_sample_rate, eeg_duration);
+    println!(
+        "Sample rate: {} Hz, Duration: {} samples\n",
+        eeg_sample_rate, eeg_duration
+    );
 
-    println!("{:<12} {:>10} {:>10} {:>12}", "Band", "Range (Hz)", "RMS", "Rel. Power");
+    println!(
+        "{:<12} {:>10} {:>10} {:>12}",
+        "Band", "Range (Hz)", "RMS", "Rel. Power"
+    );
     println!("{:-<12} {:->10} {:->10} {:->12}", "", "", "", "");
 
     let band_rms_vals: Vec<f32> = extracted.iter().map(|b| rms(b)).collect();
@@ -178,7 +190,11 @@ fn main() {
     for band in &audio_bands {
         println!(
             "  {:<12} {:.0}-{:.0} Hz (center: {:.0} Hz, BW: {:.0} Hz)",
-            band.name, band.low_hz, band.high_hz, band.center_hz(), band.bandwidth()
+            band.name,
+            band.low_hz,
+            band.high_hz,
+            band.center_hz(),
+            band.bandwidth()
         );
     }
 
@@ -201,7 +217,8 @@ fn main() {
 
     for (name, window) in &windows {
         let mag = magnitude_spectrum(&signal, fft_size, *window);
-        let peak_bin = mag.iter()
+        let peak_bin = mag
+            .iter()
             .enumerate()
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
             .map(|(i, _)| i)

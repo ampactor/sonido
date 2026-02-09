@@ -2,12 +2,12 @@
 
 use crate::effects::{create_effect_with_params, parse_chain};
 use clap::Args;
-use sonido_config::{get_factory_preset, find_preset as config_find_preset, Preset};
-use sonido_io::{default_device, AudioStream, ProcessingEngine, StreamConfig};
+use sonido_config::{Preset, find_preset as config_find_preset, get_factory_preset};
+use sonido_io::{AudioStream, ProcessingEngine, StreamConfig, default_device};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Args)]
 pub struct RealtimeArgs {
@@ -104,14 +104,12 @@ pub fn run(args: RealtimeArgs) -> anyhow::Result<()> {
     let (input_name, resolved_input) = match &args.input {
         Some(spec) => {
             // Try to find the device to get its full name for display
-            match sonido_io::find_device_fuzzy(spec, true)
-                .or_else(|_| {
-                    spec.parse::<usize>()
-                        .ok()
-                        .and_then(|idx| sonido_io::find_device_by_index(idx, true).ok())
-                        .ok_or_else(|| anyhow::anyhow!("device not found"))
-                })
-            {
+            match sonido_io::find_device_fuzzy(spec, true).or_else(|_| {
+                spec.parse::<usize>()
+                    .ok()
+                    .and_then(|idx| sonido_io::find_device_by_index(idx, true).ok())
+                    .ok_or_else(|| anyhow::anyhow!("device not found"))
+            }) {
                 Ok(device) => (device.name.clone(), Some(spec.clone())),
                 Err(_) => (spec.clone(), Some(spec.clone())), // Pass through, let stream handle errors
             }
@@ -127,14 +125,12 @@ pub fn run(args: RealtimeArgs) -> anyhow::Result<()> {
 
     let (output_name, resolved_output) = match &args.output {
         Some(spec) => {
-            match sonido_io::find_device_fuzzy(spec, false)
-                .or_else(|_| {
-                    spec.parse::<usize>()
-                        .ok()
-                        .and_then(|idx| sonido_io::find_device_by_index(idx, false).ok())
-                        .ok_or_else(|| anyhow::anyhow!("device not found"))
-                })
-            {
+            match sonido_io::find_device_fuzzy(spec, false).or_else(|_| {
+                spec.parse::<usize>()
+                    .ok()
+                    .and_then(|idx| sonido_io::find_device_by_index(idx, false).ok())
+                    .ok_or_else(|| anyhow::anyhow!("device not found"))
+            }) {
                 Ok(device) => (device.name.clone(), Some(spec.clone())),
                 Err(_) => (spec.clone(), Some(spec.clone())),
             }
@@ -149,7 +145,11 @@ pub fn run(args: RealtimeArgs) -> anyhow::Result<()> {
     };
 
     let mode = if args.mono { "mono" } else { "stereo" };
-    println!("Real-time {} processing with {} effect(s)", mode, engine.len());
+    println!(
+        "Real-time {} processing with {} effect(s)",
+        mode,
+        engine.len()
+    );
     println!("  Input:  {}", input_name);
     println!("  Output: {}", output_name);
     println!("  Sample rate: {} Hz", args.sample_rate);

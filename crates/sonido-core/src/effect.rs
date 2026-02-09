@@ -344,7 +344,8 @@ impl<A: Effect, B: Effect> Effect for Chain<A, B> {
         self.first
             .process_block_stereo(left_in, right_in, left_out, right_out);
         // Process second effect in-place
-        self.second.process_block_stereo_inplace(left_out, right_out);
+        self.second
+            .process_block_stereo_inplace(left_out, right_out);
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {

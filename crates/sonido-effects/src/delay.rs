@@ -1,7 +1,10 @@
 //! Classic delay effect with feedback control and stereo ping-pong mode.
 
-use sonido_core::{Effect, SmoothedParam, InterpolatedDelay, ParameterInfo, ParamDescriptor, ParamUnit, flush_denormal};
 use libm::ceilf;
+use sonido_core::{
+    Effect, InterpolatedDelay, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam,
+    flush_denormal,
+};
 
 /// Classic delay effect with feedback and optional ping-pong stereo mode.
 ///
@@ -34,7 +37,7 @@ use libm::ceilf;
 #[derive(Debug, Clone)]
 pub struct Delay {
     delay_line: InterpolatedDelay,
-    delay_line_r: InterpolatedDelay,  // Second delay line for stereo/ping-pong
+    delay_line_r: InterpolatedDelay, // Second delay line for stereo/ping-pong
     max_delay_samples: f32,
     delay_time: SmoothedParam,
     feedback: SmoothedParam,
@@ -323,6 +326,9 @@ mod tests {
             }
         }
         assert!(first_l_echo, "Should find first echo on left");
-        assert!(first_r_echo, "Ping-pong should produce echo on right channel from left input");
+        assert!(
+            first_r_echo,
+            "Ping-pong should produce echo on right channel from left input"
+        );
     }
 }

@@ -24,13 +24,16 @@
 //! write_wav("output.wav", &processed, spec)?;
 //! ```
 
-mod wav;
-mod stream;
 mod engine;
+mod stream;
+mod wav;
 
-pub use wav::{read_wav, write_wav, read_wav_stereo, write_wav_stereo, WavSpec, StereoSamples};
-pub use stream::{AudioStream, AudioDevice, StreamConfig, list_devices, default_device, find_device_fuzzy, find_device_by_index};
 pub use engine::ProcessingEngine;
+pub use stream::{
+    AudioDevice, AudioStream, StreamConfig, default_device, find_device_by_index,
+    find_device_fuzzy, list_devices,
+};
+pub use wav::{StereoSamples, WavSpec, read_wav, read_wav_stereo, write_wav, write_wav_stereo};
 
 /// Error types for audio I/O operations.
 #[derive(Debug, thiserror::Error)]

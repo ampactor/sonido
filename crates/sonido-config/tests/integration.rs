@@ -2,10 +2,7 @@
 //!
 //! These tests verify end-to-end functionality across modules.
 
-use sonido_config::{
-    EffectChain, EffectConfig, Preset,
-    factory_presets, get_factory_preset,
-};
+use sonido_config::{EffectChain, EffectConfig, Preset, factory_presets, get_factory_preset};
 use sonido_core::Effect;
 use tempfile::TempDir;
 
@@ -20,13 +17,13 @@ fn test_preset_to_chain_processing() {
         .with_effect(EffectConfig::new("!reverb")); // bypassed
 
     // Create chain from preset
-    let mut chain = EffectChain::from_preset(&preset, 48000.0)
-        .expect("should create chain from preset");
+    let mut chain =
+        EffectChain::from_preset(&preset, 48000.0).expect("should create chain from preset");
 
     assert_eq!(chain.len(), 3);
     assert!(!chain.is_bypassed(0).unwrap()); // preamp active
     assert!(!chain.is_bypassed(1).unwrap()); // distortion active
-    assert!(chain.is_bypassed(2).unwrap());  // reverb bypassed
+    assert!(chain.is_bypassed(2).unwrap()); // reverb bypassed
 
     // Process some samples
     let input_samples: Vec<f32> = (0..1024).map(|i| (i as f32 * 0.01).sin() * 0.5).collect();
@@ -58,7 +55,11 @@ fn test_factory_preset_to_chain() {
 
         // Process a test signal
         let output = chain.process(0.5);
-        assert!(output.is_finite(), "preset '{}' produced non-finite output", preset.name);
+        assert!(
+            output.is_finite(),
+            "preset '{}' produced non-finite output",
+            preset.name
+        );
     }
 }
 
@@ -67,8 +68,8 @@ fn test_factory_preset_to_chain() {
 fn test_crunch_preset_processing() {
     let preset = get_factory_preset("crunch").expect("crunch preset should exist");
 
-    let mut chain = EffectChain::from_preset(&preset, 48000.0)
-        .expect("should create chain from crunch preset");
+    let mut chain =
+        EffectChain::from_preset(&preset, 48000.0).expect("should create chain from crunch preset");
 
     // Crunch should have distortion effect
     let types = chain.effect_types();
@@ -131,10 +132,8 @@ fn test_preset_save_load_roundtrip() {
 /// Test effect chain bypass toggling.
 #[test]
 fn test_chain_bypass_toggling() {
-    let mut chain = EffectChain::from_effect_types(
-        &["distortion", "reverb"],
-        48000.0
-    ).expect("should create chain");
+    let mut chain = EffectChain::from_effect_types(&["distortion", "reverb"], 48000.0)
+        .expect("should create chain");
 
     // Process with all effects active
     let input = 0.5;
@@ -153,7 +152,10 @@ fn test_chain_bypass_toggling() {
 
     // Should now be passthrough
     let passthrough = chain.process(input);
-    assert_eq!(passthrough, input, "fully bypassed chain should passthrough");
+    assert_eq!(
+        passthrough, input,
+        "fully bypassed chain should passthrough"
+    );
 
     // Toggle distortion back on
     chain.toggle_bypass(0);
@@ -166,24 +168,27 @@ fn test_chain_bypass_toggling() {
 fn test_chain_from_effect_types_with_bypass() {
     let chain = EffectChain::from_effect_types(
         &["preamp", "!distortion", "compressor", "!reverb"],
-        44100.0
-    ).expect("should create chain");
+        44100.0,
+    )
+    .expect("should create chain");
 
     assert_eq!(chain.len(), 4);
     assert!(!chain.is_bypassed(0).unwrap()); // preamp active
-    assert!(chain.is_bypassed(1).unwrap());  // distortion bypassed
+    assert!(chain.is_bypassed(1).unwrap()); // distortion bypassed
     assert!(!chain.is_bypassed(2).unwrap()); // compressor active
-    assert!(chain.is_bypassed(3).unwrap());  // reverb bypassed
+    assert!(chain.is_bypassed(3).unwrap()); // reverb bypassed
 
     let types = chain.effect_types();
-    assert_eq!(types, vec!["preamp", "!distortion", "compressor", "!reverb"]);
+    assert_eq!(
+        types,
+        vec!["preamp", "!distortion", "compressor", "!reverb"]
+    );
 }
 
 /// Test that unknown effects produce appropriate errors.
 #[test]
 fn test_unknown_effect_error() {
-    let preset = Preset::new("Bad Preset")
-        .with_effect(EffectConfig::new("nonexistent_effect"));
+    let preset = Preset::new("Bad Preset").with_effect(EffectConfig::new("nonexistent_effect"));
 
     let result = EffectChain::from_preset(&preset, 48000.0);
     assert!(result.is_err(), "should fail with unknown effect");
@@ -210,10 +215,8 @@ fn test_ambient_preset_has_delay_and_reverb() {
 /// Test sample rate changes propagate through chain.
 #[test]
 fn test_chain_sample_rate_change() {
-    let mut chain = EffectChain::from_effect_types(
-        &["delay", "reverb"],
-        48000.0
-    ).expect("should create chain");
+    let mut chain =
+        EffectChain::from_effect_types(&["delay", "reverb"], 48000.0).expect("should create chain");
 
     assert_eq!(chain.sample_rate(), 48000.0);
 
@@ -228,10 +231,8 @@ fn test_chain_sample_rate_change() {
 /// Test chain reset clears internal state.
 #[test]
 fn test_chain_reset() {
-    let mut chain = EffectChain::from_effect_types(
-        &["delay"],
-        48000.0
-    ).expect("should create chain with delay");
+    let mut chain = EffectChain::from_effect_types(&["delay"], 48000.0)
+        .expect("should create chain with delay");
 
     // Feed signal to fill delay buffer
     for _ in 0..10000 {
@@ -244,5 +245,8 @@ fn test_chain_reset() {
     // After reset, first sample should have minimal delay contribution
     // (depends on delay implementation, but should be much quieter)
     let first_after_reset = chain.process(0.0);
-    assert!(first_after_reset.abs() < 0.1, "reset should clear delay buffer");
+    assert!(
+        first_after_reset.abs() < 0.1,
+        "reset should clear delay buffer"
+    );
 }

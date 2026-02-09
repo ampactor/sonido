@@ -5,8 +5,11 @@
 //! time sweeps between approximately 1-10ms, creating comb filtering
 //! effects that sweep through the frequency spectrum.
 
-use sonido_core::{Effect, SmoothedParam, InterpolatedDelay, Lfo, ParameterInfo, ParamDescriptor, ParamUnit, flush_denormal};
 use libm::ceilf;
+use sonido_core::{
+    Effect, InterpolatedDelay, Lfo, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam,
+    flush_denormal,
+};
 
 /// Flanger effect with LFO-modulated delay.
 ///
@@ -37,9 +40,9 @@ use libm::ceilf;
 #[derive(Debug, Clone)]
 pub struct Flanger {
     delay: InterpolatedDelay,
-    delay_r: InterpolatedDelay,  // Right channel delay for stereo
+    delay_r: InterpolatedDelay, // Right channel delay for stereo
     lfo: Lfo,
-    lfo_r: Lfo,  // Right channel LFO with phase offset
+    lfo_r: Lfo, // Right channel LFO with phase offset
     rate: SmoothedParam,
     depth: SmoothedParam,
     feedback: SmoothedParam,
@@ -154,9 +157,8 @@ impl Effect for Flanger {
         // When depth=1 and lfo=0: delay = base - max_mod = 0 (clamped to min)
         // When depth=1 and lfo=1: delay = base + max_mod = 10ms
         let mod_amount = (lfo_value * 2.0 - 1.0) * depth * self.max_mod_samples;
-        let delay_samples = (self.base_delay_samples + mod_amount).max(
-            (Self::MIN_DELAY_MS / 1000.0) * self.sample_rate
-        );
+        let delay_samples = (self.base_delay_samples + mod_amount)
+            .max((Self::MIN_DELAY_MS / 1000.0) * self.sample_rate);
 
         // Read from delay line
         let delayed = self.delay.read(delay_samples);
@@ -372,7 +374,11 @@ mod tests {
 
         // After reset, processing zeros should decay quickly
         let output = flanger.process(0.0);
-        assert!(output.abs() < 0.01, "Should be silent after reset, got {}", output);
+        assert!(
+            output.abs() < 0.01,
+            "Should be silent after reset, got {}",
+            output
+        );
     }
 
     #[test]

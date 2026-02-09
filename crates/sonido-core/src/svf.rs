@@ -171,7 +171,11 @@ mod tests {
         for _ in 0..1000 {
             output = svf.process(1.0);
         }
-        assert!((output - 1.0).abs() < 0.05, "DC should pass, got {}", output);
+        assert!(
+            (output - 1.0).abs() < 0.05,
+            "DC should pass, got {}",
+            output
+        );
     }
 
     #[test]

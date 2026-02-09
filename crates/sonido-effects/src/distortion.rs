@@ -24,8 +24,11 @@
 //! - **Tone** (500-10000 Hz): One-pole lowpass to tame harsh highs.
 //! - **Level** (-20-0 dB): Output level compensation.
 
-use sonido_core::{Effect, SmoothedParam, ParameterInfo, ParamDescriptor, ParamUnit, db_to_linear, linear_to_db, soft_clip, hard_clip, foldback, asymmetric_clip};
 use libm::expf;
+use sonido_core::{
+    Effect, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, asymmetric_clip,
+    db_to_linear, foldback, hard_clip, linear_to_db, soft_clip,
+};
 
 /// Waveshaping algorithm selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -324,11 +327,20 @@ mod tests {
         let mut dist = Distortion::new(48000.0);
         dist.set_drive_db(20.0);
 
-        for ws in [WaveShape::SoftClip, WaveShape::HardClip, WaveShape::Foldback, WaveShape::Asymmetric] {
+        for ws in [
+            WaveShape::SoftClip,
+            WaveShape::HardClip,
+            WaveShape::Foldback,
+            WaveShape::Asymmetric,
+        ] {
             dist.set_waveshape(ws);
             dist.reset();
             let output = dist.process(0.1);
-            assert!(output.is_finite(), "Waveshape {:?} produced invalid output", ws);
+            assert!(
+                output.is_finite(),
+                "Waveshape {:?} produced invalid output",
+                ws
+            );
         }
     }
 }

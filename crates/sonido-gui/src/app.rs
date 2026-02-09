@@ -14,12 +14,11 @@ use crossbeam_channel::Sender;
 use egui::{CentralPanel, Color32, Context, Frame, Margin, TopBottomPanel};
 use sonido_core::Effect;
 use sonido_effects::{
-    Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, LowPassFilter,
-    MultiVibrato, ParametricEq, Phaser, Reverb, TapeSaturation, Tremolo, TremoloWaveform, Wah,
-    WaveShape,
+    Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, LowPassFilter, MultiVibrato,
+    ParametricEq, Phaser, Reverb, TapeSaturation, Tremolo, TremoloWaveform, Wah, WaveShape,
 };
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
 /// Audio processing thread state.
@@ -150,9 +149,10 @@ impl SonidoApp {
             audio.running.store(false, Ordering::SeqCst);
         }
         if let Some(mut audio) = self.audio_thread.take()
-            && let Some(handle) = audio.handle.take() {
-                let _ = handle.join();
-            }
+            && let Some(handle) = audio.handle.take()
+        {
+            let _ = handle.join();
+        }
     }
 
     /// Render the header/toolbar.
@@ -221,11 +221,7 @@ impl SonidoApp {
                 } else {
                     Color32::from_rgb(200, 80, 80)
                 };
-                ui.label(
-                    egui::RichText::new("●")
-                        .color(status_color)
-                        .size(12.0),
-                );
+                ui.label(egui::RichText::new("●").color(status_color).size(12.0));
 
                 if let Some(ref error) = self.audio_error {
                     ui.label(
@@ -334,8 +330,7 @@ impl SonidoApp {
             ui.vertical(|ui| {
                 // Panel title
                 ui.heading(
-                    egui::RichText::new(effect_type.name())
-                        .color(Color32::from_rgb(100, 180, 255)),
+                    egui::RichText::new(effect_type.name()).color(Color32::from_rgb(100, 180, 255)),
                 );
                 ui.add_space(8.0);
                 ui.separator();
@@ -410,22 +405,21 @@ impl SonidoApp {
                         self.show_save_dialog = false;
                     }
 
-                    if ui.button("Save").clicked()
-                        && !self.new_preset_name.is_empty() {
-                            let description = if self.new_preset_description.is_empty() {
-                                None
-                            } else {
-                                Some(self.new_preset_description.as_str())
-                            };
-                            if let Err(e) = self.preset_manager.save_as(
-                                &self.new_preset_name,
-                                description,
-                                &self.audio_bridge.params,
-                            ) {
-                                log::error!("Failed to save preset: {}", e);
-                            }
-                            self.show_save_dialog = false;
+                    if ui.button("Save").clicked() && !self.new_preset_name.is_empty() {
+                        let description = if self.new_preset_description.is_empty() {
+                            None
+                        } else {
+                            Some(self.new_preset_description.as_str())
+                        };
+                        if let Err(e) = self.preset_manager.save_as(
+                            &self.new_preset_name,
+                            description,
+                            &self.audio_bridge.params,
+                        ) {
+                            log::error!("Failed to save preset: {}", e);
                         }
+                        self.show_save_dialog = false;
+                    }
                 });
             });
     }
@@ -771,7 +765,7 @@ fn run_audio_thread(
                     input_rms: (input_rms_sum / count).sqrt(),
                     output_peak,
                     output_rms: (output_rms_sum / count).sqrt(),
-                    gain_reduction: compressor.gain_reduction_db()
+                    gain_reduction: compressor.gain_reduction_db(),
                 });
             },
             |err| log::error!("Output stream error: {}", err),
@@ -779,8 +773,12 @@ fn run_audio_thread(
         )
         .map_err(|e| format!("Failed to build output stream: {}", e))?;
 
-    input_stream.play().map_err(|e| format!("Failed to play input stream: {}", e))?;
-    output_stream.play().map_err(|e| format!("Failed to play output stream: {}", e))?;
+    input_stream
+        .play()
+        .map_err(|e| format!("Failed to play input stream: {}", e))?;
+    output_stream
+        .play()
+        .map_err(|e| format!("Failed to play output stream: {}", e))?;
 
     // Keep thread alive while running
     while running.load(Ordering::Relaxed) {

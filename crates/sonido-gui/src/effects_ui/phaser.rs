@@ -3,8 +3,8 @@
 use crate::audio_bridge::SharedParams;
 use crate::widgets::{BypassToggle, Knob};
 use egui::Ui;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 /// UI panel for the phaser effect.
 pub struct PhaserPanel;
@@ -31,7 +31,10 @@ impl PhaserPanel {
                     .selected_text(format!("{}", current_stages))
                     .show_ui(ui, |ui| {
                         for stages in [2, 4, 6, 8, 10, 12] {
-                            if ui.selectable_label(stages == current_stages, format!("{}", stages)).clicked() {
+                            if ui
+                                .selectable_label(stages == current_stages, format!("{}", stages))
+                                .clicked()
+                            {
                                 params.phaser_stages.store(stages as u32, Ordering::Relaxed);
                             }
                         }

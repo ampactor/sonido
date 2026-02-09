@@ -3,7 +3,6 @@
 //! Provides a system for routing modulation sources to destinations
 //! with configurable amounts and bipolar/unipolar scaling.
 
-
 /// Modulation source identifiers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModSourceId {

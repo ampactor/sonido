@@ -2,7 +2,7 @@
 //!
 //! Run with: cargo bench -p sonido-synth
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use sonido_synth::{
     AdsrEnvelope, MonophonicSynth, Oscillator, OscillatorWaveform, PolyphonicSynth,
     VoiceAllocationMode,
@@ -65,16 +65,20 @@ fn bench_oscillator_phase_modulation(c: &mut Criterion) {
         modulator.set_frequency(220.0);
         modulator.set_waveform(OscillatorWaveform::Sine);
 
-        group.bench_with_input(BenchmarkId::from_parameter(block_size), &block_size, |b, &size| {
-            b.iter(|| {
-                let mut sum = 0.0f32;
-                for _ in 0..size {
-                    let mod_val = modulator.advance();
-                    sum += carrier.advance_with_pm(mod_val * 2.0);
-                }
-                black_box(sum)
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(block_size),
+            &block_size,
+            |b, &size| {
+                b.iter(|| {
+                    let mut sum = 0.0f32;
+                    for _ in 0..size {
+                        let mod_val = modulator.advance();
+                        sum += carrier.advance_with_pm(mod_val * 2.0);
+                    }
+                    black_box(sum)
+                })
+            },
+        );
     }
 
     group.finish();
@@ -95,15 +99,19 @@ fn bench_envelope_adsr(c: &mut Criterion) {
         env.set_release_ms(200.0);
         env.gate_on();
 
-        group.bench_with_input(BenchmarkId::from_parameter(block_size), &block_size, |b, &size| {
-            b.iter(|| {
-                let mut sum = 0.0f32;
-                for _ in 0..size {
-                    sum += env.advance();
-                }
-                black_box(sum)
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(block_size),
+            &block_size,
+            |b, &size| {
+                b.iter(|| {
+                    let mut sum = 0.0f32;
+                    for _ in 0..size {
+                        sum += env.advance();
+                    }
+                    black_box(sum)
+                })
+            },
+        );
     }
 
     group.finish();
@@ -157,15 +165,19 @@ fn bench_monophonic_synth(c: &mut Criterion) {
         synth.set_filter_resonance(2.0);
         synth.note_on(60, 100);
 
-        group.bench_with_input(BenchmarkId::from_parameter(block_size), &block_size, |b, &size| {
-            b.iter(|| {
-                let mut sum = 0.0f32;
-                for _ in 0..size {
-                    sum += synth.process();
-                }
-                black_box(sum)
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(block_size),
+            &block_size,
+            |b, &size| {
+                b.iter(|| {
+                    let mut sum = 0.0f32;
+                    for _ in 0..size {
+                        sum += synth.process();
+                    }
+                    black_box(sum)
+                })
+            },
+        );
     }
 
     group.finish();
@@ -188,15 +200,19 @@ fn bench_monophonic_synth_modulation(c: &mut Criterion) {
         synth.set_lfo1_to_filter(500.0);
         synth.note_on(60, 100);
 
-        group.bench_with_input(BenchmarkId::from_parameter(block_size), &block_size, |b, &size| {
-            b.iter(|| {
-                let mut sum = 0.0f32;
-                for _ in 0..size {
-                    sum += synth.process();
-                }
-                black_box(sum)
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(block_size),
+            &block_size,
+            |b, &size| {
+                b.iter(|| {
+                    let mut sum = 0.0f32;
+                    for _ in 0..size {
+                        sum += synth.process();
+                    }
+                    black_box(sum)
+                })
+            },
+        );
     }
 
     group.finish();
@@ -252,15 +268,19 @@ fn bench_polyphonic_synth_4_voices(c: &mut Criterion) {
         synth.note_on(67, 100); // G
         synth.note_on(72, 100); // C octave
 
-        group.bench_with_input(BenchmarkId::from_parameter(block_size), &block_size, |b, &size| {
-            b.iter(|| {
-                let mut sum = 0.0f32;
-                for _ in 0..size {
-                    sum += synth.process();
-                }
-                black_box(sum)
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(block_size),
+            &block_size,
+            |b, &size| {
+                b.iter(|| {
+                    let mut sum = 0.0f32;
+                    for _ in 0..size {
+                        sum += synth.process();
+                    }
+                    black_box(sum)
+                })
+            },
+        );
     }
 
     group.finish();
@@ -282,15 +302,19 @@ fn bench_polyphonic_synth_8_voices(c: &mut Criterion) {
             synth.note_on(note, 100);
         }
 
-        group.bench_with_input(BenchmarkId::from_parameter(block_size), &block_size, |b, &size| {
-            b.iter(|| {
-                let mut sum = 0.0f32;
-                for _ in 0..size {
-                    sum += synth.process();
-                }
-                black_box(sum)
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(block_size),
+            &block_size,
+            |b, &size| {
+                b.iter(|| {
+                    let mut sum = 0.0f32;
+                    for _ in 0..size {
+                        sum += synth.process();
+                    }
+                    black_box(sum)
+                })
+            },
+        );
     }
 
     group.finish();
@@ -313,15 +337,19 @@ fn bench_polyphonic_synth_16_voices(c: &mut Criterion) {
             synth.note_on(36 + i * 3, 100);
         }
 
-        group.bench_with_input(BenchmarkId::from_parameter(block_size), &block_size, |b, &size| {
-            b.iter(|| {
-                let mut sum = 0.0f32;
-                for _ in 0..size {
-                    sum += synth.process();
-                }
-                black_box(sum)
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(block_size),
+            &block_size,
+            |b, &size| {
+                b.iter(|| {
+                    let mut sum = 0.0f32;
+                    for _ in 0..size {
+                        sum += synth.process();
+                    }
+                    black_box(sum)
+                })
+            },
+        );
     }
 
     group.finish();
@@ -367,15 +395,19 @@ fn bench_polyphonic_synth_with_lfo(c: &mut Criterion) {
         synth.note_on(67, 100);
         synth.note_on(72, 100);
 
-        group.bench_with_input(BenchmarkId::from_parameter(block_size), &block_size, |b, &size| {
-            b.iter(|| {
-                let mut sum = 0.0f32;
-                for _ in 0..size {
-                    sum += synth.process();
-                }
-                black_box(sum)
-            })
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(block_size),
+            &block_size,
+            |b, &size| {
+                b.iter(|| {
+                    let mut sum = 0.0f32;
+                    for _ in 0..size {
+                        sum += synth.process();
+                    }
+                    black_box(sum)
+                })
+            },
+        );
     }
 
     group.finish();

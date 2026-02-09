@@ -85,35 +85,35 @@
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 
-pub mod distortion;
-pub mod compressor;
 pub mod chorus;
+pub mod compressor;
 pub mod delay;
+pub mod distortion;
 pub mod filter;
 pub mod flanger;
+pub mod gate;
 pub mod multi_vibrato;
+pub mod parametric_eq;
 pub mod phaser;
-pub mod tape_saturation;
 pub mod preamp;
 pub mod reverb;
+pub mod tape_saturation;
 pub mod tremolo;
-pub mod gate;
 pub mod wah;
-pub mod parametric_eq;
 
 // Re-export main types at crate root
-pub use distortion::{Distortion, WaveShape};
-pub use compressor::Compressor;
 pub use chorus::Chorus;
+pub use compressor::Compressor;
 pub use delay::Delay;
+pub use distortion::{Distortion, WaveShape};
 pub use filter::LowPassFilter;
 pub use flanger::Flanger;
+pub use gate::Gate;
 pub use multi_vibrato::MultiVibrato;
+pub use parametric_eq::ParametricEq;
 pub use phaser::Phaser;
-pub use tape_saturation::TapeSaturation;
 pub use preamp::CleanPreamp;
 pub use reverb::{Reverb, ReverbType};
+pub use tape_saturation::TapeSaturation;
 pub use tremolo::{Tremolo, TremoloWaveform};
-pub use gate::Gate;
 pub use wah::{Wah, WahMode};
-pub use parametric_eq::ParametricEq;

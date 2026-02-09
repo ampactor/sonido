@@ -1,7 +1,9 @@
 //! Classic chorus effect with dual voices.
 
-use sonido_core::{Effect, SmoothedParam, InterpolatedDelay, Lfo, ParameterInfo, ParamDescriptor, ParamUnit};
 use libm::ceilf;
+use sonido_core::{
+    Effect, InterpolatedDelay, Lfo, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam,
+};
 
 /// Chorus effect with dual voices.
 ///

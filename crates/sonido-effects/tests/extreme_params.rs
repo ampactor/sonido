@@ -6,8 +6,8 @@
 
 use sonido_core::{Effect, ParameterInfo};
 use sonido_effects::{
-    Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, LowPassFilter,
-    MultiVibrato, ParametricEq, Phaser, Reverb, TapeSaturation, Tremolo, Wah,
+    Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, LowPassFilter, MultiVibrato,
+    ParametricEq, Phaser, Reverb, TapeSaturation, Tremolo, Wah,
 };
 
 const DEFAULT_SAMPLE_RATE: f32 = 48000.0;
@@ -18,12 +18,20 @@ const NUM_SAMPLES: usize = 1000;
 /// Process `NUM_SAMPLES` through an effect and assert all outputs are finite.
 fn assert_finite_output(effect: &mut dyn Effect, label: &str) {
     for i in 0..NUM_SAMPLES {
-        let input = if i % 3 == 0 { 0.5 } else if i % 3 == 1 { -0.5 } else { 0.0 };
+        let input = if i % 3 == 0 {
+            0.5
+        } else if i % 3 == 1 {
+            -0.5
+        } else {
+            0.0
+        };
         let output = effect.process(input);
         assert!(
             output.is_finite(),
             "{}: non-finite output at sample {}: {}",
-            label, i, output
+            label,
+            i,
+            output
         );
     }
 }

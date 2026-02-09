@@ -28,8 +28,10 @@
 //! - **Fast release** (< 100ms): Pumping effect, good for drums
 //! - **Slow release** (> 200ms): Smooth, transparent compression
 
-use sonido_core::{Effect, SmoothedParam, EnvelopeFollower, ParameterInfo, ParamDescriptor, ParamUnit};
 use libm::{log10f, powf};
+use sonido_core::{
+    Effect, EnvelopeFollower, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam,
+};
 
 /// Converts linear amplitude to decibels.
 #[inline]
@@ -138,12 +140,14 @@ impl Compressor {
 
     /// Set attack time in milliseconds.
     pub fn set_attack_ms(&mut self, attack_ms: f32) {
-        self.envelope_follower.set_attack_ms(attack_ms.clamp(0.1, 100.0));
+        self.envelope_follower
+            .set_attack_ms(attack_ms.clamp(0.1, 100.0));
     }
 
     /// Set release time in milliseconds.
     pub fn set_release_ms(&mut self, release_ms: f32) {
-        self.envelope_follower.set_release_ms(release_ms.clamp(10.0, 1000.0));
+        self.envelope_follower
+            .set_release_ms(release_ms.clamp(10.0, 1000.0));
     }
 
     /// Set knee width in dB.
@@ -315,6 +319,10 @@ mod tests {
             output = comp.process(0.5);
         }
 
-        assert!(output.abs() < 0.5, "Output should be compressed, got {}", output);
+        assert!(
+            output.abs() < 0.5,
+            "Output should be compressed, got {}",
+            output
+        );
     }
 }

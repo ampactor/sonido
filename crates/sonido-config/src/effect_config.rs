@@ -134,7 +134,10 @@ pub fn parse_param_value(value: &str) -> Option<f32> {
     }
 
     // Decibels
-    if let Some(db) = value.strip_suffix("dB").or_else(|| value.strip_suffix("db")) {
+    if let Some(db) = value
+        .strip_suffix("dB")
+        .or_else(|| value.strip_suffix("db"))
+    {
         return db.trim().parse::<f32>().ok().map(|v| {
             // Convert dB to linear gain: 10^(dB/20)
             libm::powf(10.0, v / 20.0)
@@ -155,12 +158,18 @@ pub fn parse_param_value(value: &str) -> Option<f32> {
     }
 
     // Kilohertz
-    if let Some(khz) = value.strip_suffix("kHz").or_else(|| value.strip_suffix("khz")) {
+    if let Some(khz) = value
+        .strip_suffix("kHz")
+        .or_else(|| value.strip_suffix("khz"))
+    {
         return khz.trim().parse::<f32>().ok().map(|v| v * 1000.0);
     }
 
     // Hertz
-    if let Some(hz) = value.strip_suffix("Hz").or_else(|| value.strip_suffix("hz")) {
+    if let Some(hz) = value
+        .strip_suffix("Hz")
+        .or_else(|| value.strip_suffix("hz"))
+    {
         return hz.trim().parse::<f32>().ok();
     }
 

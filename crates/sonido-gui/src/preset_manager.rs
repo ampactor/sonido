@@ -5,18 +5,21 @@
 
 use crate::audio_bridge::SharedParams;
 use sonido_config::{
-    EffectConfig, Preset,
-    paths::{user_presets_dir, ensure_user_presets_dir, list_user_presets},
-    factory_presets,
+    EffectConfig, Preset, factory_presets,
+    paths::{ensure_user_presets_dir, list_user_presets, user_presets_dir},
 };
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 /// Convert SharedParams to a sonido_config::Preset.
 ///
 /// Creates a preset that captures the current state of all parameters.
-pub fn params_to_preset(name: &str, description: Option<&str>, params: &Arc<SharedParams>) -> Preset {
+pub fn params_to_preset(
+    name: &str,
+    description: Option<&str>,
+    params: &Arc<SharedParams>,
+) -> Preset {
     let mut preset = Preset::new(name);
 
     if let Some(desc) = description {
@@ -30,7 +33,7 @@ pub fn params_to_preset(name: &str, description: Option<&str>, params: &Arc<Shar
     preset = preset.with_effect(
         EffectConfig::new("preamp")
             .with_bypass(params.bypass.preamp.load(Ordering::Relaxed))
-            .with_param("gain", format!("{}", params.preamp_gain.get()))
+            .with_param("gain", format!("{}", params.preamp_gain.get())),
     );
 
     // Distortion
@@ -40,7 +43,10 @@ pub fn params_to_preset(name: &str, description: Option<&str>, params: &Arc<Shar
             .with_param("drive", format!("{}", params.dist_drive.get()))
             .with_param("tone", format!("{}", params.dist_tone.get()))
             .with_param("level", format!("{}", params.dist_level.get()))
-            .with_param("waveshape", format!("{}", params.dist_waveshape.load(Ordering::Relaxed)))
+            .with_param(
+                "waveshape",
+                format!("{}", params.dist_waveshape.load(Ordering::Relaxed)),
+            ),
     );
 
     // Compressor
@@ -51,7 +57,7 @@ pub fn params_to_preset(name: &str, description: Option<&str>, params: &Arc<Shar
             .with_param("ratio", format!("{}", params.comp_ratio.get()))
             .with_param("attack", format!("{}", params.comp_attack.get()))
             .with_param("release", format!("{}", params.comp_release.get()))
-            .with_param("makeup", format!("{}", params.comp_makeup.get()))
+            .with_param("makeup", format!("{}", params.comp_makeup.get())),
     );
 
     // Chorus
@@ -60,7 +66,7 @@ pub fn params_to_preset(name: &str, description: Option<&str>, params: &Arc<Shar
             .with_bypass(params.bypass.chorus.load(Ordering::Relaxed))
             .with_param("rate", format!("{}", params.chorus_rate.get()))
             .with_param("depth", format!("{}", params.chorus_depth.get()))
-            .with_param("mix", format!("{}", params.chorus_mix.get()))
+            .with_param("mix", format!("{}", params.chorus_mix.get())),
     );
 
     // Delay
@@ -69,7 +75,7 @@ pub fn params_to_preset(name: &str, description: Option<&str>, params: &Arc<Shar
             .with_bypass(params.bypass.delay.load(Ordering::Relaxed))
             .with_param("time", format!("{}", params.delay_time.get()))
             .with_param("feedback", format!("{}", params.delay_feedback.get()))
-            .with_param("mix", format!("{}", params.delay_mix.get()))
+            .with_param("mix", format!("{}", params.delay_mix.get())),
     );
 
     // Filter
@@ -77,14 +83,14 @@ pub fn params_to_preset(name: &str, description: Option<&str>, params: &Arc<Shar
         EffectConfig::new("filter")
             .with_bypass(params.bypass.filter.load(Ordering::Relaxed))
             .with_param("cutoff", format!("{}", params.filter_cutoff.get()))
-            .with_param("resonance", format!("{}", params.filter_resonance.get()))
+            .with_param("resonance", format!("{}", params.filter_resonance.get())),
     );
 
     // MultiVibrato
     preset = preset.with_effect(
         EffectConfig::new("multivibrato")
             .with_bypass(params.bypass.multivibrato.load(Ordering::Relaxed))
-            .with_param("intensity", format!("{}", params.vibrato_depth.get()))
+            .with_param("intensity", format!("{}", params.vibrato_depth.get())),
     );
 
     // Tape Saturation
@@ -92,7 +98,7 @@ pub fn params_to_preset(name: &str, description: Option<&str>, params: &Arc<Shar
         EffectConfig::new("tape")
             .with_bypass(params.bypass.tape.load(Ordering::Relaxed))
             .with_param("drive", format!("{}", params.tape_drive.get()))
-            .with_param("warmth", format!("{}", params.tape_saturation.get()))
+            .with_param("warmth", format!("{}", params.tape_saturation.get())),
     );
 
     // Reverb
@@ -103,7 +109,7 @@ pub fn params_to_preset(name: &str, description: Option<&str>, params: &Arc<Shar
             .with_param("decay", format!("{}", params.reverb_decay.get()))
             .with_param("damping", format!("{}", params.reverb_damping.get()))
             .with_param("predelay", format!("{}", params.reverb_predelay.get()))
-            .with_param("mix", format!("{}", params.reverb_mix.get()))
+            .with_param("mix", format!("{}", params.reverb_mix.get())),
     );
 
     preset
@@ -116,13 +122,19 @@ pub fn preset_to_params(preset: &Preset, params: &Arc<SharedParams>) {
     for effect in &preset.effects {
         match effect.effect_type.as_str() {
             "preamp" => {
-                params.bypass.preamp.store(effect.bypassed, Ordering::Relaxed);
+                params
+                    .bypass
+                    .preamp
+                    .store(effect.bypassed, Ordering::Relaxed);
                 if let Some(v) = effect.parse_param("gain") {
                     params.preamp_gain.set(v);
                 }
             }
             "distortion" => {
-                params.bypass.distortion.store(effect.bypassed, Ordering::Relaxed);
+                params
+                    .bypass
+                    .distortion
+                    .store(effect.bypassed, Ordering::Relaxed);
                 if let Some(v) = effect.parse_param("drive") {
                     params.dist_drive.set(v);
                 }
@@ -137,7 +149,10 @@ pub fn preset_to_params(preset: &Preset, params: &Arc<SharedParams>) {
                 }
             }
             "compressor" => {
-                params.bypass.compressor.store(effect.bypassed, Ordering::Relaxed);
+                params
+                    .bypass
+                    .compressor
+                    .store(effect.bypassed, Ordering::Relaxed);
                 if let Some(v) = effect.parse_param("threshold") {
                     params.comp_threshold.set(v);
                 }
@@ -155,7 +170,10 @@ pub fn preset_to_params(preset: &Preset, params: &Arc<SharedParams>) {
                 }
             }
             "chorus" => {
-                params.bypass.chorus.store(effect.bypassed, Ordering::Relaxed);
+                params
+                    .bypass
+                    .chorus
+                    .store(effect.bypassed, Ordering::Relaxed);
                 if let Some(v) = effect.parse_param("rate") {
                     params.chorus_rate.set(v);
                 }
@@ -167,7 +185,10 @@ pub fn preset_to_params(preset: &Preset, params: &Arc<SharedParams>) {
                 }
             }
             "delay" => {
-                params.bypass.delay.store(effect.bypassed, Ordering::Relaxed);
+                params
+                    .bypass
+                    .delay
+                    .store(effect.bypassed, Ordering::Relaxed);
                 if let Some(v) = effect.parse_param("time") {
                     params.delay_time.set(v);
                 }
@@ -179,7 +200,10 @@ pub fn preset_to_params(preset: &Preset, params: &Arc<SharedParams>) {
                 }
             }
             "filter" => {
-                params.bypass.filter.store(effect.bypassed, Ordering::Relaxed);
+                params
+                    .bypass
+                    .filter
+                    .store(effect.bypassed, Ordering::Relaxed);
                 if let Some(v) = effect.parse_param("cutoff") {
                     params.filter_cutoff.set(v);
                 }
@@ -188,7 +212,10 @@ pub fn preset_to_params(preset: &Preset, params: &Arc<SharedParams>) {
                 }
             }
             "multivibrato" => {
-                params.bypass.multivibrato.store(effect.bypassed, Ordering::Relaxed);
+                params
+                    .bypass
+                    .multivibrato
+                    .store(effect.bypassed, Ordering::Relaxed);
                 if let Some(v) = effect.parse_param("intensity") {
                     params.vibrato_depth.set(v);
                 }
@@ -203,7 +230,10 @@ pub fn preset_to_params(preset: &Preset, params: &Arc<SharedParams>) {
                 }
             }
             "reverb" => {
-                params.bypass.reverb.store(effect.bypassed, Ordering::Relaxed);
+                params
+                    .bypass
+                    .reverb
+                    .store(effect.bypassed, Ordering::Relaxed);
                 if let Some(v) = effect.parse_param("room_size") {
                     params.reverb_room_size.set(v);
                 }
@@ -321,8 +351,7 @@ impl PresetManager {
 
         // Ensure we have at least one preset
         if manager.presets.is_empty() {
-            let init = Preset::new("Init")
-                .with_description("Clean signal path");
+            let init = Preset::new("Init").with_description("Clean signal path");
             manager.presets.push(PresetEntry::unsaved(init));
         }
 
@@ -397,14 +426,17 @@ impl PresetManager {
         let preset = params_to_preset(name, description, params);
 
         // Ensure the presets directory exists
-        ensure_user_presets_dir().map_err(|e| format!("Failed to create presets directory: {}", e))?;
+        ensure_user_presets_dir()
+            .map_err(|e| format!("Failed to create presets directory: {}", e))?;
 
         // Generate filename from name
         let filename = format!("{}.toml", name.to_lowercase().replace(' ', "_"));
         let path = user_presets_dir().join(&filename);
 
         // Save to file
-        preset.save(&path).map_err(|e| format!("Failed to save preset: {}", e))?;
+        preset
+            .save(&path)
+            .map_err(|e| format!("Failed to save preset: {}", e))?;
 
         // Add to our list
         self.presets.push(PresetEntry::user(preset, path));
@@ -418,7 +450,9 @@ impl PresetManager {
     ///
     /// Only works for user presets, not factory presets.
     pub fn save_current(&mut self, params: &Arc<SharedParams>) -> Result<(), String> {
-        let entry = self.presets.get(self.current_preset)
+        let entry = self
+            .presets
+            .get(self.current_preset)
             .ok_or_else(|| "No preset selected".to_string())?;
 
         let path = match &entry.source {
@@ -439,7 +473,9 @@ impl PresetManager {
         );
 
         // Save to file
-        preset.save(&path).map_err(|e| format!("Failed to save preset: {}", e))?;
+        preset
+            .save(&path)
+            .map_err(|e| format!("Failed to save preset: {}", e))?;
 
         // Update our entry
         self.presets[self.current_preset] = PresetEntry::user(preset, path);
@@ -486,8 +522,7 @@ impl PresetManager {
 
     /// Reload all presets from disk.
     pub fn reload(&mut self) {
-        let current_name = self.current()
-            .map(|e| e.preset.name.clone());
+        let current_name = self.current().map(|e| e.preset.name.clone());
 
         self.presets.clear();
         self.load_factory_presets();

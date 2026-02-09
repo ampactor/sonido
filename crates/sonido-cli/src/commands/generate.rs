@@ -2,9 +2,9 @@
 
 use clap::{Args, Subcommand, ValueEnum};
 use sonido_analysis::SineSweep;
-use sonido_io::{write_wav, WavSpec};
-use sonido_synth::{Oscillator, OscillatorWaveform, AdsrEnvelope, PolyphonicSynth};
+use sonido_io::{WavSpec, write_wav};
 use sonido_synth::voice::midi_to_freq;
+use sonido_synth::{AdsrEnvelope, Oscillator, OscillatorWaveform, PolyphonicSynth};
 use std::path::PathBuf;
 
 /// Waveform types for CLI
@@ -390,11 +390,12 @@ pub fn run(args: GenerateArgs) -> anyhow::Result<()> {
             osc.set_frequency(freq);
 
             // Handle pulse width for square wave
-            let osc_waveform = if matches!(waveform, CliWaveform::Square) && (pulse_width - 0.5).abs() > 0.01 {
-                OscillatorWaveform::Pulse(pulse_width)
-            } else {
-                waveform.into()
-            };
+            let osc_waveform =
+                if matches!(waveform, CliWaveform::Square) && (pulse_width - 0.5).abs() > 0.01 {
+                    OscillatorWaveform::Pulse(pulse_width)
+                } else {
+                    waveform.into()
+                };
             osc.set_waveform(osc_waveform);
 
             let num_samples = (duration * sample_rate as f32) as usize;
@@ -436,7 +437,13 @@ pub fn run(args: GenerateArgs) -> anyhow::Result<()> {
             println!("Generating chord...");
             println!("  Notes: {:?}", midi_notes);
             let freqs: Vec<f32> = midi_notes.iter().map(|&n| midi_to_freq(n)).collect();
-            println!("  Frequencies: {:?}", freqs.iter().map(|f| format!("{:.1} Hz", f)).collect::<Vec<_>>());
+            println!(
+                "  Frequencies: {:?}",
+                freqs
+                    .iter()
+                    .map(|f| format!("{:.1} Hz", f))
+                    .collect::<Vec<_>>()
+            );
             println!("  Duration: {:.2}s", duration);
 
             let mut synth: PolyphonicSynth<8> = PolyphonicSynth::new(sample_rate as f32);
@@ -451,7 +458,8 @@ pub fn run(args: GenerateArgs) -> anyhow::Result<()> {
             }
 
             let num_samples = (duration * sample_rate as f32) as usize;
-            let gate_off_sample = ((duration - release / 1000.0).max(0.1) * sample_rate as f32) as usize;
+            let gate_off_sample =
+                ((duration - release / 1000.0).max(0.1) * sample_rate as f32) as usize;
 
             let mut samples = Vec::with_capacity(num_samples);
             let mut notes_released = false;
@@ -490,8 +498,14 @@ pub fn run(args: GenerateArgs) -> anyhow::Result<()> {
             amplitude,
         } => {
             println!("Generating ADSR envelope test...");
-            println!("  A: {:.0}ms, D: {:.0}ms, S: {:.2}, R: {:.0}ms", attack, decay, sustain, release);
-            println!("  Test tone: {:.1} Hz, gate duration: {:.2}s", freq, gate_duration);
+            println!(
+                "  A: {:.0}ms, D: {:.0}ms, S: {:.2}, R: {:.0}ms",
+                attack, decay, sustain, release
+            );
+            println!(
+                "  Test tone: {:.1} Hz, gate duration: {:.2}s",
+                freq, gate_duration
+            );
 
             let mut osc = Oscillator::new(sample_rate as f32);
             osc.set_frequency(freq);

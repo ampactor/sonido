@@ -1,6 +1,6 @@
 //! Level meter widgets for audio visualization.
 
-use egui::{pos2, vec2, Color32, Rect, Response, Sense, Stroke, StrokeKind, Ui, Widget};
+use egui::{Color32, Rect, Response, Sense, Stroke, StrokeKind, Ui, Widget, pos2, vec2};
 
 /// VU-style level meter with peak hold.
 pub struct LevelMeter {
@@ -83,7 +83,12 @@ impl Widget for LevelMeter {
             painter.rect_filled(meter_rect, 2.0, bg_color);
 
             // Border
-            painter.rect_stroke(meter_rect, 2.0, Stroke::new(1.0, Color32::from_rgb(50, 50, 60)), StrokeKind::Inside);
+            painter.rect_stroke(
+                meter_rect,
+                2.0,
+                Stroke::new(1.0, Color32::from_rgb(50, 50, 60)),
+                StrokeKind::Inside,
+            );
 
             // Inner padding
             let inner = meter_rect.shrink(2.0);
@@ -220,7 +225,12 @@ impl Widget for GainReductionMeter {
 
             // Background
             painter.rect_filled(meter_rect, 2.0, Color32::from_rgb(25, 25, 30));
-            painter.rect_stroke(meter_rect, 2.0, Stroke::new(1.0, Color32::from_rgb(50, 50, 60)), StrokeKind::Inside);
+            painter.rect_stroke(
+                meter_rect,
+                2.0,
+                Stroke::new(1.0, Color32::from_rgb(50, 50, 60)),
+                StrokeKind::Inside,
+            );
 
             let inner = meter_rect.shrink(2.0);
 

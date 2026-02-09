@@ -3,8 +3,10 @@
 //! A gate attenuates signals that fall below a threshold level,
 //! useful for removing noise, bleed, or unwanted quiet sounds.
 
-use sonido_core::{Effect, SmoothedParam, EnvelopeFollower, ParameterInfo, ParamDescriptor, ParamUnit};
 use libm::powf;
+use sonido_core::{
+    Effect, EnvelopeFollower, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam,
+};
 
 /// Noise gate states.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -149,8 +151,16 @@ impl Gate {
         let attack_samples = (self.attack_ms.target() / 1000.0) * self.sample_rate;
         let release_samples = (self.release_ms.target() / 1000.0) * self.sample_rate;
 
-        self.attack_inc = if attack_samples > 0.0 { 1.0 / attack_samples } else { 1.0 };
-        self.release_dec = if release_samples > 0.0 { 1.0 / release_samples } else { 1.0 };
+        self.attack_inc = if attack_samples > 0.0 {
+            1.0 / attack_samples
+        } else {
+            1.0
+        };
+        self.release_dec = if release_samples > 0.0 {
+            1.0 / release_samples
+        } else {
+            1.0
+        };
     }
 }
 
@@ -378,10 +388,10 @@ impl ParameterInfo for Gate {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "std")]
-    use std::vec::Vec;
     #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
+    #[cfg(feature = "std")]
+    use std::vec::Vec;
 
     #[test]
     fn test_gate_basic() {
@@ -409,7 +419,11 @@ mod tests {
 
         // Gate should be closed
         let output = gate.process(0.01);
-        assert!(output.abs() < 0.001, "Gate should attenuate signal below threshold, got {}", output);
+        assert!(
+            output.abs() < 0.001,
+            "Gate should attenuate signal below threshold, got {}",
+            output
+        );
     }
 
     #[test]
@@ -426,7 +440,11 @@ mod tests {
 
         // Gate should be open
         let output = gate.process(0.5);
-        assert!(output.abs() > 0.4, "Gate should pass signal above threshold, got {}", output);
+        assert!(
+            output.abs() > 0.4,
+            "Gate should pass signal above threshold, got {}",
+            output
+        );
     }
 
     #[test]
@@ -448,7 +466,11 @@ mod tests {
 
         // Should still be passing signal during hold
         // (gain should still be 1.0)
-        assert!(gate.gain > 0.9, "Gate should hold open, gain = {}", gate.gain);
+        assert!(
+            gate.gain > 0.9,
+            "Gate should hold open, gain = {}",
+            gate.gain
+        );
     }
 
     #[test]
@@ -513,8 +535,10 @@ mod tests {
         // Verify smooth attack (values should increase)
         for i in 1..gains_attack.len() {
             if gains_attack[i - 1] < 1.0 {
-                assert!(gains_attack[i] >= gains_attack[i - 1],
-                    "Attack should be monotonically increasing");
+                assert!(
+                    gains_attack[i] >= gains_attack[i - 1],
+                    "Attack should be monotonically increasing"
+                );
             }
         }
 
@@ -528,8 +552,10 @@ mod tests {
         // Verify smooth release (values should decrease or stay same)
         for i in 1..gains_release.len() {
             if gains_release[i - 1] > 0.0 {
-                assert!(gains_release[i] <= gains_release[i - 1] + 0.001,
-                    "Release should be monotonically decreasing");
+                assert!(
+                    gains_release[i] <= gains_release[i - 1] + 0.001,
+                    "Release should be monotonically decreasing"
+                );
             }
         }
     }

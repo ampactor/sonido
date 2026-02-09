@@ -28,7 +28,7 @@
 //! }
 //! ```
 
-use crate::{ControlId, ParameterInfo, ParamDescriptor};
+use crate::{ControlId, ParamDescriptor, ParameterInfo};
 
 /// A single mapping entry from control to parameter.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -150,7 +150,9 @@ impl<const N: usize> ControlMapper<N> {
     /// Returns `true` if a mapping was removed, `false` if not found.
     pub fn unmap(&mut self, control_id: ControlId) -> bool {
         for slot in self.mappings.iter_mut() {
-            if let Some(entry) = slot && entry.control_id == control_id {
+            if let Some(entry) = slot
+                && entry.control_id == control_id
+            {
                 *slot = None;
                 self.count -= 1;
                 return true;
@@ -274,11 +276,12 @@ impl<const N: usize> ControlMapper<N> {
         effect: &mut E,
     ) -> bool {
         if let Some(param_index) = self.get_param_index(control_id)
-            && let Some(descriptor) = effect.param_info(param_index) {
-                let value = descriptor.denormalize(normalized_value);
-                effect.set_param(param_index, value);
-                return true;
-            }
+            && let Some(descriptor) = effect.param_info(param_index)
+        {
+            let value = descriptor.denormalize(normalized_value);
+            effect.set_param(param_index, value);
+            return true;
+        }
         false
     }
 
@@ -527,9 +530,11 @@ mod tests {
         assert!(desc.is_some());
         assert_eq!(desc.unwrap().name, "Gain");
 
-        assert!(mapper
-            .get_param_descriptor(ControlId::hardware(99), &effect)
-            .is_none());
+        assert!(
+            mapper
+                .get_param_descriptor(ControlId::hardware(99), &effect)
+                .is_none()
+        );
     }
 
     #[test]

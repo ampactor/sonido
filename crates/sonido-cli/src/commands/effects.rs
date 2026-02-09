@@ -63,7 +63,10 @@ pub fn run(args: EffectsArgs) -> anyhow::Result<()> {
             .collect();
 
         if params.is_empty() {
-            println!("  sonido process input.wav output.wav --effect {}", effect.name);
+            println!(
+                "  sonido process input.wav output.wav --effect {}",
+                effect.name
+            );
             println!("  sonido realtime --effect {}", effect.name);
         } else {
             println!(

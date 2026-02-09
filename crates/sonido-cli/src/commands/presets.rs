@@ -4,10 +4,8 @@
 
 use clap::{Args, Subcommand};
 use sonido_config::{
-    factory_presets, get_factory_preset,
-    list_user_presets,
-    user_presets_dir, ensure_user_presets_dir,
-    Preset, EffectConfig,
+    EffectConfig, Preset, ensure_user_presets_dir, factory_presets, get_factory_preset,
+    list_user_presets, user_presets_dir,
 };
 use std::path::PathBuf;
 
@@ -92,9 +90,12 @@ pub fn run(args: PresetsArgs) -> anyhow::Result<()> {
     match args.command {
         PresetsCommand::List { factory, user } => list_presets(factory, user),
         PresetsCommand::Show { name } => show_preset(&name),
-        PresetsCommand::Save { name, chain, description, force } => {
-            save_preset(&name, &chain, description.as_deref(), force)
-        }
+        PresetsCommand::Save {
+            name,
+            chain,
+            description,
+            force,
+        } => save_preset(&name, &chain, description.as_deref(), force),
         PresetsCommand::Delete { name, force } => delete_preset(&name, force),
         PresetsCommand::Copy { source, name } => copy_preset(&source, name.as_deref()),
         PresetsCommand::ExportFactory { output_dir, force } => export_factory(&output_dir, force),
@@ -126,7 +127,8 @@ fn list_presets(factory_only: bool, user_only: bool) -> anyhow::Result<()> {
             println!("  Create a preset with: sonido presets save <name> --chain \"...\"\n");
         } else {
             for path in user_presets {
-                let name = path.file_stem()
+                let name = path
+                    .file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or("unknown");
 
@@ -186,7 +188,12 @@ fn show_preset(name: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn save_preset(name: &str, chain: &str, description: Option<&str>, force: bool) -> anyhow::Result<()> {
+fn save_preset(
+    name: &str,
+    chain: &str,
+    description: Option<&str>,
+    force: bool,
+) -> anyhow::Result<()> {
     // Ensure user presets directory exists
     ensure_user_presets_dir()?;
 
@@ -219,7 +226,10 @@ fn save_preset(name: &str, chain: &str, description: Option<&str>, force: bool) 
 fn delete_preset(name: &str, force: bool) -> anyhow::Result<()> {
     // Don't allow deleting factory presets
     if get_factory_preset(name).is_some() {
-        anyhow::bail!("Cannot delete factory preset '{}'. Factory presets are built-in.", name);
+        anyhow::bail!(
+            "Cannot delete factory preset '{}'. Factory presets are built-in.",
+            name
+        );
     }
 
     let preset_path = user_presets_dir().join(format!("{}.toml", name));
@@ -231,10 +241,7 @@ fn delete_preset(name: &str, force: bool) -> anyhow::Result<()> {
     if !force {
         // In a real implementation, we'd prompt for confirmation
         // For CLI simplicity, we require --force
-        anyhow::bail!(
-            "Use --force to confirm deletion of preset '{}'.",
-            name
-        );
+        anyhow::bail!("Use --force to confirm deletion of preset '{}'.", name);
     }
 
     std::fs::remove_file(&preset_path)?;
@@ -287,8 +294,14 @@ fn show_paths() -> anyhow::Result<()> {
     println!("===================");
     println!();
     println!("User presets:   {}", user_presets_dir().display());
-    println!("System presets: {}", sonido_config::system_presets_dir().display());
-    println!("Config dir:     {}", sonido_config::user_config_dir().display());
+    println!(
+        "System presets: {}",
+        sonido_config::system_presets_dir().display()
+    );
+    println!(
+        "Config dir:     {}",
+        sonido_config::user_config_dir().display()
+    );
 
     Ok(())
 }
@@ -309,7 +322,11 @@ fn export_factory(output_dir: &PathBuf, force: bool) -> anyhow::Result<()> {
         anyhow::bail!("Mismatch between preset count and name count");
     }
 
-    println!("Exporting {} factory presets to {}", presets.len(), output_dir.display());
+    println!(
+        "Exporting {} factory presets to {}",
+        presets.len(),
+        output_dir.display()
+    );
     println!();
 
     for (preset, name) in presets.iter().zip(names.iter()) {
@@ -317,7 +334,10 @@ fn export_factory(output_dir: &PathBuf, force: bool) -> anyhow::Result<()> {
         let path = output_dir.join(&filename);
 
         if path.exists() && !force {
-            println!("  [skip] {} (already exists, use --force to overwrite)", filename);
+            println!(
+                "  [skip] {} (already exists, use --force to overwrite)",
+                filename
+            );
             continue;
         }
 

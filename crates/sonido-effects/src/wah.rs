@@ -4,7 +4,7 @@
 //! for classic auto-wah functionality.
 
 use sonido_core::{
-    Effect, EnvelopeFollower, ParameterInfo, ParamDescriptor, ParamUnit, SmoothedParam,
+    Effect, EnvelopeFollower, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam,
     StateVariableFilter, SvfOutput,
 };
 
@@ -322,10 +322,10 @@ impl ParameterInfo for Wah {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "std")]
-    use std::vec::Vec;
     #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
+    #[cfg(feature = "std")]
+    use std::vec::Vec;
 
     #[test]
     fn test_wah_basic_processing() {

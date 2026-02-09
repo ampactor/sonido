@@ -52,8 +52,7 @@ impl Spectrogram {
 
     /// Get magnitude in dB at specific time and frequency
     pub fn get_db(&self, frame: usize, bin: usize) -> Option<f32> {
-        self.get(frame, bin)
-            .map(|m| 20.0 * m.max(1e-10).log10())
+        self.get(frame, bin).map(|m| 20.0 * m.max(1e-10).log10())
     }
 
     /// Get the spectrum for a specific time frame
@@ -107,12 +106,7 @@ impl Spectrogram {
         let data = self
             .data
             .iter()
-            .map(|frame| {
-                frame
-                    .iter()
-                    .map(|&m| 20.0 * m.max(1e-10).log10())
-                    .collect()
-            })
+            .map(|frame| frame.iter().map(|&m| 20.0 * m.max(1e-10).log10()).collect())
             .collect();
 
         Spectrogram {
@@ -379,14 +373,24 @@ impl MelFilterbank {
 
             // Rising edge
             if center > left {
-                for (k, val) in filters[m].iter_mut().enumerate().take(center.min(num_fft_bins)).skip(left) {
+                for (k, val) in filters[m]
+                    .iter_mut()
+                    .enumerate()
+                    .take(center.min(num_fft_bins))
+                    .skip(left)
+                {
                     *val = (k - left) as f32 / (center - left) as f32;
                 }
             }
 
             // Falling edge
             if right > center {
-                for (k, val) in filters[m].iter_mut().enumerate().take(right.min(num_fft_bins)).skip(center) {
+                for (k, val) in filters[m]
+                    .iter_mut()
+                    .enumerate()
+                    .take(right.min(num_fft_bins))
+                    .skip(center)
+                {
                     *val = (right - k) as f32 / (right - center) as f32;
                 }
             }

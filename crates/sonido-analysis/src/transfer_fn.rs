@@ -126,7 +126,9 @@ impl TransferFunction {
                 // Linear interpolation
                 let t = (target - self.magnitude_db[i - 1])
                     / (self.magnitude_db[i] - self.magnitude_db[i - 1]);
-                return Some(self.frequencies[i - 1] + t * (self.frequencies[i] - self.frequencies[i - 1]));
+                return Some(
+                    self.frequencies[i - 1] + t * (self.frequencies[i] - self.frequencies[i - 1]),
+                );
             }
         }
         None

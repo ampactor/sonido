@@ -8,16 +8,16 @@
 
 use clap::Args;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
+    Frame, Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
-    Frame, Terminal,
 };
 use sonido_config::{EffectConfig, Preset, factory_presets};
 use std::io::stdout;
@@ -152,7 +152,8 @@ impl TuiApp {
             if param_count == 0 {
                 return;
             }
-            let new_idx = (self.selected_param as i32 + delta).rem_euclid(param_count as i32) as usize;
+            let new_idx =
+                (self.selected_param as i32 + delta).rem_euclid(param_count as i32) as usize;
             self.selected_param = new_idx;
         }
         self.update_list_states();
@@ -165,15 +166,17 @@ impl TuiApp {
 
     fn start_editing(&mut self) {
         if self.focus == 1
-            && let Some(effect) = self.current_effect() {
-                let param_names: Vec<_> = effect.params.keys().collect();
-                if let Some(param_name) = param_names.get(self.selected_param)
-                    && let Some(value) = effect.params.get(*param_name) {
-                        self.edit_buffer = value.clone();
-                        self.editing = true;
-                        self.status = "Editing: Enter to confirm, Esc to cancel".to_string();
-                    }
+            && let Some(effect) = self.current_effect()
+        {
+            let param_names: Vec<_> = effect.params.keys().collect();
+            if let Some(param_name) = param_names.get(self.selected_param)
+                && let Some(value) = effect.params.get(*param_name)
+            {
+                self.edit_buffer = value.clone();
+                self.editing = true;
+                self.status = "Editing: Enter to confirm, Esc to cancel".to_string();
             }
+        }
     }
 
     fn confirm_edit(&mut self) {
@@ -200,7 +203,11 @@ impl TuiApp {
     fn toggle_bypass(&mut self) {
         if let Some(effect) = self.current_effect_mut() {
             effect.bypassed = !effect.bypassed;
-            let state = if effect.bypassed { "bypassed" } else { "active" };
+            let state = if effect.bypassed {
+                "bypassed"
+            } else {
+                "active"
+            };
             self.status = format!("{} is now {}", effect.effect_type, state);
         }
     }
@@ -217,11 +224,14 @@ impl TuiApp {
             let param_names: Vec<_> = effect.params.keys().cloned().collect();
             if let Some(param_name) = param_names.get(selected_param)
                 && let Some(value_str) = effect.params.get(param_name).cloned()
-                    && let Ok(value) = value_str.parse::<f32>() {
-                        let new_value = value + delta;
-                        effect.params.insert(param_name.clone(), format!("{:.2}", new_value));
-                        self.status = format!("{} = {:.2}", param_name, new_value);
-                    }
+                && let Ok(value) = value_str.parse::<f32>()
+            {
+                let new_value = value + delta;
+                effect
+                    .params
+                    .insert(param_name.clone(), format!("{:.2}", new_value));
+                self.status = format!("{} = {:.2}", param_name, new_value);
+            }
         }
     }
 }
@@ -230,9 +240,9 @@ fn draw_ui(frame: &mut Frame, app: &mut TuiApp) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Header
-            Constraint::Min(10),    // Main content
-            Constraint::Length(3),  // Status bar
+            Constraint::Length(3), // Header
+            Constraint::Min(10),   // Main content
+            Constraint::Length(3), // Status bar
         ])
         .split(frame.area());
 
@@ -244,7 +254,11 @@ fn draw_ui(frame: &mut Frame, app: &mut TuiApp) {
 fn draw_header(frame: &mut Frame, area: Rect, app: &TuiApp) {
     let title = format!(" SONIDO TUI - {} ", app.preset.name);
     let header = Paragraph::new(title)
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
         .block(Block::default().borders(Borders::ALL));
     frame.render_widget(header, area);
 }
@@ -253,8 +267,8 @@ fn draw_main(frame: &mut Frame, area: Rect, app: &mut TuiApp) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(35),  // Effects list
-            Constraint::Percentage(65),  // Parameters panel
+            Constraint::Percentage(35), // Effects list
+            Constraint::Percentage(65), // Parameters panel
         ])
         .split(area);
 
@@ -309,9 +323,9 @@ fn draw_params_panel(frame: &mut Frame, area: Rect, app: &mut TuiApp) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Effect name
-            Constraint::Min(5),     // Parameters list
-            Constraint::Length(5),  // Help
+            Constraint::Length(3), // Effect name
+            Constraint::Min(5),    // Parameters list
+            Constraint::Length(5), // Help
         ])
         .split(area);
 
@@ -322,8 +336,16 @@ fn draw_params_panel(frame: &mut Frame, area: Rect, app: &mut TuiApp) {
         .unwrap_or_else(|| "NO EFFECT".to_string());
 
     let header = Paragraph::new(effect_name)
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-        .block(Block::default().borders(Borders::ALL).title(" Selected Effect "));
+        .style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Selected Effect "),
+        );
     frame.render_widget(header, chunks[0]);
 
     // Parameters list
@@ -398,8 +420,7 @@ pub fn run(args: TuiArgs) -> anyhow::Result<()> {
     let preset = if let Some(preset_name) = &args.preset {
         sonido_config::get_factory_preset(preset_name)
             .or_else(|| {
-                sonido_config::find_preset(preset_name)
-                    .and_then(|path| Preset::load(&path).ok())
+                sonido_config::find_preset(preset_name).and_then(|path| Preset::load(&path).ok())
             })
             .ok_or_else(|| anyhow::anyhow!("Preset '{}' not found", preset_name))?
     } else {
@@ -438,9 +459,10 @@ fn run_app<B: ratatui::backend::Backend>(
 
         if event::poll(Duration::from_millis(100))?
             && let Event::Key(key) = event::read()?
-                && key.kind == KeyEventKind::Press {
-                    app.handle_key(key.code, key.modifiers);
-                }
+            && key.kind == KeyEventKind::Press
+        {
+            app.handle_key(key.code, key.modifiers);
+        }
 
         if app.should_quit {
             return Ok(());

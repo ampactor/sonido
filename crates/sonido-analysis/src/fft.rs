@@ -104,10 +104,7 @@ impl Fft {
     ///
     /// Returns complex spectrum (size/2 + 1 bins for positive frequencies)
     pub fn forward(&self, input: &[f32]) -> Vec<Complex<f32>> {
-        let mut buffer: Vec<Complex<f32>> = input
-            .iter()
-            .map(|&x| Complex::new(x, 0.0))
-            .collect();
+        let mut buffer: Vec<Complex<f32>> = input.iter().map(|&x| Complex::new(x, 0.0)).collect();
 
         // Pad or truncate to FFT size
         buffer.resize(self.size, Complex::new(0.0, 0.0));

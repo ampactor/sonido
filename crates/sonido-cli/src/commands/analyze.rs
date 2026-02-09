@@ -2,11 +2,13 @@
 
 use clap::{Args, Subcommand};
 use rustfft::num_complex::Complex;
-use sonido_analysis::{Fft, TransferFunction, Window, welch_psd, ThdAnalyzer, StftAnalyzer};
-use sonido_analysis::export::{export_frd, export_spectrogram_csv, export_distortion_json};
-use sonido_analysis::{FilterBank, FrequencyBand, HilbertTransform, PacAnalyzer, PacMethod, Comodulogram};
-use sonido_analysis::{ImdAnalyzer, ConstantQTransform, CqtSpectrogram, Chromagram};
-use sonido_io::{read_wav, write_wav, WavSpec};
+use sonido_analysis::export::{export_distortion_json, export_frd, export_spectrogram_csv};
+use sonido_analysis::{Chromagram, ConstantQTransform, CqtSpectrogram, ImdAnalyzer};
+use sonido_analysis::{
+    Comodulogram, FilterBank, FrequencyBand, HilbertTransform, PacAnalyzer, PacMethod,
+};
+use sonido_analysis::{Fft, StftAnalyzer, ThdAnalyzer, TransferFunction, Window, welch_psd};
+use sonido_io::{WavSpec, read_wav, write_wav};
 use std::path::PathBuf;
 
 #[derive(Args)]
@@ -342,12 +344,8 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
             } else {
                 // Take a chunk from the middle of the file
                 let start = samples.len().saturating_sub(fft_size) / 2;
-                let mut chunk: Vec<f32> = samples
-                    .iter()
-                    .skip(start)
-                    .take(fft_size)
-                    .copied()
-                    .collect();
+                let mut chunk: Vec<f32> =
+                    samples.iter().skip(start).take(fft_size).copied().collect();
 
                 // Pad if necessary
                 chunk.resize(fft_size, 0.0);
@@ -367,13 +365,7 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
 
                 let db: Vec<f32> = magnitudes
                     .iter()
-                    .map(|m| {
-                        if *m > 0.0 {
-                            20.0 * m.log10()
-                        } else {
-                            -120.0
-                        }
-                    })
+                    .map(|m| if *m > 0.0 { 20.0 * m.log10() } else { -120.0 })
                     .collect();
 
                 let frequencies: Vec<f32> = (0..db.len())
@@ -511,7 +503,10 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
 
             // Write output file if requested
             if let Some(output_path) = output {
-                let ext = output_path.extension().and_then(|s| s.to_str()).unwrap_or("");
+                let ext = output_path
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("");
 
                 if ext.eq_ignore_ascii_case("frd") {
                     export_frd(&result, &output_path)?;
@@ -564,7 +559,10 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
 
             // Use deconvolution to extract IR
             // IR = IFFT(FFT(response) / FFT(sweep))
-            let fft_size = sweep_samples.len().max(response_samples.len()).next_power_of_two();
+            let fft_size = sweep_samples
+                .len()
+                .max(response_samples.len())
+                .next_power_of_two();
 
             let mut sweep_padded = sweep_samples.clone();
             let mut response_padded = response_samples.clone();
@@ -669,9 +667,20 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
             };
 
             println!("\nDistortion Analysis:");
-            println!("  Fundamental: {:.1} Hz at {:.1} dB", result.fundamental_freq, fundamental_db);
-            println!("  THD:         {:.4}% ({:.1} dB)", result.thd_ratio * 100.0, result.thd_db);
-            println!("  THD+N:       {:.4}% ({:.1} dB)", result.thd_n_ratio * 100.0, result.thd_n_db);
+            println!(
+                "  Fundamental: {:.1} Hz at {:.1} dB",
+                result.fundamental_freq, fundamental_db
+            );
+            println!(
+                "  THD:         {:.4}% ({:.1} dB)",
+                result.thd_ratio * 100.0,
+                result.thd_db
+            );
+            println!(
+                "  THD+N:       {:.4}% ({:.1} dB)",
+                result.thd_n_ratio * 100.0,
+                result.thd_n_db
+            );
             println!("  Noise floor: {:.6} (linear RMS)", result.noise_floor);
 
             println!("\n  Harmonics:");
@@ -742,7 +751,7 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
                 samples.len() as f32 / sample_rate
             );
 
-            use sonido_analysis::{analyze_dynamics, rms_db, peak_db, crest_factor_db};
+            use sonido_analysis::{analyze_dynamics, crest_factor_db, peak_db, rms_db};
 
             let rms = rms_db(&samples);
             let peak = peak_db(&samples);
@@ -785,14 +794,27 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
 
             // Validate frequency bands
             if phase_high <= phase_low {
-                anyhow::bail!("Phase band high ({}) must be greater than low ({})", phase_high, phase_low);
+                anyhow::bail!(
+                    "Phase band high ({}) must be greater than low ({})",
+                    phase_high,
+                    phase_low
+                );
             }
             if amp_high <= amp_low {
-                anyhow::bail!("Amplitude band high ({}) must be greater than low ({})", amp_high, amp_low);
+                anyhow::bail!(
+                    "Amplitude band high ({}) must be greater than low ({})",
+                    amp_high,
+                    amp_low
+                );
             }
             if phase_high >= amp_low {
-                anyhow::bail!("Phase band ({}-{} Hz) must not overlap with amplitude band ({}-{} Hz)",
-                    phase_low, phase_high, amp_low, amp_high);
+                anyhow::bail!(
+                    "Phase band ({}-{} Hz) must not overlap with amplitude band ({}-{} Hz)",
+                    phase_low,
+                    phase_high,
+                    amp_low,
+                    amp_high
+                );
             }
 
             let phase_band = FrequencyBand::new("phase", phase_low, phase_high);
@@ -819,8 +841,11 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
 
             println!("\nPhase-Amplitude Coupling Results:");
             println!("  Modulation Index: {:.6}", result.modulation_index);
-            println!("  Preferred Phase:  {:.2} rad ({:.1} deg)",
-                result.preferred_phase, result.preferred_phase_degrees());
+            println!(
+                "  Preferred Phase:  {:.2} rad ({:.1} deg)",
+                result.preferred_phase,
+                result.preferred_phase_degrees()
+            );
 
             // Surrogate significance testing
             let mut p_value = None;
@@ -839,20 +864,27 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
                 }
 
                 // Calculate p-value: proportion of surrogates with MI >= observed MI
-                let count_greater = surrogate_mis.iter()
+                let count_greater = surrogate_mis
+                    .iter()
                     .filter(|&&mi| mi >= result.modulation_index)
                     .count();
                 let p = count_greater as f32 / surrogates as f32;
                 p_value = Some(p);
 
                 let mean_sur: f32 = surrogate_mis.iter().sum::<f32>() / surrogates as f32;
-                let std_sur: f32 = (surrogate_mis.iter()
+                let std_sur: f32 = (surrogate_mis
+                    .iter()
                     .map(|mi| (mi - mean_sur).powi(2))
-                    .sum::<f32>() / surrogates as f32).sqrt();
+                    .sum::<f32>()
+                    / surrogates as f32)
+                    .sqrt();
 
                 println!("  Surrogate MI:     {:.6} +/- {:.6}", mean_sur, std_sur);
                 println!("  p-value:          {:.4}", p);
-                println!("  Significant:      {}", if p < 0.05 { "Yes (p < 0.05)" } else { "No" });
+                println!(
+                    "  Significant:      {}",
+                    if p < 0.05 { "Yes (p < 0.05)" } else { "No" }
+                );
             }
 
             // Print phase-amplitude histogram
@@ -860,11 +892,21 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
             let bin_width = 360.0 / 18.0;
             for (i, &amp) in result.mean_amplitude_per_phase.iter().enumerate() {
                 let phase_start = -180.0 + i as f32 * bin_width;
-                let bar_len = ((amp / result.mean_amplitude_per_phase.iter().copied()
-                    .fold(f32::NEG_INFINITY, f32::max)) * 20.0) as usize;
+                let bar_len = ((amp
+                    / result
+                        .mean_amplitude_per_phase
+                        .iter()
+                        .copied()
+                        .fold(f32::NEG_INFINITY, f32::max))
+                    * 20.0) as usize;
                 let bar = "#".repeat(bar_len);
-                println!("    {:>4.0} - {:>4.0} deg: {:.4} {}",
-                    phase_start, phase_start + bin_width, amp, bar);
+                println!(
+                    "    {:>4.0} - {:>4.0} deg: {:.4} {}",
+                    phase_start,
+                    phase_start + bin_width,
+                    amp,
+                    bar
+                );
             }
 
             // Write output JSON if requested
@@ -928,8 +970,14 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
             let (phase_min, phase_max) = parse_range(&phase_range)?;
             let (amp_min, amp_max) = parse_range(&amp_range)?;
 
-            println!("\n  Phase range:     {:.1}-{:.1} Hz (step: {:.1})", phase_min, phase_max, phase_step);
-            println!("  Amplitude range: {:.1}-{:.1} Hz (step: {:.1})", amp_min, amp_max, amp_step);
+            println!(
+                "\n  Phase range:     {:.1}-{:.1} Hz (step: {:.1})",
+                phase_min, phase_max, phase_step
+            );
+            println!(
+                "  Amplitude range: {:.1}-{:.1} Hz (step: {:.1})",
+                amp_min, amp_max, amp_step
+            );
             println!("  Bandwidth ratio: {:.2}", bandwidth);
 
             let como = Comodulogram::compute(
@@ -942,10 +990,12 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
 
             let (peak_phase, peak_amp, peak_mi) = como.peak_coupling();
 
-            println!("\n  Comodulogram size: {} x {} = {} cells",
+            println!(
+                "\n  Comodulogram size: {} x {} = {} cells",
                 como.phase_frequencies.len(),
                 como.amplitude_frequencies.len(),
-                como.phase_frequencies.len() * como.amplitude_frequencies.len());
+                como.phase_frequencies.len() * como.amplitude_frequencies.len()
+            );
 
             println!("\n  Peak coupling:");
             println!("    Phase frequency:     {:.1} Hz", peak_phase);
@@ -979,7 +1029,11 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
             );
 
             if high <= low {
-                anyhow::bail!("High frequency ({}) must be greater than low ({})", high, low);
+                anyhow::bail!(
+                    "High frequency ({}) must be greater than low ({})",
+                    high,
+                    low
+                );
             }
 
             if order != 2 && order != 4 && order != 6 {
@@ -1041,7 +1095,10 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
             if let Some(bp_range) = &bandpass {
                 let parts: Vec<&str> = bp_range.split('-').collect();
                 if parts.len() != 2 {
-                    anyhow::bail!("Invalid bandpass format '{}', expected 'low-high'", bp_range);
+                    anyhow::bail!(
+                        "Invalid bandpass format '{}', expected 'low-high'",
+                        bp_range
+                    );
                 }
                 let low: f32 = parts[0].parse()?;
                 let high: f32 = parts[1].parse()?;
@@ -1078,9 +1135,8 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
             // Write phase output
             if let Some(ref phase_path) = phase_output {
                 // Normalize phase from [-PI, PI] to [-1, 1]
-                let phase_normalized: Vec<f32> = phase.iter()
-                    .map(|&p| p / std::f32::consts::PI)
-                    .collect();
+                let phase_normalized: Vec<f32> =
+                    phase.iter().map(|&p| p / std::f32::consts::PI).collect();
 
                 write_wav(phase_path, &phase_normalized, out_spec)?;
                 println!("\nWrote phase to {}", phase_path.display());
@@ -1145,8 +1201,16 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
             let result = analyzer.analyze(&samples, f1, f2);
 
             // Convert to dB
-            let amp1_db = if result.amp1 > 0.0 { 20.0 * result.amp1.log10() } else { -120.0 };
-            let amp2_db = if result.amp2 > 0.0 { 20.0 * result.amp2.log10() } else { -120.0 };
+            let amp1_db = if result.amp1 > 0.0 {
+                20.0 * result.amp1.log10()
+            } else {
+                -120.0
+            };
+            let amp2_db = if result.amp2 > 0.0 {
+                20.0 * result.amp2.log10()
+            } else {
+                -120.0
+            };
 
             println!("\nIMD Analysis Results:");
             println!("  Fundamental tones:");
@@ -1154,18 +1218,46 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
             println!("    f2 = {:.1} Hz at {:.1} dB", f2, amp2_db);
 
             println!("\n  Second-order products:");
-            let imd2_diff_db = if result.imd2_diff > 0.0 { 20.0 * result.imd2_diff.log10() } else { -120.0 };
-            let imd2_sum_db = if result.imd2_sum > 0.0 { 20.0 * result.imd2_sum.log10() } else { -120.0 };
+            let imd2_diff_db = if result.imd2_diff > 0.0 {
+                20.0 * result.imd2_diff.log10()
+            } else {
+                -120.0
+            };
+            let imd2_sum_db = if result.imd2_sum > 0.0 {
+                20.0 * result.imd2_sum.log10()
+            } else {
+                -120.0
+            };
             println!("    f2-f1 = {:.1} Hz at {:.1} dB", f2 - f1, imd2_diff_db);
             println!("    f1+f2 = {:.1} Hz at {:.1} dB", f1 + f2, imd2_sum_db);
 
             println!("\n  Third-order products:");
-            let imd3_low_db = if result.imd3_low > 0.0 { 20.0 * result.imd3_low.log10() } else { -120.0 };
-            let imd3_high_db = if result.imd3_high > 0.0 { 20.0 * result.imd3_high.log10() } else { -120.0 };
-            println!("    2f1-f2 = {:.1} Hz at {:.1} dB", 2.0 * f1 - f2, imd3_low_db);
-            println!("    2f2-f1 = {:.1} Hz at {:.1} dB", 2.0 * f2 - f1, imd3_high_db);
+            let imd3_low_db = if result.imd3_low > 0.0 {
+                20.0 * result.imd3_low.log10()
+            } else {
+                -120.0
+            };
+            let imd3_high_db = if result.imd3_high > 0.0 {
+                20.0 * result.imd3_high.log10()
+            } else {
+                -120.0
+            };
+            println!(
+                "    2f1-f2 = {:.1} Hz at {:.1} dB",
+                2.0 * f1 - f2,
+                imd3_low_db
+            );
+            println!(
+                "    2f2-f1 = {:.1} Hz at {:.1} dB",
+                2.0 * f2 - f1,
+                imd3_high_db
+            );
 
-            println!("\n  IMD ratio: {:.4}% ({:.1} dB)", result.imd_ratio * 100.0, result.imd_db);
+            println!(
+                "\n  IMD ratio: {:.4}% ({:.1} dB)",
+                result.imd_ratio * 100.0,
+                result.imd_db
+            );
 
             // Write output JSON if requested
             if let Some(output_path) = output {
@@ -1227,29 +1319,43 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
             println!("\n  CQT bins: {}", result.magnitudes.len());
 
             // Find peaks
-            let mut indexed: Vec<(usize, f32)> = result.magnitudes.iter().copied().enumerate().collect();
+            let mut indexed: Vec<(usize, f32)> =
+                result.magnitudes.iter().copied().enumerate().collect();
             indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
 
             let magnitude_db = result.magnitude_db();
             let midi_notes = result.midi_notes();
 
             println!("\nTop {} frequency peaks:", peaks);
-            println!("  {:>10}  {:>8}  {:>8}  {:>8}", "Freq (Hz)", "MIDI", "Note", "Level (dB)");
-            println!("  {:>10}  {:>8}  {:>8}  {:>8}", "--------", "----", "----", "----------");
+            println!(
+                "  {:>10}  {:>8}  {:>8}  {:>8}",
+                "Freq (Hz)", "MIDI", "Note", "Level (dB)"
+            );
+            println!(
+                "  {:>10}  {:>8}  {:>8}  {:>8}",
+                "--------", "----", "----", "----------"
+            );
 
             for (i, _) in indexed.iter().take(peaks) {
                 let freq = result.frequencies.get(*i).copied().unwrap_or(0.0);
                 let midi = midi_notes.get(*i).copied().unwrap_or(0.0);
                 let db = magnitude_db.get(*i).copied().unwrap_or(-120.0);
                 let note_name = midi_to_note_name(midi);
-                println!("  {:>10.1}  {:>8.1}  {:>8}  {:>8.1}", freq, midi, note_name, db);
+                println!(
+                    "  {:>10.1}  {:>8.1}  {:>8}  {:>8.1}",
+                    freq, midi, note_name, db
+                );
             }
 
             // Peak frequency
             if let Some(peak_freq) = result.peak_frequency() {
                 let peak_midi = 69.0 + 12.0 * (peak_freq / 440.0).log2();
-                println!("\n  Peak frequency: {:.1} Hz (MIDI {:.1}, {})",
-                    peak_freq, peak_midi, midi_to_note_name(peak_midi));
+                println!(
+                    "\n  Peak frequency: {:.1} Hz (MIDI {:.1}, {})",
+                    peak_freq,
+                    peak_midi,
+                    midi_to_note_name(peak_midi)
+                );
             }
 
             // Chromagram if requested
@@ -1309,7 +1415,9 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
 
 /// Convert MIDI note number to note name (e.g., 69 -> "A4")
 fn midi_to_note_name(midi: f32) -> String {
-    let note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    let note_names = [
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+    ];
     let midi_rounded = midi.round() as i32;
     if !(0..=127).contains(&midi_rounded) {
         return "---".to_string();

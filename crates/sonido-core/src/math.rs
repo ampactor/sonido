@@ -245,6 +245,7 @@ pub fn samples_to_ms(samples: f32, sample_rate: f32) -> f32 {
 /// where signal can decay indefinitely toward zero.
 ///
 /// Reference: IEEE 754-2008, Section 3.4 (Subnormal numbers)
+#[allow(clippy::inline_always)]
 #[inline(always)]
 pub fn flush_denormal(x: f32) -> f32 {
     if x.abs() < 1e-20 { 0.0 } else { x }
@@ -262,7 +263,9 @@ mod tests {
         assert!(
             (original - back).abs() < 1e-5,
             "Roundtrip failed: {} -> {} -> {}",
-            original, db, back
+            original,
+            db,
+            back
         );
     }
 
