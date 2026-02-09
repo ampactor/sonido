@@ -70,7 +70,8 @@ impl AllpassFilter {
         let output = -input + delayed;
 
         // Feed forward: input + delayed * feedback
-        self.delay.write(flush_denormal(input + delayed * self.feedback));
+        self.delay
+            .write(flush_denormal(input + delayed * self.feedback));
 
         output
     }
@@ -107,21 +108,28 @@ mod tests {
         let mut allpass = AllpassFilter::new(50);
         allpass.set_feedback(0.5);
 
-        let input_energy: f32 = (0..500).map(|i| {
-            let x = if i < 100 { 1.0 } else { 0.0 };
-            x * x
-        }).sum();
+        let input_energy: f32 = (0..500)
+            .map(|i| {
+                let x = if i < 100 { 1.0 } else { 0.0 };
+                x * x
+            })
+            .sum();
 
-        let output_energy: f32 = (0..500).map(|i| {
-            let x = if i < 100 { 1.0 } else { 0.0 };
-            let y = allpass.process(x);
-            y * y
-        }).sum();
+        let output_energy: f32 = (0..500)
+            .map(|i| {
+                let x = if i < 100 { 1.0 } else { 0.0 };
+                let y = allpass.process(x);
+                y * y
+            })
+            .sum();
 
         // Should be within 20% (not exact due to transient behavior)
         let ratio = output_energy / input_energy;
-        assert!(ratio > 0.5 && ratio < 2.0,
-            "Energy ratio {} should be close to 1.0", ratio);
+        assert!(
+            ratio > 0.5 && ratio < 2.0,
+            "Energy ratio {} should be close to 1.0",
+            ratio
+        );
     }
 
     #[test]
@@ -148,7 +156,10 @@ mod tests {
 
         // Impulse
         let first = allpass.process(1.0);
-        assert!((first - (-1.0)).abs() < 0.01, "First output should be -input");
+        assert!(
+            (first - (-1.0)).abs() < 0.01,
+            "First output should be -input"
+        );
 
         // Wait for delay
         for _ in 0..9 {

@@ -3,9 +3,9 @@
 //! Provides voice structures and allocation strategies for building
 //! monophonic and polyphonic synthesizers.
 
-use crate::oscillator::{Oscillator, OscillatorWaveform};
 use crate::envelope::AdsrEnvelope;
-use sonido_core::{StateVariableFilter, Effect};
+use crate::oscillator::{Oscillator, OscillatorWaveform};
+use sonido_core::{Effect, StateVariableFilter};
 
 /// Voice allocation modes for polyphonic synthesizers.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -130,7 +130,8 @@ impl Voice {
 
         let freq = midi_to_freq(note);
         self.osc1.set_frequency(freq);
-        self.osc2.set_frequency(freq * cents_to_ratio(self.osc2_detune));
+        self.osc2
+            .set_frequency(freq * cents_to_ratio(self.osc2_detune));
 
         self.osc1.reset();
         self.osc2.reset();
@@ -231,7 +232,8 @@ impl Voice {
         // Apply filter with envelope modulation
         let filter_env = self.filter_env.advance();
         let modulated_cutoff = self.filter_cutoff + filter_env * self.filter_env_amount;
-        self.filter.set_cutoff(modulated_cutoff.clamp(20.0, 20000.0));
+        self.filter
+            .set_cutoff(modulated_cutoff.clamp(20.0, 20000.0));
         let filtered = self.filter.process(osc_out);
 
         // Apply amplitude envelope with velocity scaling
@@ -391,30 +393,27 @@ impl<const N: usize> VoiceManager<N> {
                 self.round_robin_idx = (self.round_robin_idx + 1) % N;
                 idx
             }
-            VoiceAllocationMode::OldestNote => {
-                self.voices
-                    .iter()
-                    .enumerate()
-                    .min_by_key(|(_, v)| v.age())
-                    .map(|(i, _)| i)
-                    .unwrap_or(0)
-            }
-            VoiceAllocationMode::LowestNote => {
-                self.voices
-                    .iter()
-                    .enumerate()
-                    .min_by_key(|(_, v)| v.note())
-                    .map(|(i, _)| i)
-                    .unwrap_or(0)
-            }
-            VoiceAllocationMode::HighestNote => {
-                self.voices
-                    .iter()
-                    .enumerate()
-                    .max_by_key(|(_, v)| v.note())
-                    .map(|(i, _)| i)
-                    .unwrap_or(0)
-            }
+            VoiceAllocationMode::OldestNote => self
+                .voices
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, v)| v.age())
+                .map(|(i, _)| i)
+                .unwrap_or(0),
+            VoiceAllocationMode::LowestNote => self
+                .voices
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, v)| v.note())
+                .map(|(i, _)| i)
+                .unwrap_or(0),
+            VoiceAllocationMode::HighestNote => self
+                .voices
+                .iter()
+                .enumerate()
+                .max_by_key(|(_, v)| v.note())
+                .map(|(i, _)| i)
+                .unwrap_or(0),
         }
     }
 }
@@ -546,7 +545,10 @@ mod tests {
         manager.note_on(67, 100);
 
         // Voice playing 64 should still be active
-        let has_64 = manager.voices().iter().any(|v| v.is_active() && v.note() == 64);
+        let has_64 = manager
+            .voices()
+            .iter()
+            .any(|v| v.is_active() && v.note() == 64);
         assert!(has_64, "Note 64 should still be playing");
     }
 

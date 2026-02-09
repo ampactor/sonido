@@ -3,8 +3,8 @@
 //! Run with: cargo run -p sonido-synth --example modulation_demo
 
 use sonido_synth::{
-    Lfo, LfoWaveform, ModulationMatrix, ModulationRoute, ModulationSource, ModulationValues,
-    ModDestination, ModSourceId, Oscillator, OscillatorWaveform, AdsrEnvelope,
+    AdsrEnvelope, Lfo, LfoWaveform, ModDestination, ModSourceId, ModulationMatrix, ModulationRoute,
+    ModulationSource, ModulationValues, Oscillator, OscillatorWaveform,
 };
 
 fn main() {
@@ -133,7 +133,10 @@ fn main() {
     let base_cutoff = 1000.0; // Hz
     let mod_range = 2000.0; // Hz modulation range
 
-    println!("Base cutoff: {} Hz, mod range: +/- {} Hz", base_cutoff, mod_range);
+    println!(
+        "Base cutoff: {} Hz, mod range: +/- {} Hz",
+        base_cutoff, mod_range
+    );
     println!("\nSample | LFO1   | FilterEnv | Cutoff Mod | Effective Cutoff");
     println!("-------+--------+-----------+------------+-----------------");
 
@@ -168,7 +171,10 @@ fn main() {
 
     let vibrato_depth_hz = 5.0; // +/- 5 Hz vibrato
 
-    println!("Carrier: 440 Hz sine, Vibrato: 5 Hz sine, depth: +/- {} Hz", vibrato_depth_hz);
+    println!(
+        "Carrier: 440 Hz sine, Vibrato: 5 Hz sine, depth: +/- {} Hz",
+        vibrato_depth_hz
+    );
     println!("\nSample | LFO Val | Freq (Hz) | Output");
     println!("-------+---------+-----------+-------");
 

@@ -1,6 +1,6 @@
 //! Bypass toggle widget for effects.
 
-use egui::{pos2, vec2, Color32, Response, Sense, Stroke, StrokeKind, Ui, Widget};
+use egui::{Color32, Response, Sense, Stroke, StrokeKind, Ui, Widget, pos2, vec2};
 
 /// A bypass toggle button for effects.
 pub struct BypassToggle<'a> {
@@ -30,9 +30,11 @@ impl<'a> BypassToggle<'a> {
 
 impl Widget for BypassToggle<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
-        let total_width = self.size + 8.0 + ui.fonts(|f| {
-            f.glyph_width(&egui::FontId::proportional(12.0), 'M') * self.label.len() as f32
-        });
+        let total_width = self.size
+            + 8.0
+            + ui.fonts(|f| {
+                f.glyph_width(&egui::FontId::proportional(12.0), 'M') * self.label.len() as f32
+            });
         let size = vec2(total_width.max(60.0), self.size + 4.0);
 
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
@@ -124,7 +126,12 @@ impl Widget for FootswitchToggle<'_> {
                 Color32::from_rgb(40, 40, 48)
             };
             painter.rect_filled(rect, 6.0, body_color);
-            painter.rect_stroke(rect, 6.0, Stroke::new(1.0, Color32::from_rgb(70, 70, 80)), StrokeKind::Inside);
+            painter.rect_stroke(
+                rect,
+                6.0,
+                Stroke::new(1.0, Color32::from_rgb(70, 70, 80)),
+                StrokeKind::Inside,
+            );
 
             // LED indicator
             let led_pos = pos2(rect.center().x, rect.top() + 12.0);

@@ -4,7 +4,7 @@
 //! tremolo, vibrato, and other time-based effects.
 
 use core::f32::consts::PI;
-use libm::{sinf, floorf};
+use libm::{floorf, sinf};
 
 use crate::tempo::NoteDivision;
 
@@ -220,7 +220,12 @@ mod tests {
         let mut lfo = Lfo::new(44100.0, 5.0);
 
         // Check all waveforms stay in [-1.0, 1.0]
-        for waveform in [LfoWaveform::Sine, LfoWaveform::Triangle, LfoWaveform::Saw, LfoWaveform::Square] {
+        for waveform in [
+            LfoWaveform::Sine,
+            LfoWaveform::Triangle,
+            LfoWaveform::Saw,
+            LfoWaveform::Square,
+        ] {
             lfo.set_waveform(waveform);
             lfo.reset();
 

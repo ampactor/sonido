@@ -3,8 +3,11 @@
 //! A Freeverb-style reverb using parallel comb filters and series allpass
 //! filters. Suitable for room and hall simulations.
 
-use sonido_core::{Effect, SmoothedParam, InterpolatedDelay, CombFilter, AllpassFilter, ParameterInfo, ParamDescriptor, ParamUnit};
-use libm::{roundf, ceilf};
+use libm::{ceilf, roundf};
+use sonido_core::{
+    AllpassFilter, CombFilter, Effect, InterpolatedDelay, ParamDescriptor, ParamUnit,
+    ParameterInfo, SmoothedParam,
+};
 
 /// Freeverb comb filter delay times (at 44.1kHz reference).
 /// These are mutually prime to avoid resonances.
@@ -606,7 +609,11 @@ mod tests {
             reverb.process(0.0);
         }
         let late = reverb.process(0.0);
-        assert!(late.abs() > 1e-6, "Reverb tail should persist, got {}", late);
+        assert!(
+            late.abs() > 1e-6,
+            "Reverb tail should persist, got {}",
+            late
+        );
     }
 
     #[test]
@@ -634,7 +641,11 @@ mod tests {
         reverb.reset();
 
         let output = reverb.process(0.0);
-        assert!(output.abs() < 1e-10, "Reset should clear state, got {}", output);
+        assert!(
+            output.abs() < 1e-10,
+            "Reset should clear state, got {}",
+            output
+        );
     }
 
     #[test]
@@ -680,7 +691,10 @@ mod tests {
 
         // With mix=0, output should equal input
         let dry_out = dry_reverb.process(0.5);
-        assert!((dry_out - 0.5).abs() < 0.01, "Dry output should match input");
+        assert!(
+            (dry_out - 0.5).abs() < 0.01,
+            "Dry output should match input"
+        );
 
         // With mix=1, output should be different (reverb signal)
         let wet_out = wet_reverb.process(0.5);
@@ -775,7 +789,11 @@ mod tests {
         }
 
         // With true stereo (different tanks) and different inputs, L and R should differ
-        assert!(diff_count > 100, "L and R should be decorrelated, but only {} samples differed", diff_count);
+        assert!(
+            diff_count > 100,
+            "L and R should be decorrelated, but only {} samples differed",
+            diff_count
+        );
     }
 
     #[test]

@@ -86,10 +86,8 @@ impl HilbertTransform {
         let n = signal.len().min(self.fft_size);
 
         // Create complex buffer from input signal
-        let mut buffer: Vec<Complex<f32>> = signal[..n]
-            .iter()
-            .map(|&x| Complex::new(x, 0.0))
-            .collect();
+        let mut buffer: Vec<Complex<f32>> =
+            signal[..n].iter().map(|&x| Complex::new(x, 0.0)).collect();
 
         // Zero-pad to FFT size
         buffer.resize(self.fft_size, Complex::new(0.0, 0.0));
@@ -287,7 +285,9 @@ mod tests {
             assert!(
                 (analytic[i].re - sine[i]).abs() < 0.05,
                 "Real part mismatch at {}: {} vs {}",
-                i, analytic[i].re, sine[i]
+                i,
+                analytic[i].re,
+                sine[i]
             );
 
             // Imaginary part should be -cos (which is sin shifted by +90 degrees)
@@ -295,7 +295,9 @@ mod tests {
             assert!(
                 (analytic[i].im - (-cosine[i])).abs() < 0.1,
                 "Imaginary part mismatch at {}: {} vs {}",
-                i, analytic[i].im, -cosine[i]
+                i,
+                analytic[i].im,
+                -cosine[i]
             );
         }
     }
@@ -320,7 +322,8 @@ mod tests {
             assert!(
                 (amp - 1.0).abs() < 0.1,
                 "Amplitude should be ~1.0, got {} at sample {}",
-                amp, i
+                amp,
+                i
             );
         }
     }
@@ -350,7 +353,9 @@ mod tests {
             assert!(
                 (delta - expected_delta).abs() < 0.1,
                 "Phase delta should be ~{}, got {} at sample {}",
-                expected_delta, delta, i
+                expected_delta,
+                delta,
+                i
             );
         }
     }
@@ -371,11 +376,18 @@ mod tests {
         let start = num_samples / 4;
         let end = 3 * num_samples / 4;
 
-        for (i, &freq) in inst_freq.iter().enumerate().take(end.min(inst_freq.len())).skip(start) {
+        for (i, &freq) in inst_freq
+            .iter()
+            .enumerate()
+            .take(end.min(inst_freq.len()))
+            .skip(start)
+        {
             assert!(
                 (freq - frequency).abs() < 2.0,
                 "Instantaneous frequency should be ~{} Hz, got {} at sample {}",
-                frequency, freq, i
+                frequency,
+                freq,
+                i
             );
         }
     }
@@ -396,11 +408,13 @@ mod tests {
         for i in 0..num_samples {
             assert!(
                 (phase1[i] - phase2[i]).abs() < 1e-6,
-                "Phase mismatch at {}", i
+                "Phase mismatch at {}",
+                i
             );
             assert!(
                 (amp1[i] - amp2[i]).abs() < 1e-6,
-                "Amplitude mismatch at {}", i
+                "Amplitude mismatch at {}",
+                i
             );
         }
     }
@@ -422,7 +436,8 @@ mod tests {
             assert!(
                 delta < PI,
                 "Unwrapped phase should have no jumps > PI, got {} at {}",
-                delta, i
+                delta,
+                i
             );
         }
     }
@@ -452,12 +467,26 @@ mod tests {
         let start = num_samples / 4;
         let end = 3 * num_samples / 4;
 
-        let min_amp = amplitude[start..end].iter().copied().fold(f32::INFINITY, f32::min);
-        let max_amp = amplitude[start..end].iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let min_amp = amplitude[start..end]
+            .iter()
+            .copied()
+            .fold(f32::INFINITY, f32::min);
+        let max_amp = amplitude[start..end]
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, f32::max);
 
         // Envelope should vary between ~0.5 and ~1.0 (allowing some error)
-        assert!(min_amp < 0.7, "Min amplitude should be < 0.7, got {}", min_amp);
-        assert!(max_amp > 0.8, "Max amplitude should be > 0.8, got {}", max_amp);
+        assert!(
+            min_amp < 0.7,
+            "Min amplitude should be < 0.7, got {}",
+            min_amp
+        );
+        assert!(
+            max_amp > 0.8,
+            "Max amplitude should be > 0.8, got {}",
+            max_amp
+        );
     }
 
     #[test]

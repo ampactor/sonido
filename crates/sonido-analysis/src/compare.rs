@@ -179,7 +179,11 @@ mod tests {
             .collect();
 
         let corr = spectral_correlation(&signal, &signal, 1024);
-        assert!(corr > 0.99, "Identical signals should have correlation ~1, got {}", corr);
+        assert!(
+            corr > 0.99,
+            "Identical signals should have correlation ~1, got {}",
+            corr
+        );
     }
 
     #[test]

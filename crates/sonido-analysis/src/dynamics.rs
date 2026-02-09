@@ -69,11 +69,7 @@ pub fn crest_factor(signal: &[f32]) -> f32 {
 /// Compute crest factor in dB
 pub fn crest_factor_db(signal: &[f32]) -> f32 {
     let cf = crest_factor(signal);
-    if cf > 1e-10 {
-        20.0 * cf.log10()
-    } else {
-        0.0
-    }
+    if cf > 1e-10 { 20.0 * cf.log10() } else { 0.0 }
 }
 
 /// Compute dynamic range in dB
@@ -138,13 +134,7 @@ pub fn envelope(signal: &[f32], window_size: usize, hop_size: usize) -> Vec<f32>
 pub fn envelope_db(signal: &[f32], window_size: usize, hop_size: usize) -> Vec<f32> {
     envelope(signal, window_size, hop_size)
         .iter()
-        .map(|&x| {
-            if x > 1e-10 {
-                20.0 * x.log10()
-            } else {
-                -200.0
-            }
-        })
+        .map(|&x| if x > 1e-10 { 20.0 * x.log10() } else { -200.0 })
         .collect()
 }
 
@@ -394,7 +384,10 @@ mod tests {
         let transients = detect_transients(&signal, 256, 128, 6.0);
 
         // Should detect transient near sample 2000
-        assert!(!transients.is_empty(), "Should detect at least one transient");
+        assert!(
+            !transients.is_empty(),
+            "Should detect at least one transient"
+        );
 
         let first_transient = transients[0];
         assert!(

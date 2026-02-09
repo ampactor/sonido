@@ -396,9 +396,10 @@ pub fn get_factory_preset(name: &str) -> Option<Preset> {
     // Also try matching against the preset's actual name field
     for (_, toml) in FACTORY_PRESETS_TOML {
         if let Ok(preset) = Preset::from_toml(toml)
-            && preset.name.to_lowercase() == name_lower {
-                return Some(preset);
-            }
+            && preset.name.to_lowercase() == name_lower
+        {
+            return Some(preset);
+        }
     }
 
     None
@@ -446,9 +447,10 @@ pub fn is_factory_preset(name: &str) -> bool {
     // Also check against display names in the presets
     for (_, toml) in FACTORY_PRESETS_TOML {
         if let Ok(preset) = Preset::from_toml(toml)
-            && preset.name.to_lowercase() == name_lower {
-                return true;
-            }
+            && preset.name.to_lowercase() == name_lower
+        {
+            return true;
+        }
     }
 
     false
@@ -502,11 +504,24 @@ mod tests {
     fn test_all_factory_presets_valid() {
         for (name, toml) in FACTORY_PRESETS_TOML {
             let result = Preset::from_toml(toml);
-            assert!(result.is_ok(), "factory preset '{}' should parse: {:?}", name, result);
+            assert!(
+                result.is_ok(),
+                "factory preset '{}' should parse: {:?}",
+                name,
+                result
+            );
 
             let preset = result.unwrap();
-            assert!(!preset.name.is_empty(), "preset '{}' should have a name", name);
-            assert!(preset.description.is_some(), "preset '{}' should have a description", name);
+            assert!(
+                !preset.name.is_empty(),
+                "preset '{}' should have a name",
+                name
+            );
+            assert!(
+                preset.description.is_some(),
+                "preset '{}' should have a description",
+                name
+            );
         }
     }
 
@@ -548,7 +563,10 @@ mod tests {
         assert!(preamp.is_some());
         assert!(!preamp.unwrap().bypassed);
 
-        let dist = crunch.effects.iter().find(|e| e.effect_type == "distortion");
+        let dist = crunch
+            .effects
+            .iter()
+            .find(|e| e.effect_type == "distortion");
         assert!(dist.is_some());
         assert!(!dist.unwrap().bypassed);
     }
@@ -558,8 +576,14 @@ mod tests {
         let ambient = get_factory_preset("ambient").expect("ambient should exist");
 
         // Should have delay and reverb active
-        let has_delay = ambient.effects.iter().any(|e| e.effect_type == "delay" && !e.bypassed);
-        let has_reverb = ambient.effects.iter().any(|e| e.effect_type == "reverb" && !e.bypassed);
+        let has_delay = ambient
+            .effects
+            .iter()
+            .any(|e| e.effect_type == "delay" && !e.bypassed);
+        let has_reverb = ambient
+            .effects
+            .iter()
+            .any(|e| e.effect_type == "reverb" && !e.bypassed);
 
         assert!(has_delay, "ambient preset should have active delay");
         assert!(has_reverb, "ambient preset should have active reverb");

@@ -3,10 +3,10 @@
 //! Provides ready-to-use monophonic and polyphonic synthesizers
 //! with modulation, filtering, and voice management.
 
-use crate::oscillator::{Oscillator, OscillatorWaveform};
 use crate::envelope::AdsrEnvelope;
-use crate::voice::{VoiceManager, VoiceAllocationMode, midi_to_freq, cents_to_ratio};
-use sonido_core::{Lfo, LfoWaveform, StateVariableFilter, SvfOutput, Effect};
+use crate::oscillator::{Oscillator, OscillatorWaveform};
+use crate::voice::{VoiceAllocationMode, VoiceManager, cents_to_ratio, midi_to_freq};
+use sonido_core::{Effect, Lfo, LfoWaveform, StateVariableFilter, SvfOutput};
 
 /// A monophonic synthesizer.
 ///
@@ -339,7 +339,8 @@ impl MonophonicSynth {
         // Set oscillator frequencies
         let base_freq = self.current_freq * pitch_ratio;
         self.osc1.set_frequency(base_freq);
-        self.osc2.set_frequency(base_freq * cents_to_ratio(self.osc2_detune));
+        self.osc2
+            .set_frequency(base_freq * cents_to_ratio(self.osc2_detune));
 
         // Generate oscillator output
         let osc1_out = self.osc1.advance();

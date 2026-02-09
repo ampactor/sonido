@@ -1,7 +1,7 @@
 //! Effect chain processing engine.
 
-use sonido_core::Effect;
 use crate::StereoSamples;
+use sonido_core::Effect;
 
 /// Processing engine that runs an effect chain.
 ///
@@ -171,7 +171,11 @@ impl ProcessingEngine {
     /// Process an entire stereo file's worth of samples.
     ///
     /// Returns new StereoSamples with processed audio.
-    pub fn process_file_stereo(&mut self, input: &StereoSamples, block_size: usize) -> StereoSamples {
+    pub fn process_file_stereo(
+        &mut self,
+        input: &StereoSamples,
+        block_size: usize,
+    ) -> StereoSamples {
         let len = input.len();
         let mut left_out = vec![0.0; len];
         let mut right_out = vec![0.0; len];

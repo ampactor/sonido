@@ -3,8 +3,8 @@
 use crate::audio_bridge::SharedParams;
 use crate::widgets::{BypassToggle, Knob};
 use egui::Ui;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 /// Waveform types for tremolo.
 const WAVEFORMS: &[&str] = &["Sine", "Triangle", "Square", "S&H"];

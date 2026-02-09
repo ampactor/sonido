@@ -3,8 +3,8 @@
 //! Run with: cargo run -p sonido-config --example preset_demo
 
 use sonido_config::{
-    EffectChain, EffectConfig, Preset, get_factory_preset,
-    factory_preset_names, is_factory_preset, parse_param_value,
+    EffectChain, EffectConfig, Preset, factory_preset_names, get_factory_preset, is_factory_preset,
+    parse_param_value,
 };
 use sonido_core::Effect;
 
@@ -30,7 +30,11 @@ fn main() {
         .with_param("room_size", "80%")
         .with_param("damping", "30%");
 
-    println!("\nEffect: {} (display: {})", reverb.effect_type, reverb.display_type());
+    println!(
+        "\nEffect: {} (display: {})",
+        reverb.effect_type,
+        reverb.display_type()
+    );
     println!("Bypassed: {}", reverb.bypassed);
 
     // --- Parameter value parsing ---
@@ -77,13 +81,20 @@ fn main() {
         );
 
     println!("Preset: {}", preset.name);
-    println!("Description: {}", preset.description.as_deref().unwrap_or("none"));
+    println!(
+        "Description: {}",
+        preset.description.as_deref().unwrap_or("none")
+    );
     println!("Sample rate: {}", preset.sample_rate);
     println!("Effects ({}):", preset.len());
 
     for (i, effect) in preset.iter().enumerate() {
-        println!("  {}: {} {}", i, effect.display_type(),
-            if effect.bypassed { "(bypassed)" } else { "" });
+        println!(
+            "  {}: {} {}",
+            i,
+            effect.display_type(),
+            if effect.bypassed { "(bypassed)" } else { "" }
+        );
     }
 
     // TOML serialization
@@ -98,7 +109,9 @@ fn main() {
     println!("Available factory presets: {}", names.len());
     for name in &names {
         let preset = get_factory_preset(name).unwrap();
-        let active_effects: Vec<_> = preset.effects.iter()
+        let active_effects: Vec<_> = preset
+            .effects
+            .iter()
             .filter(|e| !e.bypassed)
             .map(|e| e.effect_type.as_str())
             .collect();
@@ -111,8 +124,14 @@ fn main() {
     }
 
     // Check if a name is a factory preset
-    println!("\nIs 'crunch' a factory preset? {}", is_factory_preset("crunch"));
-    println!("Is 'my_custom' a factory preset? {}", is_factory_preset("my_custom"));
+    println!(
+        "\nIs 'crunch' a factory preset? {}",
+        is_factory_preset("crunch")
+    );
+    println!(
+        "Is 'my_custom' a factory preset? {}",
+        is_factory_preset("my_custom")
+    );
 
     // --- Effect chain ---
     println!("\n=== Effect Chain ===\n");
@@ -136,15 +155,15 @@ fn main() {
     println!("  Processed 100 samples through chain");
     println!(
         "  Input peak: 0.500, Output peak: {:.4}",
-        output_samples.iter().map(|s| s.abs()).fold(0.0f32, f32::max)
+        output_samples
+            .iter()
+            .map(|s| s.abs())
+            .fold(0.0f32, f32::max)
     );
 
     // Build a chain from effect types
-    let mut chain2 = EffectChain::from_effect_types(
-        &["distortion", "!reverb", "compressor"],
-        48000.0,
-    )
-    .unwrap();
+    let mut chain2 =
+        EffectChain::from_effect_types(&["distortion", "!reverb", "compressor"], 48000.0).unwrap();
 
     println!("\nChain from type list:");
     println!("  Types: {:?}", chain2.effect_types());

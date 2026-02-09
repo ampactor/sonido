@@ -2,9 +2,9 @@
 
 use sonido_core::Effect;
 use sonido_effects::{
-    Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, LowPassFilter, MultiVibrato,
-    Phaser, Reverb, ReverbType, TapeSaturation, WaveShape, Tremolo, TremoloWaveform, Gate,
-    Wah, WahMode, ParametricEq,
+    Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, LowPassFilter, MultiVibrato,
+    ParametricEq, Phaser, Reverb, ReverbType, TapeSaturation, Tremolo, TremoloWaveform, Wah,
+    WahMode, WaveShape,
 };
 use std::collections::HashMap;
 
@@ -245,14 +245,12 @@ pub fn available_effects() -> Vec<EffectInfo> {
         EffectInfo {
             name: "multivibrato",
             description: "10-unit tape wow/flutter vibrato",
-            parameters: &[
-                ParameterInfo {
-                    name: "depth",
-                    description: "Overall depth (0-1)",
-                    default: "0.5",
-                    range: "0-1",
-                },
-            ],
+            parameters: &[ParameterInfo {
+                name: "depth",
+                description: "Overall depth (0-1)",
+                default: "0.5",
+                range: "0-1",
+            }],
         },
         EffectInfo {
             name: "tape",
@@ -275,14 +273,12 @@ pub fn available_effects() -> Vec<EffectInfo> {
         EffectInfo {
             name: "preamp",
             description: "Clean preamp/gain stage",
-            parameters: &[
-                ParameterInfo {
-                    name: "gain",
-                    description: "Gain in dB",
-                    default: "0.0",
-                    range: "-20-20",
-                },
-            ],
+            parameters: &[ParameterInfo {
+                name: "gain",
+                description: "Gain in dB",
+                default: "0.0",
+                range: "-20-20",
+            }],
         },
         EffectInfo {
             name: "reverb",
@@ -492,7 +488,7 @@ pub fn create_effect_with_params(
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
                             param: key.to_string(),
-                        })
+                        });
                     }
                 }
             }
@@ -511,7 +507,7 @@ pub fn create_effect_with_params(
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
                             param: key.to_string(),
-                        })
+                        });
                     }
                 }
             }
@@ -528,7 +524,7 @@ pub fn create_effect_with_params(
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
                             param: key.to_string(),
-                        })
+                        });
                     }
                 }
             }
@@ -545,7 +541,7 @@ pub fn create_effect_with_params(
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
                             param: key.to_string(),
-                        })
+                        });
                     }
                 }
             }
@@ -563,7 +559,7 @@ pub fn create_effect_with_params(
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
                             param: key.to_string(),
-                        })
+                        });
                     }
                 }
             }
@@ -582,7 +578,7 @@ pub fn create_effect_with_params(
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
                             param: key.to_string(),
-                        })
+                        });
                     }
                 }
             }
@@ -598,7 +594,7 @@ pub fn create_effect_with_params(
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
                             param: key.to_string(),
-                        })
+                        });
                     }
                 }
             }
@@ -613,7 +609,7 @@ pub fn create_effect_with_params(
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
                             param: key.to_string(),
-                        })
+                        });
                     }
                 }
             }
@@ -629,7 +625,7 @@ pub fn create_effect_with_params(
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
                             param: key.to_string(),
-                        })
+                        });
                     }
                 }
             }
@@ -644,7 +640,7 @@ pub fn create_effect_with_params(
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
                             param: key.to_string(),
-                        })
+                        });
                     }
                 }
             }
@@ -664,7 +660,7 @@ pub fn create_effect_with_params(
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
                             param: key.to_string(),
-                        })
+                        });
                     }
                 }
             }
@@ -681,7 +677,7 @@ pub fn create_effect_with_params(
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
                             param: key.to_string(),
-                        })
+                        });
                     }
                 }
             }
@@ -699,7 +695,7 @@ pub fn create_effect_with_params(
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
                             param: key.to_string(),
-                        })
+                        });
                     }
                 }
             }
@@ -717,7 +713,7 @@ pub fn create_effect_with_params(
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
                             param: key.to_string(),
-                        })
+                        });
                     }
                 }
             }
@@ -740,7 +736,7 @@ pub fn create_effect_with_params(
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
                             param: key.to_string(),
-                        })
+                        });
                     }
                 }
             }
@@ -757,7 +753,10 @@ pub fn create_effect_with_params(
 /// Examples:
 /// - "distortion:drive=15"
 /// - "preamp:gain=6|distortion:drive=12|delay:time=300,feedback=0.4"
-pub fn parse_chain(spec: &str, sample_rate: f32) -> Result<Vec<Box<dyn Effect + Send>>, EffectError> {
+pub fn parse_chain(
+    spec: &str,
+    sample_rate: f32,
+) -> Result<Vec<Box<dyn Effect + Send>>, EffectError> {
     let mut effects = Vec::new();
 
     for effect_spec in spec.split('|') {
@@ -843,10 +842,7 @@ fn parse_reverb_type(value: &str) -> Result<ReverbType, EffectError> {
         "hall" => Ok(ReverbType::Hall),
         _ => Err(EffectError::InvalidValue {
             param: "type".to_string(),
-            message: format!(
-                "'{}' is not a valid reverb type (use: room, hall)",
-                value
-            ),
+            message: format!("'{}' is not a valid reverb type (use: room, hall)", value),
         }),
     }
 }
@@ -873,10 +869,7 @@ fn parse_wah_mode(value: &str) -> Result<WahMode, EffectError> {
         "manual" | "1" => Ok(WahMode::Manual),
         _ => Err(EffectError::InvalidValue {
             param: "mode".to_string(),
-            message: format!(
-                "'{}' is not a valid wah mode (use: auto, manual)",
-                value
-            ),
+            message: format!("'{}' is not a valid wah mode (use: auto, manual)", value),
         }),
     }
 }

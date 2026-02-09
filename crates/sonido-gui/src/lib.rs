@@ -13,6 +13,6 @@ pub mod widgets;
 
 pub use app::SonidoApp;
 pub use audio_bridge::{AtomicParam, SharedParams};
-pub use preset_manager::{PresetManager, PresetEntry, PresetSource};
+pub use preset_manager::{PresetEntry, PresetManager, PresetSource};
 pub use sonido_config::Preset;
 pub use theme::Theme;

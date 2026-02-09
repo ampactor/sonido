@@ -6,7 +6,7 @@
 //! - Double-click to reset
 //! - Value display below knob
 
-use egui::{pos2, vec2, Color32, Pos2, Response, Sense, Stroke, Ui, Widget};
+use egui::{Color32, Pos2, Response, Sense, Stroke, Ui, Widget, pos2, vec2};
 use std::f32::consts::PI;
 
 /// Rotary knob parameters.
@@ -148,7 +148,15 @@ impl Widget for Knob<'_> {
 
             // Track (background arc)
             let track_color = Color32::from_rgb(50, 50, 60);
-            draw_arc(painter, center, radius - 2.0, start_angle, end_angle, track_color, 6.0);
+            draw_arc(
+                painter,
+                center,
+                radius - 2.0,
+                start_angle,
+                end_angle,
+                track_color,
+                6.0,
+            );
 
             // Value arc (filled portion)
             let fill_color = if is_active {
@@ -157,7 +165,15 @@ impl Widget for Knob<'_> {
                 Color32::from_rgb(100, 180, 255)
             };
             if normalized > 0.001 {
-                draw_arc(painter, center, radius - 2.0, start_angle, value_angle, fill_color, 6.0);
+                draw_arc(
+                    painter,
+                    center,
+                    radius - 2.0,
+                    start_angle,
+                    value_angle,
+                    fill_color,
+                    6.0,
+                );
             }
 
             // Knob body
@@ -174,10 +190,7 @@ impl Widget for Knob<'_> {
                 center.x + value_angle.cos() * pointer_len,
                 center.y + value_angle.sin() * pointer_len,
             );
-            painter.line_segment(
-                [center, pointer_end],
-                Stroke::new(3.0, fill_color),
-            );
+            painter.line_segment([center, pointer_end], Stroke::new(3.0, fill_color));
 
             // Center dot
             painter.circle_filled(center, 3.0, fill_color);
@@ -233,7 +246,10 @@ fn draw_arc(
         .map(|i| {
             let t = i as f32 / segments as f32;
             let angle = start_angle + t * sweep;
-            pos2(center.x + angle.cos() * radius, center.y + angle.sin() * radius)
+            pos2(
+                center.x + angle.cos() * radius,
+                center.y + angle.sin() * radius,
+            )
         })
         .collect();
 

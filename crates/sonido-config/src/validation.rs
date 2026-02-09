@@ -17,9 +17,9 @@
 //! validator.validate_effect("reverb").expect("reverb should exist");
 //! ```
 
+use sonido_registry::EffectRegistry;
 use std::collections::HashMap;
 use thiserror::Error;
-use sonido_registry::EffectRegistry;
 
 /// Validation error types.
 #[derive(Debug, Error, Clone, PartialEq)]
@@ -126,11 +126,16 @@ impl EffectValidator {
     }
 
     /// Validate a parameter name for an effect.
-    pub fn validate_param_name(&mut self, effect_type: &str, param_name: &str) -> ValidationResult<()> {
+    pub fn validate_param_name(
+        &mut self,
+        effect_type: &str,
+        param_name: &str,
+    ) -> ValidationResult<()> {
         // First check effect exists
         self.validate_effect(effect_type)?;
 
-        let params = self.get_params(effect_type)
+        let params = self
+            .get_params(effect_type)
             .ok_or_else(|| ValidationError::UnknownEffect(effect_type.to_string()))?;
 
         let normalized_name = normalize_param_name(param_name);
@@ -154,11 +159,13 @@ impl EffectValidator {
         // First check effect exists
         self.validate_effect(effect_type)?;
 
-        let params = self.get_params(effect_type)
+        let params = self
+            .get_params(effect_type)
             .ok_or_else(|| ValidationError::UnknownEffect(effect_type.to_string()))?;
 
         let normalized_name = normalize_param_name(param_name);
-        let param = params.iter()
+        let param = params
+            .iter()
             .find(|p| p.name == normalized_name)
             .ok_or_else(|| ValidationError::UnknownParameter {
                 effect: effect_type.to_string(),
@@ -193,7 +200,8 @@ impl EffectValidator {
     pub fn find_param_index(&mut self, effect_type: &str, param_name: &str) -> Option<usize> {
         let params = self.get_params(effect_type)?;
         let normalized_name = normalize_param_name(param_name);
-        params.iter()
+        params
+            .iter()
             .find(|p| p.name == normalized_name)
             .map(|p| p.index)
     }
@@ -201,12 +209,14 @@ impl EffectValidator {
     /// Get parameter info by name for an effect type.
     ///
     /// Returns `None` if the effect or parameter is not found.
-    pub fn get_param_info(&mut self, effect_type: &str, param_name: &str) -> Option<ParamValidationInfo> {
+    pub fn get_param_info(
+        &mut self,
+        effect_type: &str,
+        param_name: &str,
+    ) -> Option<ParamValidationInfo> {
         let params = self.get_params(effect_type)?;
         let normalized_name = normalize_param_name(param_name);
-        params.iter()
-            .find(|p| p.name == normalized_name)
-            .cloned()
+        params.iter().find(|p| p.name == normalized_name).cloned()
     }
 
     /// Parse a parameter value from string.
@@ -221,8 +231,7 @@ impl EffectValidator {
 ///
 /// Converts to lowercase and replaces spaces/underscores with underscores.
 fn normalize_param_name(name: &str) -> String {
-    name.to_lowercase()
-        .replace([' ', '-'], "_")
+    name.to_lowercase().replace([' ', '-'], "_")
 }
 
 /// Parse a parameter value from a string.
@@ -236,31 +245,40 @@ pub fn parse_param_value(param_name: &str, value_str: &str) -> ValidationResult<
 
     // Try to parse with common unit suffixes
     if let Some(v) = s.strip_suffix("dB").or_else(|| s.strip_suffix("db")) {
-        v.trim().parse::<f32>().map_err(|_| ValidationError::InvalidFormat {
-            param: param_name.to_string(),
-            reason: format!("cannot parse '{}' as number", v),
-        })
+        v.trim()
+            .parse::<f32>()
+            .map_err(|_| ValidationError::InvalidFormat {
+                param: param_name.to_string(),
+                reason: format!("cannot parse '{}' as number", v),
+            })
     } else if let Some(v) = s.strip_suffix("Hz").or_else(|| s.strip_suffix("hz")) {
-        v.trim().parse::<f32>().map_err(|_| ValidationError::InvalidFormat {
-            param: param_name.to_string(),
-            reason: format!("cannot parse '{}' as number", v),
-        })
+        v.trim()
+            .parse::<f32>()
+            .map_err(|_| ValidationError::InvalidFormat {
+                param: param_name.to_string(),
+                reason: format!("cannot parse '{}' as number", v),
+            })
     } else if let Some(v) = s.strip_suffix("ms") {
-        v.trim().parse::<f32>().map_err(|_| ValidationError::InvalidFormat {
-            param: param_name.to_string(),
-            reason: format!("cannot parse '{}' as number", v),
-        })
+        v.trim()
+            .parse::<f32>()
+            .map_err(|_| ValidationError::InvalidFormat {
+                param: param_name.to_string(),
+                reason: format!("cannot parse '{}' as number", v),
+            })
     } else if let Some(v) = s.strip_suffix('%') {
-        v.trim().parse::<f32>().map_err(|_| ValidationError::InvalidFormat {
-            param: param_name.to_string(),
-            reason: format!("cannot parse '{}' as number", v),
-        })
+        v.trim()
+            .parse::<f32>()
+            .map_err(|_| ValidationError::InvalidFormat {
+                param: param_name.to_string(),
+                reason: format!("cannot parse '{}' as number", v),
+            })
     } else {
         // Plain number
-        s.parse::<f32>().map_err(|_| ValidationError::InvalidFormat {
-            param: param_name.to_string(),
-            reason: format!("cannot parse '{}' as number", s),
-        })
+        s.parse::<f32>()
+            .map_err(|_| ValidationError::InvalidFormat {
+                param: param_name.to_string(),
+                reason: format!("cannot parse '{}' as number", s),
+            })
     }
 }
 
@@ -272,103 +290,429 @@ fn get_effect_params(effect_id: &str) -> Vec<ParamValidationInfo> {
     match effect_id {
         // Distortion: 4 params (Drive, Tone, Level, Waveshape)
         "distortion" => vec![
-            ParamValidationInfo { name: "drive".into(), index: 0, min: 0.0, max: 40.0, default: 12.0 },
-            ParamValidationInfo { name: "tone".into(), index: 1, min: 500.0, max: 10000.0, default: 4000.0 },
-            ParamValidationInfo { name: "level".into(), index: 2, min: -20.0, max: 0.0, default: -6.0 },
-            ParamValidationInfo { name: "waveshape".into(), index: 3, min: 0.0, max: 3.0, default: 0.0 },
+            ParamValidationInfo {
+                name: "drive".into(),
+                index: 0,
+                min: 0.0,
+                max: 40.0,
+                default: 12.0,
+            },
+            ParamValidationInfo {
+                name: "tone".into(),
+                index: 1,
+                min: 500.0,
+                max: 10000.0,
+                default: 4000.0,
+            },
+            ParamValidationInfo {
+                name: "level".into(),
+                index: 2,
+                min: -20.0,
+                max: 0.0,
+                default: -6.0,
+            },
+            ParamValidationInfo {
+                name: "waveshape".into(),
+                index: 3,
+                min: 0.0,
+                max: 3.0,
+                default: 0.0,
+            },
         ],
         // Compressor: 5 params (Threshold, Ratio, Attack, Release, Makeup)
         "compressor" => vec![
-            ParamValidationInfo { name: "threshold".into(), index: 0, min: -60.0, max: 0.0, default: -18.0 },
-            ParamValidationInfo { name: "ratio".into(), index: 1, min: 1.0, max: 20.0, default: 4.0 },
-            ParamValidationInfo { name: "attack".into(), index: 2, min: 0.1, max: 100.0, default: 10.0 },
-            ParamValidationInfo { name: "release".into(), index: 3, min: 10.0, max: 1000.0, default: 100.0 },
-            ParamValidationInfo { name: "makeup".into(), index: 4, min: 0.0, max: 24.0, default: 0.0 },
+            ParamValidationInfo {
+                name: "threshold".into(),
+                index: 0,
+                min: -60.0,
+                max: 0.0,
+                default: -18.0,
+            },
+            ParamValidationInfo {
+                name: "ratio".into(),
+                index: 1,
+                min: 1.0,
+                max: 20.0,
+                default: 4.0,
+            },
+            ParamValidationInfo {
+                name: "attack".into(),
+                index: 2,
+                min: 0.1,
+                max: 100.0,
+                default: 10.0,
+            },
+            ParamValidationInfo {
+                name: "release".into(),
+                index: 3,
+                min: 10.0,
+                max: 1000.0,
+                default: 100.0,
+            },
+            ParamValidationInfo {
+                name: "makeup".into(),
+                index: 4,
+                min: 0.0,
+                max: 24.0,
+                default: 0.0,
+            },
         ],
         // Chorus: 3 params (Rate, Depth, Mix)
         "chorus" => vec![
-            ParamValidationInfo { name: "rate".into(), index: 0, min: 0.1, max: 10.0, default: 1.0 },
-            ParamValidationInfo { name: "depth".into(), index: 1, min: 0.0, max: 100.0, default: 50.0 },
-            ParamValidationInfo { name: "mix".into(), index: 2, min: 0.0, max: 100.0, default: 50.0 },
+            ParamValidationInfo {
+                name: "rate".into(),
+                index: 0,
+                min: 0.1,
+                max: 10.0,
+                default: 1.0,
+            },
+            ParamValidationInfo {
+                name: "depth".into(),
+                index: 1,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+            },
+            ParamValidationInfo {
+                name: "mix".into(),
+                index: 2,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+            },
         ],
         // Flanger: 4 params (Rate, Depth, Feedback, Mix)
         "flanger" => vec![
-            ParamValidationInfo { name: "rate".into(), index: 0, min: 0.05, max: 5.0, default: 0.5 },
-            ParamValidationInfo { name: "depth".into(), index: 1, min: 0.0, max: 100.0, default: 50.0 },
-            ParamValidationInfo { name: "feedback".into(), index: 2, min: 0.0, max: 95.0, default: 50.0 },
-            ParamValidationInfo { name: "mix".into(), index: 3, min: 0.0, max: 100.0, default: 50.0 },
+            ParamValidationInfo {
+                name: "rate".into(),
+                index: 0,
+                min: 0.05,
+                max: 5.0,
+                default: 0.5,
+            },
+            ParamValidationInfo {
+                name: "depth".into(),
+                index: 1,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+            },
+            ParamValidationInfo {
+                name: "feedback".into(),
+                index: 2,
+                min: 0.0,
+                max: 95.0,
+                default: 50.0,
+            },
+            ParamValidationInfo {
+                name: "mix".into(),
+                index: 3,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+            },
         ],
         // Phaser: 5 params (Rate, Depth, Stages, Feedback, Mix)
         "phaser" => vec![
-            ParamValidationInfo { name: "rate".into(), index: 0, min: 0.05, max: 5.0, default: 0.3 },
-            ParamValidationInfo { name: "depth".into(), index: 1, min: 0.0, max: 100.0, default: 50.0 },
-            ParamValidationInfo { name: "stages".into(), index: 2, min: 2.0, max: 12.0, default: 6.0 },
-            ParamValidationInfo { name: "feedback".into(), index: 3, min: 0.0, max: 95.0, default: 50.0 },
-            ParamValidationInfo { name: "mix".into(), index: 4, min: 0.0, max: 100.0, default: 50.0 },
+            ParamValidationInfo {
+                name: "rate".into(),
+                index: 0,
+                min: 0.05,
+                max: 5.0,
+                default: 0.3,
+            },
+            ParamValidationInfo {
+                name: "depth".into(),
+                index: 1,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+            },
+            ParamValidationInfo {
+                name: "stages".into(),
+                index: 2,
+                min: 2.0,
+                max: 12.0,
+                default: 6.0,
+            },
+            ParamValidationInfo {
+                name: "feedback".into(),
+                index: 3,
+                min: 0.0,
+                max: 95.0,
+                default: 50.0,
+            },
+            ParamValidationInfo {
+                name: "mix".into(),
+                index: 4,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+            },
         ],
         // Delay: 3 params (Time, Feedback, Mix)
         "delay" => vec![
-            ParamValidationInfo { name: "time".into(), index: 0, min: 1.0, max: 2000.0, default: 300.0 },
-            ParamValidationInfo { name: "feedback".into(), index: 1, min: 0.0, max: 95.0, default: 40.0 },
-            ParamValidationInfo { name: "mix".into(), index: 2, min: 0.0, max: 100.0, default: 50.0 },
+            ParamValidationInfo {
+                name: "time".into(),
+                index: 0,
+                min: 1.0,
+                max: 2000.0,
+                default: 300.0,
+            },
+            ParamValidationInfo {
+                name: "feedback".into(),
+                index: 1,
+                min: 0.0,
+                max: 95.0,
+                default: 40.0,
+            },
+            ParamValidationInfo {
+                name: "mix".into(),
+                index: 2,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+            },
         ],
         // LowPass Filter: 2 params (Cutoff, Resonance)
         "filter" => vec![
-            ParamValidationInfo { name: "cutoff".into(), index: 0, min: 20.0, max: 20000.0, default: 1000.0 },
-            ParamValidationInfo { name: "resonance".into(), index: 1, min: 0.1, max: 20.0, default: 0.707 },
+            ParamValidationInfo {
+                name: "cutoff".into(),
+                index: 0,
+                min: 20.0,
+                max: 20000.0,
+                default: 1000.0,
+            },
+            ParamValidationInfo {
+                name: "resonance".into(),
+                index: 1,
+                min: 0.1,
+                max: 20.0,
+                default: 0.707,
+            },
         ],
         // MultiVibrato: 1 param (Depth)
-        "multivibrato" => vec![
-            ParamValidationInfo { name: "depth".into(), index: 0, min: 0.0, max: 200.0, default: 100.0 },
-        ],
+        "multivibrato" => vec![ParamValidationInfo {
+            name: "depth".into(),
+            index: 0,
+            min: 0.0,
+            max: 200.0,
+            default: 100.0,
+        }],
         // Tape Saturation: 2 params (Drive, Saturation)
         "tape" => vec![
-            ParamValidationInfo { name: "drive".into(), index: 0, min: 0.0, max: 24.0, default: 6.0 },
-            ParamValidationInfo { name: "saturation".into(), index: 1, min: 0.0, max: 100.0, default: 50.0 },
+            ParamValidationInfo {
+                name: "drive".into(),
+                index: 0,
+                min: 0.0,
+                max: 24.0,
+                default: 6.0,
+            },
+            ParamValidationInfo {
+                name: "saturation".into(),
+                index: 1,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+            },
         ],
         // Clean Preamp: 1 param (Gain)
-        "preamp" => vec![
-            ParamValidationInfo { name: "gain".into(), index: 0, min: -20.0, max: 20.0, default: 0.0 },
-        ],
+        "preamp" => vec![ParamValidationInfo {
+            name: "gain".into(),
+            index: 0,
+            min: -20.0,
+            max: 20.0,
+            default: 0.0,
+        }],
         // Reverb: 5 params (Room Size, Decay, Damping, Pre-Delay, Mix)
         "reverb" => vec![
-            ParamValidationInfo { name: "room_size".into(), index: 0, min: 0.0, max: 100.0, default: 50.0 },
-            ParamValidationInfo { name: "decay".into(), index: 1, min: 0.0, max: 100.0, default: 50.0 },
-            ParamValidationInfo { name: "damping".into(), index: 2, min: 0.0, max: 100.0, default: 50.0 },
-            ParamValidationInfo { name: "predelay".into(), index: 3, min: 0.0, max: 100.0, default: 10.0 },
-            ParamValidationInfo { name: "mix".into(), index: 4, min: 0.0, max: 100.0, default: 50.0 },
+            ParamValidationInfo {
+                name: "room_size".into(),
+                index: 0,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+            },
+            ParamValidationInfo {
+                name: "decay".into(),
+                index: 1,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+            },
+            ParamValidationInfo {
+                name: "damping".into(),
+                index: 2,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+            },
+            ParamValidationInfo {
+                name: "predelay".into(),
+                index: 3,
+                min: 0.0,
+                max: 100.0,
+                default: 10.0,
+            },
+            ParamValidationInfo {
+                name: "mix".into(),
+                index: 4,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+            },
         ],
         // Tremolo: 3 params (Rate, Depth, Waveform)
         "tremolo" => vec![
-            ParamValidationInfo { name: "rate".into(), index: 0, min: 0.5, max: 20.0, default: 5.0 },
-            ParamValidationInfo { name: "depth".into(), index: 1, min: 0.0, max: 100.0, default: 50.0 },
-            ParamValidationInfo { name: "waveform".into(), index: 2, min: 0.0, max: 3.0, default: 0.0 },
+            ParamValidationInfo {
+                name: "rate".into(),
+                index: 0,
+                min: 0.5,
+                max: 20.0,
+                default: 5.0,
+            },
+            ParamValidationInfo {
+                name: "depth".into(),
+                index: 1,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+            },
+            ParamValidationInfo {
+                name: "waveform".into(),
+                index: 2,
+                min: 0.0,
+                max: 3.0,
+                default: 0.0,
+            },
         ],
         // Gate: 4 params (Threshold, Attack, Release, Hold)
         "gate" => vec![
-            ParamValidationInfo { name: "threshold".into(), index: 0, min: -80.0, max: 0.0, default: -40.0 },
-            ParamValidationInfo { name: "attack".into(), index: 1, min: 0.1, max: 50.0, default: 1.0 },
-            ParamValidationInfo { name: "release".into(), index: 2, min: 10.0, max: 1000.0, default: 100.0 },
-            ParamValidationInfo { name: "hold".into(), index: 3, min: 0.0, max: 500.0, default: 50.0 },
+            ParamValidationInfo {
+                name: "threshold".into(),
+                index: 0,
+                min: -80.0,
+                max: 0.0,
+                default: -40.0,
+            },
+            ParamValidationInfo {
+                name: "attack".into(),
+                index: 1,
+                min: 0.1,
+                max: 50.0,
+                default: 1.0,
+            },
+            ParamValidationInfo {
+                name: "release".into(),
+                index: 2,
+                min: 10.0,
+                max: 1000.0,
+                default: 100.0,
+            },
+            ParamValidationInfo {
+                name: "hold".into(),
+                index: 3,
+                min: 0.0,
+                max: 500.0,
+                default: 50.0,
+            },
         ],
         // Wah: 4 params (Frequency, Resonance, Sensitivity, Mode)
         "wah" => vec![
-            ParamValidationInfo { name: "frequency".into(), index: 0, min: 200.0, max: 2000.0, default: 800.0 },
-            ParamValidationInfo { name: "resonance".into(), index: 1, min: 1.0, max: 10.0, default: 5.0 },
-            ParamValidationInfo { name: "sensitivity".into(), index: 2, min: 0.0, max: 100.0, default: 50.0 },
-            ParamValidationInfo { name: "mode".into(), index: 3, min: 0.0, max: 1.0, default: 0.0 },
+            ParamValidationInfo {
+                name: "frequency".into(),
+                index: 0,
+                min: 200.0,
+                max: 2000.0,
+                default: 800.0,
+            },
+            ParamValidationInfo {
+                name: "resonance".into(),
+                index: 1,
+                min: 1.0,
+                max: 10.0,
+                default: 5.0,
+            },
+            ParamValidationInfo {
+                name: "sensitivity".into(),
+                index: 2,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+            },
+            ParamValidationInfo {
+                name: "mode".into(),
+                index: 3,
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+            },
         ],
         // Parametric EQ: 9 params (3 bands x 3 params each: Freq, Gain, Q)
         "eq" => vec![
-            ParamValidationInfo { name: "low_freq".into(), index: 0, min: 20.0, max: 500.0, default: 100.0 },
-            ParamValidationInfo { name: "low_gain".into(), index: 1, min: -12.0, max: 12.0, default: 0.0 },
-            ParamValidationInfo { name: "low_q".into(), index: 2, min: 0.5, max: 5.0, default: 1.0 },
-            ParamValidationInfo { name: "mid_freq".into(), index: 3, min: 200.0, max: 5000.0, default: 1000.0 },
-            ParamValidationInfo { name: "mid_gain".into(), index: 4, min: -12.0, max: 12.0, default: 0.0 },
-            ParamValidationInfo { name: "mid_q".into(), index: 5, min: 0.5, max: 5.0, default: 1.0 },
-            ParamValidationInfo { name: "high_freq".into(), index: 6, min: 1000.0, max: 15000.0, default: 5000.0 },
-            ParamValidationInfo { name: "high_gain".into(), index: 7, min: -12.0, max: 12.0, default: 0.0 },
-            ParamValidationInfo { name: "high_q".into(), index: 8, min: 0.5, max: 5.0, default: 1.0 },
+            ParamValidationInfo {
+                name: "low_freq".into(),
+                index: 0,
+                min: 20.0,
+                max: 500.0,
+                default: 100.0,
+            },
+            ParamValidationInfo {
+                name: "low_gain".into(),
+                index: 1,
+                min: -12.0,
+                max: 12.0,
+                default: 0.0,
+            },
+            ParamValidationInfo {
+                name: "low_q".into(),
+                index: 2,
+                min: 0.5,
+                max: 5.0,
+                default: 1.0,
+            },
+            ParamValidationInfo {
+                name: "mid_freq".into(),
+                index: 3,
+                min: 200.0,
+                max: 5000.0,
+                default: 1000.0,
+            },
+            ParamValidationInfo {
+                name: "mid_gain".into(),
+                index: 4,
+                min: -12.0,
+                max: 12.0,
+                default: 0.0,
+            },
+            ParamValidationInfo {
+                name: "mid_q".into(),
+                index: 5,
+                min: 0.5,
+                max: 5.0,
+                default: 1.0,
+            },
+            ParamValidationInfo {
+                name: "high_freq".into(),
+                index: 6,
+                min: 1000.0,
+                max: 15000.0,
+                default: 5000.0,
+            },
+            ParamValidationInfo {
+                name: "high_gain".into(),
+                index: 7,
+                min: -12.0,
+                max: 12.0,
+                default: 0.0,
+            },
+            ParamValidationInfo {
+                name: "high_q".into(),
+                index: 8,
+                min: 0.5,
+                max: 5.0,
+                default: 1.0,
+            },
         ],
         _ => vec![],
     }
@@ -395,7 +739,11 @@ pub fn validate_effect(effect_type: &str) -> ValidationResult<()> {
 /// Validate a parameter value for an effect.
 ///
 /// This is a convenience function that creates a validator internally.
-pub fn validate_effect_param(effect_type: &str, param_name: &str, value: f32) -> ValidationResult<()> {
+pub fn validate_effect_param(
+    effect_type: &str,
+    param_name: &str,
+    value: f32,
+) -> ValidationResult<()> {
     let mut validator = EffectValidator::new();
     validator.validate_param_value(effect_type, param_name, value)
 }
@@ -436,7 +784,9 @@ pub fn validate_preset(preset: &crate::Preset) -> ValidationResult<()> {
             };
 
             // Validate the value
-            if let Err(e) = validator.validate_param_value(&effect_config.effect_type, param_name, value) {
+            if let Err(e) =
+                validator.validate_param_value(&effect_config.effect_type, param_name, value)
+            {
                 errors.push(e);
             }
         }
@@ -500,11 +850,28 @@ mod tests {
         let validator = EffectValidator::new();
 
         // All known effects should validate
-        for effect_id in ["distortion", "compressor", "chorus", "flanger", "phaser",
-                          "delay", "filter", "multivibrato", "tape", "preamp",
-                          "reverb", "tremolo", "gate", "wah", "eq"] {
-            assert!(validator.validate_effect(effect_id).is_ok(),
-                    "effect '{}' should be valid", effect_id);
+        for effect_id in [
+            "distortion",
+            "compressor",
+            "chorus",
+            "flanger",
+            "phaser",
+            "delay",
+            "filter",
+            "multivibrato",
+            "tape",
+            "preamp",
+            "reverb",
+            "tremolo",
+            "gate",
+            "wah",
+            "eq",
+        ] {
+            assert!(
+                validator.validate_effect(effect_id).is_ok(),
+                "effect '{}' should be valid",
+                effect_id
+            );
         }
     }
 
@@ -529,7 +896,10 @@ mod tests {
 
         // Invalid parameter name
         let result = validator.validate_param_name("distortion", "unknown_param");
-        assert!(matches!(result, Err(ValidationError::UnknownParameter { .. })));
+        assert!(matches!(
+            result,
+            Err(ValidationError::UnknownParameter { .. })
+        ));
     }
 
     #[test]
@@ -537,9 +907,21 @@ mod tests {
         let mut validator = EffectValidator::new();
 
         // Valid values
-        assert!(validator.validate_param_value("distortion", "drive", 0.0).is_ok());
-        assert!(validator.validate_param_value("distortion", "drive", 20.0).is_ok());
-        assert!(validator.validate_param_value("distortion", "drive", 40.0).is_ok());
+        assert!(
+            validator
+                .validate_param_value("distortion", "drive", 0.0)
+                .is_ok()
+        );
+        assert!(
+            validator
+                .validate_param_value("distortion", "drive", 20.0)
+                .is_ok()
+        );
+        assert!(
+            validator
+                .validate_param_value("distortion", "drive", 40.0)
+                .is_ok()
+        );
 
         // Out of range
         let result = validator.validate_param_value("distortion", "drive", -1.0);
@@ -653,7 +1035,10 @@ mod tests {
             min: 0.0,
             max: 40.0,
         };
-        assert_eq!(err.to_string(), "parameter 'drive' value 50 out of range [0, 40]");
+        assert_eq!(
+            err.to_string(),
+            "parameter 'drive' value 50 out of range [0, 40]"
+        );
     }
 
     #[test]
@@ -714,7 +1099,11 @@ mod tests {
         assert_eq!(info.max, 40.0);
 
         assert!(validator.get_param_info("distortion", "unknown").is_none());
-        assert!(validator.get_param_info("unknown_effect", "drive").is_none());
+        assert!(
+            validator
+                .get_param_info("unknown_effect", "drive")
+                .is_none()
+        );
     }
 
     #[test]
@@ -722,12 +1111,24 @@ mod tests {
         let mut validator = EffectValidator::new();
 
         // Collect effect_ids first to avoid borrow issues
-        let effect_ids: Vec<String> = validator.effect_ids().iter().map(|s| s.to_string()).collect();
+        let effect_ids: Vec<String> = validator
+            .effect_ids()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
 
         for effect_id in &effect_ids {
             let params = validator.effect_params(effect_id);
-            assert!(params.is_some(), "effect '{}' should have params", effect_id);
-            assert!(!params.unwrap().is_empty(), "effect '{}' should have at least one param", effect_id);
+            assert!(
+                params.is_some(),
+                "effect '{}' should have params",
+                effect_id
+            );
+            assert!(
+                !params.unwrap().is_empty(),
+                "effect '{}' should have at least one param",
+                effect_id
+            );
         }
     }
 
@@ -736,20 +1137,35 @@ mod tests {
         let mut validator = EffectValidator::new();
 
         // Collect effect_ids first to avoid borrow issues
-        let effect_ids: Vec<String> = validator.effect_ids().iter().map(|s| s.to_string()).collect();
+        let effect_ids: Vec<String> = validator
+            .effect_ids()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
 
         for effect_id in &effect_ids {
             if let Some(params) = validator.effect_params(effect_id) {
                 for param in params {
                     // Min should be less than or equal to max
-                    assert!(param.min <= param.max,
-                            "effect '{}' param '{}': min {} > max {}",
-                            effect_id, param.name, param.min, param.max);
+                    assert!(
+                        param.min <= param.max,
+                        "effect '{}' param '{}': min {} > max {}",
+                        effect_id,
+                        param.name,
+                        param.min,
+                        param.max
+                    );
 
                     // Default should be in range
-                    assert!(param.default >= param.min && param.default <= param.max,
-                            "effect '{}' param '{}': default {} not in range [{}, {}]",
-                            effect_id, param.name, param.default, param.min, param.max);
+                    assert!(
+                        param.default >= param.min && param.default <= param.max,
+                        "effect '{}' param '{}': default {} not in range [{}, {}]",
+                        effect_id,
+                        param.name,
+                        param.default,
+                        param.min,
+                        param.max
+                    );
                 }
             }
         }

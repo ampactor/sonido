@@ -2,9 +2,9 @@
 
 use crate::audio_bridge::{EffectOrder, SharedParams};
 use crate::effects_ui::EffectType;
-use egui::{pos2, vec2, Color32, Response, Sense, Stroke, StrokeKind, Ui};
-use std::sync::atomic::Ordering;
+use egui::{Color32, Response, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 /// Chain view state for drag-and-drop.
 pub struct ChainView {
@@ -147,7 +147,12 @@ impl ChainView {
             } else {
                 Color32::from_rgb(60, 60, 70)
             };
-            painter.rect_stroke(rect, 6.0, Stroke::new(if is_selected { 2.0 } else { 1.0 }, border_color), StrokeKind::Inside);
+            painter.rect_stroke(
+                rect,
+                6.0,
+                Stroke::new(if is_selected { 2.0 } else { 1.0 }, border_color),
+                StrokeKind::Inside,
+            );
 
             // LED indicator
             let led_pos = pos2(rect.center().x, rect.top() + 12.0);
@@ -302,7 +307,10 @@ impl ChainView {
             }
             EffectType::MultiVibrato => {
                 let current = params.bypass.multivibrato.load(Ordering::Relaxed);
-                params.bypass.multivibrato.store(!current, Ordering::Relaxed);
+                params
+                    .bypass
+                    .multivibrato
+                    .store(!current, Ordering::Relaxed);
             }
             EffectType::Tape => {
                 let current = params.bypass.tape.load(Ordering::Relaxed);

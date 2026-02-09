@@ -2,7 +2,9 @@
 //!
 //! Classic amplitude modulation effect that creates rhythmic volume variations.
 
-use sonido_core::{Effect, SmoothedParam, Lfo, LfoWaveform, ParameterInfo, ParamDescriptor, ParamUnit};
+use sonido_core::{
+    Effect, Lfo, LfoWaveform, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam,
+};
 
 /// Tremolo waveform type.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -260,7 +262,10 @@ mod tests {
         }
 
         let output = tremolo.process(0.5);
-        assert!((output - 0.5).abs() < 0.01, "Zero depth should pass signal unchanged");
+        assert!(
+            (output - 0.5).abs() < 0.01,
+            "Zero depth should pass signal unchanged"
+        );
     }
 
     #[test]
@@ -284,8 +289,16 @@ mod tests {
             max_gain = max_gain.max(output);
         }
 
-        assert!(min_gain < 0.1, "Full depth should reach near zero, got {}", min_gain);
-        assert!(max_gain > 0.9, "Full depth should reach near 1.0, got {}", max_gain);
+        assert!(
+            min_gain < 0.1,
+            "Full depth should reach near zero, got {}",
+            min_gain
+        );
+        assert!(
+            max_gain > 0.9,
+            "Full depth should reach near 1.0, got {}",
+            max_gain
+        );
     }
 
     #[test]
@@ -302,8 +315,16 @@ mod tests {
 
             for _ in 0..1000 {
                 let output = tremolo.process(1.0);
-                assert!(output.is_finite(), "Waveform {:?} produced non-finite output", waveform);
-                assert!((0.0..=1.0).contains(&output), "Waveform {:?} out of range", waveform);
+                assert!(
+                    output.is_finite(),
+                    "Waveform {:?} produced non-finite output",
+                    waveform
+                );
+                assert!(
+                    (0.0..=1.0).contains(&output),
+                    "Waveform {:?} out of range",
+                    waveform
+                );
             }
         }
     }

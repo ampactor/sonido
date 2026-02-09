@@ -18,8 +18,8 @@
 use sonido_analysis::compare::{mse, snr_db, spectral_correlation};
 use sonido_core::Effect;
 use sonido_effects::{
-    Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, LowPassFilter,
-    MultiVibrato, ParametricEq, Phaser, Reverb, TapeSaturation, Tremolo, Wah,
+    Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, LowPassFilter, MultiVibrato,
+    ParametricEq, Phaser, Reverb, TapeSaturation, Tremolo, Wah,
 };
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, BufWriter, Write};

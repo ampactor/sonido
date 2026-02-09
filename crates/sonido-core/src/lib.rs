@@ -85,35 +85,41 @@
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 
+pub mod allpass;
+pub mod biquad;
+pub mod comb;
+pub mod dc_blocker;
+pub mod delay;
 pub mod effect;
+pub mod envelope;
+pub mod lfo;
+pub mod math;
+pub mod modulation;
+pub mod oversample;
 pub mod param;
 pub mod param_info;
-pub mod math;
-pub mod biquad;
 pub mod svf;
-pub mod lfo;
-pub mod delay;
-pub mod envelope;
-pub mod oversample;
-pub mod comb;
-pub mod allpass;
 pub mod tempo;
-pub mod modulation;
-pub mod dc_blocker;
 
 // Re-export main types at crate root
-pub use effect::{Effect, EffectExt, Chain};
-pub use param::{SmoothedParam, LinearSmoothedParam};
-pub use math::{db_to_linear, linear_to_db, fast_tanh, soft_clip, hard_clip, foldback, asymmetric_clip, flush_denormal};
-pub use biquad::{Biquad, lowpass_coefficients, highpass_coefficients, bandpass_coefficients, notch_coefficients, peaking_eq_coefficients};
-pub use svf::{StateVariableFilter, SvfOutput};
-pub use lfo::{Lfo, LfoWaveform};
-pub use delay::{InterpolatedDelay, FixedDelayLine, Interpolation};
-pub use envelope::EnvelopeFollower;
-pub use oversample::{Oversampled, MAX_OVERSAMPLE_FACTOR};
-pub use comb::CombFilter;
 pub use allpass::AllpassFilter;
-pub use param_info::{ParameterInfo, ParamDescriptor, ParamUnit};
-pub use tempo::{TempoManager, NoteDivision, TransportState};
-pub use modulation::{ModulationSource, ModulationAmount};
+pub use biquad::{
+    Biquad, bandpass_coefficients, highpass_coefficients, lowpass_coefficients, notch_coefficients,
+    peaking_eq_coefficients,
+};
+pub use comb::CombFilter;
 pub use dc_blocker::DcBlocker;
+pub use delay::{FixedDelayLine, InterpolatedDelay, Interpolation};
+pub use effect::{Chain, Effect, EffectExt};
+pub use envelope::EnvelopeFollower;
+pub use lfo::{Lfo, LfoWaveform};
+pub use math::{
+    asymmetric_clip, db_to_linear, fast_tanh, flush_denormal, foldback, hard_clip, linear_to_db,
+    soft_clip,
+};
+pub use modulation::{ModulationAmount, ModulationSource};
+pub use oversample::{MAX_OVERSAMPLE_FACTOR, Oversampled};
+pub use param::{LinearSmoothedParam, SmoothedParam};
+pub use param_info::{ParamDescriptor, ParamUnit, ParameterInfo};
+pub use svf::{StateVariableFilter, SvfOutput};
+pub use tempo::{NoteDivision, TempoManager, TransportState};

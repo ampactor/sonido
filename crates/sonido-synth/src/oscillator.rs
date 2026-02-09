@@ -199,20 +199,15 @@ impl Oscillator {
                 naive - poly_blep(phase, self.phase_inc)
             }
 
-            OscillatorWaveform::Square => {
-                self.generate_pulse(phase, 0.5)
-            }
+            OscillatorWaveform::Square => self.generate_pulse(phase, 0.5),
 
-            OscillatorWaveform::Pulse(duty) => {
-                self.generate_pulse(phase, duty.clamp(0.01, 0.99))
-            }
+            OscillatorWaveform::Pulse(duty) => self.generate_pulse(phase, duty.clamp(0.01, 0.99)),
 
             OscillatorWaveform::Triangle => {
                 // Integrate a square wave for triangle
                 // This gives better anti-aliasing than naive triangle
                 let square = if phase < 0.5 { 1.0 } else { -1.0 };
-                let blep_square = square
-                    + poly_blep(phase, self.phase_inc)
+                let blep_square = square + poly_blep(phase, self.phase_inc)
                     - poly_blep(rem_euclid_f32(phase + 0.5, 1.0), self.phase_inc);
 
                 // Leaky integrator for DC stability
@@ -220,9 +215,7 @@ impl Oscillator {
                 self.prev_output
             }
 
-            OscillatorWaveform::Noise => {
-                self.generate_noise()
-            }
+            OscillatorWaveform::Noise => self.generate_noise(),
         }
     }
 

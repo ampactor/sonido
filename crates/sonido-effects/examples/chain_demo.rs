@@ -7,8 +7,7 @@
 
 use sonido_core::{Effect, EffectExt};
 use sonido_effects::{
-    Distortion, WaveShape, Compressor, Chorus, Delay,
-    LowPassFilter, TapeSaturation, CleanPreamp,
+    Chorus, CleanPreamp, Compressor, Delay, Distortion, LowPassFilter, TapeSaturation, WaveShape,
 };
 
 const SAMPLE_RATE: f32 = 48000.0;
@@ -81,7 +80,10 @@ fn main() {
     let rms: f32 = (output.iter().map(|x| x * x).sum::<f32>() / output.len() as f32).sqrt();
     println!("Chain: Preamp -> Distortion -> Tape -> Chorus -> Delay");
     println!("Output RMS: {:.4}", rms);
-    println!("Peak: {:.4}", output.iter().map(|x| x.abs()).fold(0.0_f32, f32::max));
+    println!(
+        "Peak: {:.4}",
+        output.iter().map(|x| x.abs()).fold(0.0_f32, f32::max)
+    );
     println!("Latency: {} samples\n", static_chain.latency_samples());
 
     // Example 2: Dynamic dispatch chain (runtime flexibility)
@@ -123,7 +125,10 @@ fn main() {
     let rms2: f32 = (output2.iter().map(|x| x * x).sum::<f32>() / output2.len() as f32).sqrt();
     println!("Chain: LowPass -> Compressor -> Delay");
     println!("Output RMS: {:.4}", rms2);
-    println!("Peak: {:.4}\n", output2.iter().map(|x| x.abs()).fold(0.0_f32, f32::max));
+    println!(
+        "Peak: {:.4}\n",
+        output2.iter().map(|x| x.abs()).fold(0.0_f32, f32::max)
+    );
 
     // Example 3: Individual effect demonstration
     println!("3. Individual Effects");

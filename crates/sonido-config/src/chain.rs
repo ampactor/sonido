@@ -115,7 +115,9 @@ impl EffectChain {
         validate_effect(effect_type).map_err(ConfigError::Validation)?;
 
         // Create the effect
-        let mut effect = self.registry.create(effect_type, self.sample_rate)
+        let mut effect = self
+            .registry
+            .create(effect_type, self.sample_rate)
             .ok_or_else(|| ConfigError::UnknownEffect(effect_type.to_string()))?;
 
         // Apply parameters
@@ -138,9 +140,12 @@ impl EffectChain {
     ) -> Result<(), ConfigError> {
         for (param_name, param_value) in &config.params {
             if let Some(value) = crate::effect_config::parse_param_value(param_value)
-                && let Some(idx) = self.registry.param_index_by_name(config.canonical_type(), param_name) {
-                    effect.effect_set_param(idx, value);
-                }
+                && let Some(idx) = self
+                    .registry
+                    .param_index_by_name(config.canonical_type(), param_name)
+            {
+                effect.effect_set_param(idx, value);
+            }
         }
 
         Ok(())
@@ -245,7 +250,10 @@ impl EffectChain {
     }
 
     /// Get a mutable effect reference by index.
-    pub fn get_effect_mut(&mut self, index: usize) -> Option<&mut Box<dyn EffectWithParams + Send>> {
+    pub fn get_effect_mut(
+        &mut self,
+        index: usize,
+    ) -> Option<&mut Box<dyn EffectWithParams + Send>> {
         self.entries.get_mut(index).map(|e| &mut e.effect)
     }
 }
@@ -336,10 +344,9 @@ mod tests {
 
     #[test]
     fn test_from_effect_types() {
-        let chain = EffectChain::from_effect_types(
-            &["distortion", "!reverb", "compressor"],
-            48000.0,
-        ).unwrap();
+        let chain =
+            EffectChain::from_effect_types(&["distortion", "!reverb", "compressor"], 48000.0)
+                .unwrap();
 
         assert_eq!(chain.len(), 3);
         assert!(!chain.is_bypassed(0).unwrap());
@@ -349,10 +356,7 @@ mod tests {
 
     #[test]
     fn test_effect_types() {
-        let chain = EffectChain::from_effect_types(
-            &["distortion", "!reverb"],
-            48000.0,
-        ).unwrap();
+        let chain = EffectChain::from_effect_types(&["distortion", "!reverb"], 48000.0).unwrap();
 
         let types = chain.effect_types();
         assert_eq!(types, vec!["distortion", "!reverb"]);

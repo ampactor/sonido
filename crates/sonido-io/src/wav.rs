@@ -248,7 +248,11 @@ pub fn read_wav_stereo<P: AsRef<Path>>(path: P) -> Result<(StereoSamples, WavSpe
 /// let spec = WavSpec { sample_rate: 48000, channels: 2, ..Default::default() };
 /// write_wav_stereo("output.wav", &samples, spec)?;
 /// ```
-pub fn write_wav_stereo<P: AsRef<Path>>(path: P, samples: &StereoSamples, spec: WavSpec) -> Result<()> {
+pub fn write_wav_stereo<P: AsRef<Path>>(
+    path: P,
+    samples: &StereoSamples,
+    spec: WavSpec,
+) -> Result<()> {
     let mut stereo_spec = spec;
     stereo_spec.channels = 2;
 

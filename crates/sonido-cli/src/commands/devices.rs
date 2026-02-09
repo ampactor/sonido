@@ -23,7 +23,9 @@ enum DevicesCommand {
 }
 
 pub fn run(args: DevicesArgs) -> anyhow::Result<()> {
-    match args.command.unwrap_or(DevicesCommand::List { include_virtual: false }) {
+    match args.command.unwrap_or(DevicesCommand::List {
+        include_virtual: false,
+    }) {
         DevicesCommand::List { include_virtual } => {
             let devices = list_devices()?;
 
@@ -41,7 +43,11 @@ pub fn run(args: DevicesArgs) -> anyhow::Result<()> {
             if !inputs.is_empty() {
                 println!("Input Devices:");
                 for (idx, device) in inputs.iter().enumerate() {
-                    let also_output = if device.is_output { " (also output)" } else { "" };
+                    let also_output = if device.is_output {
+                        " (also output)"
+                    } else {
+                        ""
+                    };
                     println!(
                         "  [{}] {} ({} Hz){}",
                         idx, device.name, device.default_sample_rate, also_output
@@ -64,7 +70,11 @@ pub fn run(args: DevicesArgs) -> anyhow::Result<()> {
                 println!();
             }
 
-            println!("Total: {} input(s), {} output(s)", inputs.len(), outputs.len());
+            println!(
+                "Total: {} input(s), {} output(s)",
+                inputs.len(),
+                outputs.len()
+            );
             println!();
             println!("Tip: Use device index or partial name with --input/--output:");
             println!("  sonido realtime --input 0 --output 0 --effect reverb");
@@ -162,7 +172,10 @@ fn print_loopback_guidance(devices: &[sonido_io::AudioDevice]) {
             } else {
                 "output"
             };
-            println!("  - {} ({}, {} Hz)", device.name, kind, device.default_sample_rate);
+            println!(
+                "  - {} ({}, {} Hz)",
+                device.name, kind, device.default_sample_rate
+            );
         }
     }
 }

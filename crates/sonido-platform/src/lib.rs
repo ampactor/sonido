@@ -58,7 +58,7 @@
 pub mod control_mapper;
 
 // Re-export sonido-core types for convenience
-pub use sonido_core::{ParameterInfo, ParamDescriptor, ParamUnit};
+pub use sonido_core::{ParamDescriptor, ParamUnit, ParameterInfo};
 
 // Re-export main types at crate root
 pub use control_mapper::ControlMapper;

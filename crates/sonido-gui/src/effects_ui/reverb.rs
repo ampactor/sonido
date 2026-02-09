@@ -3,8 +3,8 @@
 use crate::audio_bridge::SharedParams;
 use crate::widgets::{BypassToggle, Knob};
 use egui::Ui;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 /// Reverb types matching sonido_effects::ReverbType.
 const REVERB_TYPES: &[&str] = &["Room", "Hall"];

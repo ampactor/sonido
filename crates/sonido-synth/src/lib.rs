@@ -108,20 +108,24 @@
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 
-pub mod oscillator;
-pub mod envelope;
-pub mod voice;
-pub mod mod_matrix;
 pub mod audio_mod;
+pub mod envelope;
+pub mod mod_matrix;
+pub mod oscillator;
 pub mod synth;
+pub mod voice;
 
 // Re-export main types at crate root
-pub use oscillator::{Oscillator, OscillatorWaveform};
+pub use audio_mod::{AudioGate, AudioModSource};
 pub use envelope::{AdsrEnvelope, EnvelopeState};
-pub use voice::{Voice, VoiceManager, VoiceAllocationMode, midi_to_freq, freq_to_midi, cents_to_ratio};
-pub use mod_matrix::{ModulationMatrix, ModulationRoute, ModulationValues, ModSourceId, ModDestination};
-pub use audio_mod::{AudioModSource, AudioGate};
+pub use mod_matrix::{
+    ModDestination, ModSourceId, ModulationMatrix, ModulationRoute, ModulationValues,
+};
+pub use oscillator::{Oscillator, OscillatorWaveform};
 pub use synth::{MonophonicSynth, PolyphonicSynth};
+pub use voice::{
+    Voice, VoiceAllocationMode, VoiceManager, cents_to_ratio, freq_to_midi, midi_to_freq,
+};
 
 // Re-export commonly used types from sonido-core
-pub use sonido_core::{Lfo, LfoWaveform, StateVariableFilter, SvfOutput, ModulationSource};
+pub use sonido_core::{Lfo, LfoWaveform, ModulationSource, StateVariableFilter, SvfOutput};

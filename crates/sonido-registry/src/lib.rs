@@ -53,11 +53,10 @@ extern crate alloc;
 #[cfg(not(feature = "std"))]
 use alloc::{boxed::Box, vec::Vec};
 
-use sonido_core::{Effect, ParameterInfo, ParamDescriptor};
+use sonido_core::{Effect, ParamDescriptor, ParameterInfo};
 use sonido_effects::{
-    Distortion, Compressor, Chorus, Delay, Flanger, LowPassFilter,
-    MultiVibrato, Phaser, TapeSaturation, CleanPreamp, Reverb, Tremolo, Gate,
-    Wah, ParametricEq,
+    Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, LowPassFilter, MultiVibrato,
+    ParametricEq, Phaser, Reverb, TapeSaturation, Tremolo, Wah,
 };
 
 /// Category of audio effect for organization and filtering.
@@ -93,9 +92,15 @@ impl EffectCategory {
     /// Returns a description of the category.
     pub const fn description(&self) -> &'static str {
         match self {
-            EffectCategory::Dynamics => "Compressors, limiters, gates, and other dynamics processors",
-            EffectCategory::Distortion => "Distortion, overdrive, saturation, and waveshaping effects",
-            EffectCategory::Modulation => "Chorus, flanger, phaser, vibrato, and other modulation effects",
+            EffectCategory::Dynamics => {
+                "Compressors, limiters, gates, and other dynamics processors"
+            }
+            EffectCategory::Distortion => {
+                "Distortion, overdrive, saturation, and waveshaping effects"
+            }
+            EffectCategory::Modulation => {
+                "Chorus, flanger, phaser, vibrato, and other modulation effects"
+            }
             EffectCategory::TimeBased => "Delay, reverb, and other time-based effects",
             EffectCategory::Filter => "Lowpass, highpass, bandpass, and other filter effects",
             EffectCategory::Utility => "Gain stages, preamps, and utility processors",
@@ -336,7 +341,10 @@ impl EffectRegistry {
 
     /// Register an effect with the registry.
     fn register(&mut self, descriptor: EffectDescriptor, factory: EffectFactory) {
-        self.entries.push(RegistryEntry { descriptor, factory });
+        self.entries.push(RegistryEntry {
+            descriptor,
+            factory,
+        });
     }
 
     /// Returns descriptors for all registered effects.
@@ -382,9 +390,10 @@ impl EffectRegistry {
         let lower = param_name.to_lowercase();
         for i in 0..effect.effect_param_count() {
             if let Some(desc) = effect.effect_param_info(i)
-                && (desc.name.to_lowercase() == lower || desc.short_name.to_lowercase() == lower) {
-                    return Some(i);
-                }
+                && (desc.name.to_lowercase() == lower || desc.short_name.to_lowercase() == lower)
+            {
+                return Some(i);
+            }
         }
         None
     }
@@ -522,11 +531,19 @@ mod tests {
 
         for descriptor in registry.all_effects() {
             let effect = registry.create(descriptor.id, 48000.0);
-            assert!(effect.is_some(), "Failed to create effect: {}", descriptor.id);
+            assert!(
+                effect.is_some(),
+                "Failed to create effect: {}",
+                descriptor.id
+            );
 
             let mut effect = effect.unwrap();
             let output = effect.process(0.5);
-            assert!(output.is_finite(), "Effect {} produced non-finite output", descriptor.id);
+            assert!(
+                output.is_finite(),
+                "Effect {} produced non-finite output",
+                descriptor.id
+            );
         }
     }
 }

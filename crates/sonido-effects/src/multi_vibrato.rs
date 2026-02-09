@@ -3,7 +3,10 @@
 //! 10 simultaneous subtle vibratos at different frequencies and waveforms
 //! to simulate authentic tape wow and flutter.
 
-use sonido_core::{Effect, Lfo, LfoWaveform, FixedDelayLine, ParameterInfo, ParamDescriptor, ParamUnit, SmoothedParam};
+use sonido_core::{
+    Effect, FixedDelayLine, Lfo, LfoWaveform, ParamDescriptor, ParamUnit, ParameterInfo,
+    SmoothedParam,
+};
 
 /// Number of vibrato units in MultiVibrato
 pub const NUM_VIBRATOS: usize = 10;
@@ -97,21 +100,20 @@ impl MultiVibrato {
     pub fn new(sample_rate: f32) -> Self {
         // Carefully chosen rates and waveforms for organic tape character
         let configs: [(f32, f32, LfoWaveform); NUM_VIBRATOS] = [
-            (0.13, 0.8, LfoWaveform::Sine),        // Very slow drift
-            (0.31, 1.2, LfoWaveform::Triangle),    // Slow wobble
-            (0.67, 0.6, LfoWaveform::Sine),        // Medium drift
-            (1.1, 0.9, LfoWaveform::Triangle),     // Flutter component
-            (1.7, 0.5, LfoWaveform::Sine),         // Higher flutter
-            (2.3, 0.4, LfoWaveform::Triangle),     // Subtle fast
-            (0.23, 1.5, LfoWaveform::Sine),        // Another slow
-            (3.1, 0.3, LfoWaveform::Triangle),     // Fast, subtle
-            (0.47, 1.0, LfoWaveform::Sine),        // Medium
-            (4.7, 0.2, LfoWaveform::Triangle),     // Fastest, most subtle
+            (0.13, 0.8, LfoWaveform::Sine),     // Very slow drift
+            (0.31, 1.2, LfoWaveform::Triangle), // Slow wobble
+            (0.67, 0.6, LfoWaveform::Sine),     // Medium drift
+            (1.1, 0.9, LfoWaveform::Triangle),  // Flutter component
+            (1.7, 0.5, LfoWaveform::Sine),      // Higher flutter
+            (2.3, 0.4, LfoWaveform::Triangle),  // Subtle fast
+            (0.23, 1.5, LfoWaveform::Sine),     // Another slow
+            (3.1, 0.3, LfoWaveform::Triangle),  // Fast, subtle
+            (0.47, 1.0, LfoWaveform::Sine),     // Medium
+            (4.7, 0.2, LfoWaveform::Triangle),  // Fastest, most subtle
         ];
 
-        let vibratos = configs.map(|(rate, depth, waveform)| {
-            VibratoUnit::new(sample_rate, rate, depth, waveform)
-        });
+        let vibratos = configs
+            .map(|(rate, depth, waveform)| VibratoUnit::new(sample_rate, rate, depth, waveform));
 
         Self {
             vibratos,

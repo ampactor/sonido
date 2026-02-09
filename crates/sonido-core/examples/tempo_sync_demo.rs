@@ -16,7 +16,10 @@ fn main() {
 
     // --- Delay times for all note divisions ---
     println!("\n--- Delay Times at 120 BPM ---\n");
-    println!("{:<22} {:>8} {:>10} {:>12}", "Division", "Beats", "ms", "Samples");
+    println!(
+        "{:<22} {:>8} {:>10} {:>12}",
+        "Division", "Beats", "ms", "Samples"
+    );
     println!("{:-<22} {:->8} {:->10} {:->12}", "", "", "", "");
 
     let divisions = [
@@ -50,11 +53,7 @@ fn main() {
     println!("{:-<22} {:->10}", "", "");
 
     for (name, div) in &divisions {
-        println!(
-            "{:<22} {:>10.3}",
-            name,
-            tempo.division_to_hz(*div)
-        );
+        println!("{:<22} {:>10.3}", name, tempo.division_to_hz(*div));
     }
 
     // --- Transport and beat tracking ---
@@ -67,7 +66,10 @@ fn main() {
     let samples_per_beat = (sample_rate * 60.0 / 120.0) as usize; // 24000
 
     println!("\nAdvancing through 2 bars (8 beats):\n");
-    println!("{:>8} {:>8} {:>8} {:>8} {:>8}", "Beat", "Phase", "Bar", "BarPh", "OnBeat");
+    println!(
+        "{:>8} {:>8} {:>8} {:>8} {:>8}",
+        "Beat", "Phase", "Bar", "BarPh", "OnBeat"
+    );
     println!("{:->8} {:->8} {:->8} {:->8} {:->8}", "", "", "", "", "");
 
     for _beat in 0..8 {
@@ -122,7 +124,11 @@ fn main() {
 
     // Show one cycle of the synced LFO
     let lfo_period_samples = (sample_rate / lfo.frequency()) as usize;
-    println!("Period: {} samples ({:.1} ms)\n", lfo_period_samples, 1000.0 / lfo.frequency());
+    println!(
+        "Period: {} samples ({:.1} ms)\n",
+        lfo_period_samples,
+        1000.0 / lfo.frequency()
+    );
 
     println!("Phase    | Value");
     println!("---------+------");
@@ -160,8 +166,14 @@ fn main() {
     let pos_after = tempo.beat_position();
 
     println!("\n=== Transport Stop ===");
-    println!("Stopped transport. Position before: {:.2}, after 1000 samples: {:.2}", pos_before, pos_after);
-    println!("Position unchanged: {}", (pos_before - pos_after).abs() < 0.001);
+    println!(
+        "Stopped transport. Position before: {:.2}, after 1000 samples: {:.2}",
+        pos_before, pos_after
+    );
+    println!(
+        "Position unchanged: {}",
+        (pos_before - pos_after).abs() < 0.001
+    );
 
     println!("\nTempo sync demo complete.");
 }

@@ -3,8 +3,8 @@
 use crate::effects::{create_effect_with_params, parse_chain};
 use clap::Args;
 use indicatif::{ProgressBar, ProgressStyle};
-use sonido_config::{get_factory_preset, find_preset as config_find_preset, Preset};
-use sonido_io::{read_wav_stereo, write_wav, write_wav_stereo, ProcessingEngine, WavSpec};
+use sonido_config::{Preset, find_preset as config_find_preset, get_factory_preset};
+use sonido_io::{ProcessingEngine, WavSpec, read_wav_stereo, write_wav, write_wav_stereo};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -50,7 +50,10 @@ pub struct ProcessArgs {
 fn parse_key_val(s: &str) -> Result<(String, String), String> {
     let parts: Vec<&str> = s.splitn(2, '=').collect();
     if parts.len() != 2 {
-        return Err(format!("Invalid parameter format: '{}' (expected key=value)", s));
+        return Err(format!(
+            "Invalid parameter format: '{}' (expected key=value)",
+            s
+        ));
     }
     Ok((parts[0].to_string(), parts[1].to_string()))
 }
@@ -82,8 +85,11 @@ pub fn run(args: ProcessArgs) -> anyhow::Result<()> {
             if effect_cfg.bypassed {
                 continue; // Skip bypassed effects
             }
-            let effect =
-                create_effect_with_params(&effect_cfg.effect_type, sample_rate, &effect_cfg.params)?;
+            let effect = create_effect_with_params(
+                &effect_cfg.effect_type,
+                sample_rate,
+                &effect_cfg.params,
+            )?;
             engine.add_effect(effect);
         }
     } else if let Some(chain_spec) = &args.chain {

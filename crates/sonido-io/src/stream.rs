@@ -3,8 +3,8 @@
 use crate::{Error, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, Host, SampleRate, Stream};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Audio device information.
 #[derive(Debug, Clone)]
@@ -240,8 +240,12 @@ impl AudioStream {
             )
             .map_err(|e| Error::Stream(e.to_string()))?;
 
-        input_stream.play().map_err(|e| Error::Stream(e.to_string()))?;
-        output_stream.play().map_err(|e| Error::Stream(e.to_string()))?;
+        input_stream
+            .play()
+            .map_err(|e| Error::Stream(e.to_string()))?;
+        output_stream
+            .play()
+            .map_err(|e| Error::Stream(e.to_string()))?;
 
         self._input_stream = Some(input_stream);
         self._output_stream = Some(output_stream);
@@ -284,7 +288,9 @@ impl AudioStream {
             )
             .map_err(|e| Error::Stream(e.to_string()))?;
 
-        output_stream.play().map_err(|e| Error::Stream(e.to_string()))?;
+        output_stream
+            .play()
+            .map_err(|e| Error::Stream(e.to_string()))?;
         self._output_stream = Some(output_stream);
 
         while self.running.load(Ordering::SeqCst) {
@@ -393,8 +399,12 @@ impl AudioStream {
             )
             .map_err(|e| Error::Stream(e.to_string()))?;
 
-        input_stream.play().map_err(|e| Error::Stream(e.to_string()))?;
-        output_stream.play().map_err(|e| Error::Stream(e.to_string()))?;
+        input_stream
+            .play()
+            .map_err(|e| Error::Stream(e.to_string()))?;
+        output_stream
+            .play()
+            .map_err(|e| Error::Stream(e.to_string()))?;
 
         self._input_stream = Some(input_stream);
         self._output_stream = Some(output_stream);
@@ -519,13 +529,14 @@ fn find_output_device(host: &Host, name_or_index: &str) -> Result<Device> {
 fn find_device_from_list(devices: &[Device], name_or_index: &str, kind: &str) -> Result<Device> {
     // Try parsing as index first
     if let Ok(index) = name_or_index.parse::<usize>() {
-        return devices
-            .get(index)
-            .cloned()
-            .ok_or_else(|| Error::DeviceNotFound(format!(
+        return devices.get(index).cloned().ok_or_else(|| {
+            Error::DeviceNotFound(format!(
                 "{} device index {} (only {} devices available)",
-                kind, index, devices.len()
-            )));
+                kind,
+                index,
+                devices.len()
+            ))
+        });
     }
 
     // Try exact match

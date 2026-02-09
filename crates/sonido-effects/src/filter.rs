@@ -1,6 +1,8 @@
 //! Biquad-based filter effects.
 
-use sonido_core::{Effect, SmoothedParam, Biquad, lowpass_coefficients, ParameterInfo, ParamDescriptor, ParamUnit};
+use sonido_core::{
+    Biquad, Effect, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, lowpass_coefficients,
+};
 
 /// Low-pass filter effect with smoothed parameter control.
 ///
@@ -179,7 +181,11 @@ mod tests {
             output = filter.process(1.0);
         }
 
-        assert!((output - 1.0).abs() < 0.05, "DC should pass, got {}", output);
+        assert!(
+            (output - 1.0).abs() < 0.05,
+            "DC should pass, got {}",
+            output
+        );
     }
 
     #[test]
@@ -198,6 +204,10 @@ mod tests {
         }
 
         let avg = sum / 1000.0;
-        assert!(avg < 0.1, "High frequencies should be attenuated, avg {}", avg);
+        assert!(
+            avg < 0.1,
+            "High frequencies should be attenuated, avg {}",
+            avg
+        );
     }
 }

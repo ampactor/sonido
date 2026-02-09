@@ -3,7 +3,7 @@
 //! Provides a unified interface for anything that can modulate parameters:
 //! LFOs, envelopes, envelope followers, and external audio sources.
 
-use crate::{Lfo, EnvelopeFollower};
+use crate::{EnvelopeFollower, Lfo};
 
 /// Trait for anything that can generate modulation signals.
 ///
@@ -89,9 +89,9 @@ impl ModulationSource for Lfo {
     fn mod_value(&self) -> f32 {
         // LFO doesn't have a separate current value getter,
         // but we can compute it from phase without advancing
-        use libm::sinf;
-        use core::f32::consts::PI;
         use crate::LfoWaveform;
+        use core::f32::consts::PI;
+        use libm::sinf;
 
         let phase = self.phase();
         match self.waveform() {
@@ -105,7 +105,11 @@ impl ModulationSource for Lfo {
             }
             LfoWaveform::Saw => 2.0 * phase - 1.0,
             LfoWaveform::Square => {
-                if phase < 0.5 { 1.0 } else { -1.0 }
+                if phase < 0.5 {
+                    1.0
+                } else {
+                    -1.0
+                }
             }
             LfoWaveform::SampleAndHold => 0.0, // Can't know without state
         }

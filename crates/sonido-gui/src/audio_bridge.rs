@@ -3,9 +3,9 @@
 //! This module provides lock-free parameter sharing between the GUI thread
 //! and the audio thread, ensuring no priority inversion or audio glitches.
 
-use crossbeam_channel::{bounded, Receiver, Sender};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use crossbeam_channel::{Receiver, Sender, bounded};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 /// A thread-safe atomic parameter using bit-cast f32.
 ///
@@ -100,13 +100,13 @@ impl Default for BypassStates {
             preamp: AtomicBool::new(false),
             distortion: AtomicBool::new(false),
             compressor: AtomicBool::new(false),
-            gate: AtomicBool::new(true),  // Gate bypassed by default
-            eq: AtomicBool::new(true),    // EQ bypassed by default
-            wah: AtomicBool::new(true),   // Wah bypassed by default
+            gate: AtomicBool::new(true), // Gate bypassed by default
+            eq: AtomicBool::new(true),   // EQ bypassed by default
+            wah: AtomicBool::new(true),  // Wah bypassed by default
             chorus: AtomicBool::new(false),
-            flanger: AtomicBool::new(true),  // Flanger bypassed by default
-            phaser: AtomicBool::new(true),   // Phaser bypassed by default
-            tremolo: AtomicBool::new(true),  // Tremolo bypassed by default
+            flanger: AtomicBool::new(true), // Flanger bypassed by default
+            phaser: AtomicBool::new(true),  // Phaser bypassed by default
+            tremolo: AtomicBool::new(true), // Tremolo bypassed by default
             delay: AtomicBool::new(false),
             filter: AtomicBool::new(false),
             multivibrato: AtomicBool::new(false),

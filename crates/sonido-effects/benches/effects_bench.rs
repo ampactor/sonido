@@ -2,11 +2,11 @@
 //!
 //! Run with: cargo bench
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use sonido_core::{Effect, EffectExt};
 use sonido_effects::{
-    Distortion, Compressor, Chorus, Delay, LowPassFilter,
-    MultiVibrato, TapeSaturation, CleanPreamp, Reverb,
+    Chorus, CleanPreamp, Compressor, Delay, Distortion, LowPassFilter, MultiVibrato, Reverb,
+    TapeSaturation,
 };
 
 const SAMPLE_RATE: f32 = 48000.0;

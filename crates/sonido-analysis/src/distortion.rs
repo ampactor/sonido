@@ -226,7 +226,7 @@ impl ThdAnalyzer {
         }
 
         // RMS of noise bins
-        
+
         (noise_bins.iter().map(|m| m * m).sum::<f32>() / noise_bins.len() as f32).sqrt()
     }
 }
@@ -290,8 +290,7 @@ impl ImdAnalyzer {
         (0..num_samples)
             .map(|i| {
                 let t = i as f32 / self.sample_rate;
-                amplitude * (2.0 * PI * freq1 * t).sin()
-                    + amplitude * (2.0 * PI * freq2 * t).sin()
+                amplitude * (2.0 * PI * freq1 * t).sin() + amplitude * (2.0 * PI * freq2 * t).sin()
             })
             .collect()
     }
@@ -328,8 +327,10 @@ impl ImdAnalyzer {
 
         // Calculate IMD ratio (SMPTE method: ratio of sum of products to fundamentals)
         let fundamental_power = amp1 * amp1 + amp2 * amp2;
-        let imd_power =
-            imd2_diff * imd2_diff + imd2_sum * imd2_sum + imd3_low * imd3_low + imd3_high * imd3_high;
+        let imd_power = imd2_diff * imd2_diff
+            + imd2_sum * imd2_sum
+            + imd3_low * imd3_low
+            + imd3_high * imd3_high;
 
         let imd_ratio = imd_power.sqrt() / fundamental_power.sqrt().max(1e-10);
         let imd_db = 20.0 * imd_ratio.max(1e-10).log10();

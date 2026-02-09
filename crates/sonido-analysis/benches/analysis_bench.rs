@@ -2,14 +2,14 @@
 //!
 //! Run with: cargo bench -p sonido-analysis
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use sonido_analysis::{
+    ThdAnalyzer,
     compare::{mse, rmse, snr_db, spectral_correlation, spectral_difference},
     dynamics::{analyze_dynamics, crest_factor, peak, rms},
     fft::{Fft, Window},
-    spectrum::{magnitude_spectrum, spectral_centroid, welch_psd},
     spectrogram::StftAnalyzer,
-    ThdAnalyzer,
+    spectrum::{magnitude_spectrum, spectral_centroid, welch_psd},
 };
 use std::f32::consts::PI;
 
@@ -203,7 +203,8 @@ fn bench_welch_psd(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::from_parameter(length), &length, |b, _| {
             b.iter(|| {
-                let result = welch_psd(black_box(&signal), SAMPLE_RATE, fft_size, 0.5, Window::Hann);
+                let result =
+                    welch_psd(black_box(&signal), SAMPLE_RATE, fft_size, 0.5, Window::Hann);
                 black_box(result)
             })
         });
@@ -293,11 +294,8 @@ fn bench_spectral_correlation(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::from_parameter(fft_size), &fft_size, |b, _| {
             b.iter(|| {
-                let result = spectral_correlation(
-                    black_box(&signal_a),
-                    black_box(&signal_b),
-                    fft_size,
-                );
+                let result =
+                    spectral_correlation(black_box(&signal_a), black_box(&signal_b), fft_size);
                 black_box(result)
             })
         });
@@ -317,11 +315,8 @@ fn bench_spectral_difference(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::from_parameter(fft_size), &fft_size, |b, _| {
             b.iter(|| {
-                let result = spectral_difference(
-                    black_box(&signal_a),
-                    black_box(&signal_b),
-                    fft_size,
-                );
+                let result =
+                    spectral_difference(black_box(&signal_a), black_box(&signal_b), fft_size);
                 black_box(result)
             })
         });
@@ -403,7 +398,8 @@ fn bench_dynamics_full_analysis(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
             b.iter(|| {
-                let result = analyze_dynamics(black_box(&signal), window_size, silence_threshold_db);
+                let result =
+                    analyze_dynamics(black_box(&signal), window_size, silence_threshold_db);
                 black_box(result)
             })
         });
@@ -446,7 +442,11 @@ fn bench_stft_hop_sizes(c: &mut Criterion) {
     let signal_length = 48000;
     let signal = generate_complex_signal(signal_length);
 
-    let hop_ratios = [("25%", fft_size / 4), ("50%", fft_size / 2), ("75%", fft_size * 3 / 4)];
+    let hop_ratios = [
+        ("25%", fft_size / 4),
+        ("50%", fft_size / 2),
+        ("75%", fft_size * 3 / 4),
+    ];
 
     for (name, hop_size) in &hop_ratios {
         let analyzer = StftAnalyzer::new(SAMPLE_RATE, fft_size, *hop_size, Window::Hann);

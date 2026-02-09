@@ -81,16 +81,12 @@ impl SineSweep {
         let fft = Fft::new(fft_size);
 
         // Convert to complex and pad
-        let mut response_complex: Vec<Complex<f32>> = response
-            .iter()
-            .map(|&x| Complex::new(x, 0.0))
-            .collect();
+        let mut response_complex: Vec<Complex<f32>> =
+            response.iter().map(|&x| Complex::new(x, 0.0)).collect();
         response_complex.resize(fft_size, Complex::new(0.0, 0.0));
 
-        let mut inverse_complex: Vec<Complex<f32>> = inverse
-            .iter()
-            .map(|&x| Complex::new(x, 0.0))
-            .collect();
+        let mut inverse_complex: Vec<Complex<f32>> =
+            inverse.iter().map(|&x| Complex::new(x, 0.0)).collect();
         inverse_complex.resize(fft_size, Complex::new(0.0, 0.0));
 
         // FFT both
@@ -157,7 +153,11 @@ pub fn white_noise(length: usize, amplitude: f32) -> Vec<f32> {
 ///
 /// # Returns
 /// Tuple of (trimmed_ir, start_sample, end_sample)
-pub fn trim_ir(ir: &[f32], start_threshold_db: f32, end_threshold_db: f32) -> (Vec<f32>, usize, usize) {
+pub fn trim_ir(
+    ir: &[f32],
+    start_threshold_db: f32,
+    end_threshold_db: f32,
+) -> (Vec<f32>, usize, usize) {
     if ir.is_empty() {
         return (Vec::new(), 0, 0);
     }
@@ -277,11 +277,12 @@ pub fn estimate_rt60(ir: &[f32], sample_rate: f32) -> Option<Rt60Estimate> {
     let rt60_from_t30 = t30_seconds * 2.0;
 
     // Use T30 if available, otherwise T20
-    let rt60_seconds = if t30_seconds > 0.0 && (rt60_from_t30 - rt60_from_t20).abs() / rt60_from_t20 < 0.3 {
-        rt60_from_t30
-    } else {
-        rt60_from_t20
-    };
+    let rt60_seconds =
+        if t30_seconds > 0.0 && (rt60_from_t30 - rt60_from_t20).abs() / rt60_from_t20 < 0.3 {
+            rt60_from_t30
+        } else {
+            rt60_from_t20
+        };
 
     // Calculate correlation from the -5 to -25 dB region
     let correlation = calculate_edc_correlation(&edc, -5.0, -25.0);

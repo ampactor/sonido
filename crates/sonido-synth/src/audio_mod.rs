@@ -311,7 +311,11 @@ mod tests {
             audio_mod.process(0.3);
         }
         // Below threshold, should output near zero
-        assert!(audio_mod.level() < 0.1, "Level {} should be below threshold", audio_mod.level());
+        assert!(
+            audio_mod.level() < 0.1,
+            "Level {} should be below threshold",
+            audio_mod.level()
+        );
     }
 
     #[test]

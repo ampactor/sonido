@@ -200,8 +200,8 @@ impl AdsrEnvelope {
 
             EnvelopeState::Attack => {
                 // Exponential approach to target (overshoots 1.0 for snappier attack)
-                self.level = self.attack_target
-                    + (self.level - self.attack_target) * self.attack_coeff;
+                self.level =
+                    self.attack_target + (self.level - self.attack_target) * self.attack_coeff;
 
                 if self.level >= 1.0 {
                     self.level = 1.0;
@@ -211,8 +211,7 @@ impl AdsrEnvelope {
 
             EnvelopeState::Decay => {
                 // Exponential decay to sustain level
-                self.level =
-                    self.sustain + (self.level - self.sustain) * self.decay_coeff;
+                self.level = self.sustain + (self.level - self.sustain) * self.decay_coeff;
 
                 // Check if close enough to sustain
                 if (self.level - self.sustain).abs() < 0.0001 {

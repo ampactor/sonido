@@ -3,8 +3,8 @@
 use crate::audio_bridge::SharedParams;
 use crate::widgets::{BypassToggle, Knob};
 use egui::Ui;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 /// Waveshape types matching sonido_effects::WaveShape.
 const WAVESHAPES: &[&str] = &["Soft Clip", "Hard Clip", "Foldback", "Asymmetric"];

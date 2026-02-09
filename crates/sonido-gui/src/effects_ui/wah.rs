@@ -3,8 +3,8 @@
 use crate::audio_bridge::SharedParams;
 use crate::widgets::{BypassToggle, Knob};
 use egui::Ui;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 /// Wah mode names.
 const WAH_MODES: &[&str] = &["Auto", "Manual"];

@@ -2,7 +2,7 @@
 
 use clap::Args;
 use sonido_analysis::compare::{mse, rmse, snr_db};
-use sonido_analysis::{spectral_correlation, spectral_difference, Fft, Window};
+use sonido_analysis::{Fft, Window, spectral_correlation, spectral_difference};
 use sonido_io::read_wav;
 use std::path::PathBuf;
 
@@ -148,8 +148,8 @@ pub fn run(args: CompareArgs) -> anyhow::Result<()> {
             }
             let end_bin = end_bin.min(ref_spectrum.len());
 
-            let ref_band: f32 = ref_spectrum[start_bin..end_bin].iter().sum::<f32>()
-                / (end_bin - start_bin) as f32;
+            let ref_band: f32 =
+                ref_spectrum[start_bin..end_bin].iter().sum::<f32>() / (end_bin - start_bin) as f32;
             let impl_band: f32 = impl_spectrum[start_bin..end_bin].iter().sum::<f32>()
                 / (end_bin - start_bin) as f32;
 

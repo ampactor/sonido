@@ -163,12 +163,8 @@ impl PacAnalyzer {
         let amplitude_high = self.hilbert.instantaneous_amplitude(amplitude_signal);
 
         match self.method {
-            PacMethod::MeanVectorLength => {
-                self.compute_mvl(&phase_low, &amplitude_high)
-            }
-            PacMethod::KullbackLeibler => {
-                self.compute_kl(&phase_low, &amplitude_high)
-            }
+            PacMethod::MeanVectorLength => self.compute_mvl(&phase_low, &amplitude_high),
+            PacMethod::KullbackLeibler => self.compute_kl(&phase_low, &amplitude_high),
         }
     }
 
@@ -241,7 +237,10 @@ impl PacAnalyzer {
         // Normalize to create a probability distribution
         let total: f32 = mean_amplitude_per_phase.iter().sum();
         let p: Vec<f32> = if total > 0.0 {
-            mean_amplitude_per_phase.iter().map(|&a| a / total).collect()
+            mean_amplitude_per_phase
+                .iter()
+                .map(|&a| a / total)
+                .collect()
         } else {
             vec![1.0 / NUM_PHASE_BINS as f32; NUM_PHASE_BINS]
         };
@@ -282,7 +281,12 @@ impl PacAnalyzer {
     }
 
     /// Compute histogram of amplitude values binned by phase.
-    fn compute_phase_amplitude_histogram(&self, phase: &[f32], amplitude: &[f32], n: usize) -> [f32; NUM_PHASE_BINS] {
+    fn compute_phase_amplitude_histogram(
+        &self,
+        phase: &[f32],
+        amplitude: &[f32],
+        n: usize,
+    ) -> [f32; NUM_PHASE_BINS] {
         let mut bin_sums = [0.0f32; NUM_PHASE_BINS];
         let mut bin_counts = [0usize; NUM_PHASE_BINS];
 
@@ -379,7 +383,8 @@ impl Comodulogram {
         }
 
         // Compute coupling matrix
-        let mut coupling_matrix = vec![vec![0.0; amplitude_frequencies.len()]; phase_frequencies.len()];
+        let mut coupling_matrix =
+            vec![vec![0.0; amplitude_frequencies.len()]; phase_frequencies.len()];
 
         for (pi, &phase_center) in phase_frequencies.iter().enumerate() {
             for (ai, &amp_center) in amplitude_frequencies.iter().enumerate() {
@@ -471,8 +476,14 @@ impl Comodulogram {
     ///
     /// Returns None if the frequencies are not in the comodulogram.
     pub fn get_coupling(&self, phase_hz: f32, amplitude_hz: f32) -> Option<f32> {
-        let pi = self.phase_frequencies.iter().position(|&f| (f - phase_hz).abs() < 0.01)?;
-        let ai = self.amplitude_frequencies.iter().position(|&f| (f - amplitude_hz).abs() < 0.01)?;
+        let pi = self
+            .phase_frequencies
+            .iter()
+            .position(|&f| (f - phase_hz).abs() < 0.01)?;
+        let ai = self
+            .amplitude_frequencies
+            .iter()
+            .position(|&f| (f - amplitude_hz).abs() < 0.01)?;
         Some(self.coupling_matrix[pi][ai])
     }
 }
@@ -536,11 +547,11 @@ mod tests {
         let sample_rate = 1000.0;
         let signal = generate_pac_signal(
             sample_rate,
-            10.0,  // 10 seconds
-            6.0,   // theta at 6 Hz
-            50.0,  // gamma at 50 Hz
-            0.8,   // strong coupling
-            0.0,   // preferred phase at 0 radians
+            10.0, // 10 seconds
+            6.0,  // theta at 6 Hz
+            50.0, // gamma at 50 Hz
+            0.8,  // strong coupling
+            0.0,  // preferred phase at 0 radians
         );
 
         let mut analyzer = PacAnalyzer::new(sample_rate, eeg_bands::THETA, eeg_bands::LOW_GAMMA);
@@ -589,14 +600,7 @@ mod tests {
         let sample_rate = 1000.0;
         let target_phase = 0.0; // Use 0 degrees for more reliable detection
 
-        let signal = generate_pac_signal(
-            sample_rate,
-            15.0,
-            6.0,
-            50.0,
-            0.9,
-            target_phase,
-        );
+        let signal = generate_pac_signal(sample_rate, 15.0, 6.0, 50.0, 0.9, target_phase);
 
         let mut analyzer = PacAnalyzer::new(sample_rate, eeg_bands::THETA, eeg_bands::LOW_GAMMA);
         let result = analyzer.analyze(&signal);
@@ -617,15 +621,22 @@ mod tests {
 
         // Test that the phase amplitude distribution is non-uniform
         // (indicating coupling was detected correctly)
-        let max_amp = result.mean_amplitude_per_phase.iter().copied()
+        let max_amp = result
+            .mean_amplitude_per_phase
+            .iter()
+            .copied()
             .fold(f32::NEG_INFINITY, f32::max);
-        let min_amp = result.mean_amplitude_per_phase.iter().copied()
+        let min_amp = result
+            .mean_amplitude_per_phase
+            .iter()
+            .copied()
             .fold(f32::INFINITY, f32::min);
 
         assert!(
             max_amp > min_amp * 1.1,
             "Amplitude distribution should be non-uniform: max={}, min={}",
-            max_amp, min_amp
+            max_amp,
+            min_amp
         );
     }
 
@@ -670,13 +681,13 @@ mod tests {
         let como = Comodulogram::compute(
             &signal,
             sample_rate,
-            (4.0, 10.0, 2.0),    // phase: 4-10 Hz, step 2
-            (30.0, 70.0, 20.0),  // amplitude: 30-70 Hz, step 20
+            (4.0, 10.0, 2.0),   // phase: 4-10 Hz, step 2
+            (30.0, 70.0, 20.0), // amplitude: 30-70 Hz, step 20
             0.5,
         );
 
         // Should have correct dimensions
-        assert_eq!(como.phase_frequencies.len(), 4);   // 4, 6, 8, 10
+        assert_eq!(como.phase_frequencies.len(), 4); // 4, 6, 8, 10
         assert_eq!(como.amplitude_frequencies.len(), 3); // 30, 50, 70
         assert_eq!(como.coupling_matrix.len(), 4);
         assert_eq!(como.coupling_matrix[0].len(), 3);
@@ -698,18 +709,25 @@ mod tests {
         let (peak_phase, peak_amp, peak_mi) = como.peak_coupling();
 
         // Peak should be within the searched range
-        assert!((4.0..=10.0).contains(&peak_phase),
-            "Peak phase {} should be in range [4, 10] Hz", peak_phase);
-        assert!((30.0..=70.0).contains(&peak_amp),
-            "Peak amp {} should be in range [30, 70] Hz", peak_amp);
+        assert!(
+            (4.0..=10.0).contains(&peak_phase),
+            "Peak phase {} should be in range [4, 10] Hz",
+            peak_phase
+        );
+        assert!(
+            (30.0..=70.0).contains(&peak_amp),
+            "Peak amp {} should be in range [30, 70] Hz",
+            peak_amp
+        );
         assert!(peak_mi > 0.0, "Peak MI should be positive");
 
         // The comodulogram should have detected some coupling
         // (the exact peak location depends on filter responses and bandwidth)
-        let total_coupling: f32 = como.coupling_matrix.iter()
-            .flat_map(|row| row.iter())
-            .sum();
-        assert!(total_coupling > 0.0, "Comodulogram should have some coupling detected");
+        let total_coupling: f32 = como.coupling_matrix.iter().flat_map(|row| row.iter()).sum();
+        assert!(
+            total_coupling > 0.0,
+            "Comodulogram should have some coupling detected"
+        );
     }
 
     #[test]
@@ -717,10 +735,7 @@ mod tests {
         let como = Comodulogram {
             phase_frequencies: vec![4.0, 6.0],
             amplitude_frequencies: vec![30.0, 50.0],
-            coupling_matrix: vec![
-                vec![0.1, 0.2],
-                vec![0.3, 0.4],
-            ],
+            coupling_matrix: vec![vec![0.1, 0.2], vec![0.3, 0.4]],
             sample_rate: 1000.0,
         };
 
@@ -740,10 +755,7 @@ mod tests {
         let como = Comodulogram {
             phase_frequencies: vec![4.0, 6.0],
             amplitude_frequencies: vec![30.0, 50.0],
-            coupling_matrix: vec![
-                vec![0.1, 0.2],
-                vec![0.3, 0.4],
-            ],
+            coupling_matrix: vec![vec![0.1, 0.2], vec![0.3, 0.4]],
             sample_rate: 1000.0,
         };
 

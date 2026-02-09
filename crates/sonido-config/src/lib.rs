@@ -39,10 +39,10 @@
 //! preset.save(&path).unwrap();
 //! ```
 
-mod preset;
-mod effect_config;
 mod chain;
+mod effect_config;
 mod error;
+mod preset;
 
 /// Platform-specific paths for presets and configuration.
 pub mod paths;
@@ -53,20 +53,23 @@ pub mod validation;
 /// Factory presets bundled with the library.
 pub mod factory_presets;
 
-pub use preset::Preset;
+pub use chain::EffectChain;
 pub use effect_config::{EffectConfig, parse_param_value};
-pub use validation::{
-    validate_effect, validate_preset, validate_effect_param, validate_effect_config,
-    ValidationError, ValidationResult, EffectValidator, ParamValidationInfo,
+pub use error::ConfigError;
+pub use factory_presets::{
+    FACTORY_PRESET_NAMES, factory_preset_names, factory_presets, get_factory_preset,
+    is_factory_preset,
 };
 pub use paths::{
-    user_presets_dir, user_config_dir, system_presets_dir, find_preset,
-    ensure_user_presets_dir, ensure_user_config_dir,
-    list_user_presets, list_system_presets, list_all_presets, preset_name_from_path,
+    ensure_user_config_dir, ensure_user_presets_dir, find_preset, list_all_presets,
+    list_system_presets, list_user_presets, preset_name_from_path, system_presets_dir,
+    user_config_dir, user_presets_dir,
 };
-pub use chain::EffectChain;
-pub use error::ConfigError;
-pub use factory_presets::{factory_presets, get_factory_preset, factory_preset_names, is_factory_preset, FACTORY_PRESET_NAMES};
+pub use preset::Preset;
+pub use validation::{
+    EffectValidator, ParamValidationInfo, ValidationError, ValidationResult, validate_effect,
+    validate_effect_config, validate_effect_param, validate_preset,
+};
 
 /// Re-export commonly used types from sonido-registry
-pub use sonido_registry::{EffectRegistry, EffectCategory, EffectDescriptor, EffectWithParams};
+pub use sonido_registry::{EffectCategory, EffectDescriptor, EffectRegistry, EffectWithParams};

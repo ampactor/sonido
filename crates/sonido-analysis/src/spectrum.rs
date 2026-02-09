@@ -390,10 +390,7 @@ pub fn find_peaks(
 
     for i in 1..spectrum.len() - 1 {
         let mag = spectrum[i];
-        if mag > threshold_linear
-            && mag > spectrum[i - 1]
-            && mag > spectrum[i + 1]
-        {
+        if mag > threshold_linear && mag > spectrum[i - 1] && mag > spectrum[i + 1] {
             let freq = i as f32 * bin_width;
 
             // Check minimum distance from existing peaks
@@ -451,7 +448,11 @@ mod tests {
         let tonal_flatness = spectral_flatness(&tonal_spectrum);
 
         // Tonal should have low flatness
-        assert!(tonal_flatness < 0.3, "Tonal flatness should be low: {}", tonal_flatness);
+        assert!(
+            tonal_flatness < 0.3,
+            "Tonal flatness should be low: {}",
+            tonal_flatness
+        );
     }
 
     #[test]

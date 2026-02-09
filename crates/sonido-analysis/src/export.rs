@@ -5,7 +5,7 @@
 //! - CSV format for generic data exchange
 //! - PGM format for spectrogram images
 
-use crate::{Spectrogram, TransferFunction, ThdResult};
+use crate::{Spectrogram, ThdResult, TransferFunction};
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 
@@ -27,7 +27,10 @@ pub fn export_frd(tf: &TransferFunction, path: impl AsRef<Path>) -> std::io::Res
     let mut file = std::fs::File::create(path)?;
 
     // Write header comment
-    writeln!(file, "* Frequency Response Data exported by sonido-analysis")?;
+    writeln!(
+        file,
+        "* Frequency Response Data exported by sonido-analysis"
+    )?;
 
     for i in 0..tf.frequencies.len() {
         let freq = tf.frequencies[i];
@@ -73,11 +76,12 @@ pub fn import_frd(path: impl AsRef<Path>) -> std::io::Result<TransferFunction> {
                 parts[0].parse::<f32>(),
                 parts[1].parse::<f32>(),
                 parts[2].parse::<f32>(),
-            ) {
-                frequencies.push(freq);
-                magnitude_db.push(mag);
-                phase_rad.push(phase_deg.to_radians());
-            }
+            )
+        {
+            frequencies.push(freq);
+            magnitude_db.push(mag);
+            phase_rad.push(phase_deg.to_radians());
+        }
     }
 
     // FRD format doesn't include coherence, so we set it to 1.0 (perfect)
@@ -210,10 +214,7 @@ pub fn export_spectrogram_pgm(
 }
 
 /// Export distortion analysis results to JSON.
-pub fn export_distortion_json(
-    result: &ThdResult,
-    path: impl AsRef<Path>,
-) -> std::io::Result<()> {
+pub fn export_distortion_json(result: &ThdResult, path: impl AsRef<Path>) -> std::io::Result<()> {
     let mut file = std::fs::File::create(path)?;
 
     let fundamental_db = if result.fundamental_amplitude > 0.0 {
@@ -224,23 +225,39 @@ pub fn export_distortion_json(
 
     writeln!(file, "{{")?;
     writeln!(file, "  \"fundamental_hz\": {},", result.fundamental_freq)?;
-    writeln!(file, "  \"fundamental_amplitude\": {},", result.fundamental_amplitude)?;
+    writeln!(
+        file,
+        "  \"fundamental_amplitude\": {},",
+        result.fundamental_amplitude
+    )?;
     writeln!(file, "  \"fundamental_db\": {},", fundamental_db)?;
     writeln!(file, "  \"thd_ratio\": {},", result.thd_ratio)?;
     writeln!(file, "  \"thd_percent\": {},", result.thd_ratio * 100.0)?;
     writeln!(file, "  \"thd_db\": {},", result.thd_db)?;
     writeln!(file, "  \"thd_plus_noise_ratio\": {},", result.thd_n_ratio)?;
-    writeln!(file, "  \"thd_plus_noise_percent\": {},", result.thd_n_ratio * 100.0)?;
+    writeln!(
+        file,
+        "  \"thd_plus_noise_percent\": {},",
+        result.thd_n_ratio * 100.0
+    )?;
     writeln!(file, "  \"thd_plus_noise_db\": {},", result.thd_n_db)?;
     writeln!(file, "  \"noise_floor\": {},", result.noise_floor)?;
     writeln!(file, "  \"harmonics\": [")?;
 
     for (i, &h) in result.harmonics.iter().enumerate() {
         let harmonic_db = if h > 0.0 { 20.0 * h.log10() } else { -120.0 };
-        let comma = if i < result.harmonics.len() - 1 { "," } else { "" };
+        let comma = if i < result.harmonics.len() - 1 {
+            ","
+        } else {
+            ""
+        };
         writeln!(file, "    {{")?;
         writeln!(file, "      \"harmonic\": {},", i + 1)?;
-        writeln!(file, "      \"frequency_hz\": {},", result.fundamental_freq * (i + 1) as f32)?;
+        writeln!(
+            file,
+            "      \"frequency_hz\": {},",
+            result.fundamental_freq * (i + 1) as f32
+        )?;
         writeln!(file, "      \"amplitude\": {},", h)?;
         writeln!(file, "      \"amplitude_db\": {}", harmonic_db)?;
         writeln!(file, "    }}{}", comma)?;
@@ -255,10 +272,7 @@ pub fn export_distortion_json(
 /// Export transfer function with group delay to extended FRD format.
 ///
 /// Format: frequency_hz magnitude_db phase_deg group_delay_ms
-pub fn export_frd_extended(
-    tf: &TransferFunction,
-    path: impl AsRef<Path>,
-) -> std::io::Result<()> {
+pub fn export_frd_extended(tf: &TransferFunction, path: impl AsRef<Path>) -> std::io::Result<()> {
     let mut file = std::fs::File::create(path)?;
     let group_delay = tf.group_delay();
 
@@ -333,8 +347,11 @@ mod tests {
         assert!(content.contains("1000"), "Should contain frequency 1000");
         assert!(content.contains("-3.5"), "Should contain magnitude -3.5");
         // -0.785398 rad = -44.999... degrees
-        assert!(content.contains("-44.99") || content.contains("-45.0"),
-            "Should contain phase near -45 degrees, got: {}", content);
+        assert!(
+            content.contains("-44.99") || content.contains("-45.0"),
+            "Should contain phase near -45 degrees, got: {}",
+            content
+        );
     }
 
     #[test]

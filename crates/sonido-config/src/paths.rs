@@ -75,11 +75,15 @@ pub fn user_config_dir() -> PathBuf {
 pub fn system_presets_dir() -> PathBuf {
     #[cfg(target_os = "linux")]
     {
-        PathBuf::from("/usr/share").join(APP_NAME).join(PRESETS_SUBDIR)
+        PathBuf::from("/usr/share")
+            .join(APP_NAME)
+            .join(PRESETS_SUBDIR)
     }
     #[cfg(target_os = "macos")]
     {
-        PathBuf::from("/Library/Application Support").join(APP_NAME).join(PRESETS_SUBDIR)
+        PathBuf::from("/Library/Application Support")
+            .join(APP_NAME)
+            .join(PRESETS_SUBDIR)
     }
     #[cfg(target_os = "windows")]
     {
@@ -225,13 +229,7 @@ fn list_presets_in_dir(dir: &PathBuf) -> Vec<PathBuf> {
     entries
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
-        .filter(|path| {
-            path.is_file()
-                && path
-                    .extension()
-                    .map(|ext| ext == "toml")
-                    .unwrap_or(false)
-        })
+        .filter(|path| path.is_file() && path.extension().map(|ext| ext == "toml").unwrap_or(false))
         .collect()
 }
 

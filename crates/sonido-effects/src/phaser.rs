@@ -5,9 +5,11 @@
 //! cascading multiple allpass filters, whose frequencies are modulated by an LFO.
 //! This creates notches in the frequency spectrum that sweep up and down.
 
-use sonido_core::{Effect, SmoothedParam, Lfo, ParameterInfo, ParamDescriptor, ParamUnit, flush_denormal};
 use core::f32::consts::PI;
 use libm::tanf;
+use sonido_core::{
+    Effect, Lfo, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, flush_denormal,
+};
 
 /// Maximum number of allpass stages.
 const MAX_STAGES: usize = 12;
@@ -485,7 +487,11 @@ mod tests {
 
         // After reset, processing zeros should give near-zero output
         let output = phaser.process(0.0);
-        assert!(output.abs() < 0.01, "Should be silent after reset, got {}", output);
+        assert!(
+            output.abs() < 0.01,
+            "Should be silent after reset, got {}",
+            output
+        );
     }
 
     #[test]

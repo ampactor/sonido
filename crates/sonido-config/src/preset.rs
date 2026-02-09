@@ -93,8 +93,7 @@ impl Preset {
     /// Load a preset from a TOML file.
     pub fn load(path: impl AsRef<Path>) -> Result<Self, ConfigError> {
         let path = path.as_ref();
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| ConfigError::read_file(path, e))?;
+        let content = std::fs::read_to_string(path).map_err(|e| ConfigError::read_file(path, e))?;
         let preset: Preset = toml::from_str(&content)?;
         Ok(preset)
     }
@@ -110,14 +109,13 @@ impl Preset {
 
         // Ensure parent directory exists
         if let Some(parent) = path.parent()
-            && !parent.exists() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| ConfigError::create_dir(parent, e))?;
-            }
+            && !parent.exists()
+        {
+            std::fs::create_dir_all(parent).map_err(|e| ConfigError::create_dir(parent, e))?;
+        }
 
         let content = toml::to_string_pretty(self)?;
-        std::fs::write(path, content)
-            .map_err(|e| ConfigError::write_file(path, e))?;
+        std::fs::write(path, content).map_err(|e| ConfigError::write_file(path, e))?;
         Ok(())
     }
 
