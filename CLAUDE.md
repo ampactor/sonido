@@ -184,10 +184,13 @@ pub trait ParameterInfo {
 }
 ```
 
-**Effect Registry** - Create effects by name:
+**Effect Registry** - Create effects by name. Returns `Box<dyn EffectWithParams + Send>` (combines `Effect` + `ParameterInfo`):
 ```rust
 let registry = EffectRegistry::new();
 let mut effect = registry.create("distortion", 48000.0).unwrap();
+effect.process(0.5);                          // Effect trait
+effect.effect_set_param(0, 20.0);             // EffectWithParams trait
+let idx = registry.param_index_by_name("distortion", "drive"); // lookup by name
 ```
 
 **ModulationSource** - Unified interface for LFOs, envelopes, followers:
