@@ -8,6 +8,12 @@ Regenerate all files with:
 ./scripts/generate_demos.sh
 ```
 
+For a full guided tour (build, effects, analysis, presets, GUI):
+
+```bash
+./scripts/walkthrough.sh
+```
+
 ## Source Signals
 
 | File | Description | Parameters |
@@ -16,6 +22,7 @@ Regenerate all files with:
 | `src_saw_chord.wav` | C major chord (MIDI 60,64,67) using PolyBLEP sawtooth oscillators | 3s, filter cutoff 3 kHz, ADSR with 50 ms attack / 800 ms release |
 | `src_perc_adsr.wav` | Short percussive hit shaped by ADSR envelope | 220 Hz, A=5ms D=80ms S=0.1 R=150ms, gate 0.3s |
 | `src_sweep.wav` | Logarithmic sine sweep from 20 Hz to 20 kHz | 3s, amplitude 0.7 |
+| `src_noise.wav` | White noise | 2s, amplitude 0.5 |
 
 ## Effect Demos
 
@@ -23,13 +30,21 @@ Regenerate all files with:
 |------|--------|--------|----------------|
 | `fx_distortion_soft.wav` | Distortion (soft clip) | sine 440 Hz | drive=12 dB, tone=4 kHz, level=-6 dB |
 | `fx_distortion_hard.wav` | Distortion (hard clip) | sine 440 Hz | drive=20 dB, tone=3 kHz, level=-8 dB |
+| `fx_compressor.wav` | Compressor | percussion ADSR | threshold=-18 dB, ratio=4:1, attack=10 ms, release=100 ms, makeup=6 dB |
+| `fx_gate.wav` | Noise Gate | sine 440 Hz | threshold=-20 dB, attack=1 ms, release=50 ms, hold=20 ms |
 | `fx_chorus.wav` | Chorus | saw chord | rate=1.5 Hz, depth=0.6, mix=0.5 |
 | `fx_flanger.wav` | Flanger | sine 440 Hz | rate=0.4 Hz, depth=0.7, feedback=0.6 |
 | `fx_phaser.wav` | Phaser | saw chord | rate=0.3 Hz, depth=0.8, 6 stages, feedback=0.7 |
+| `fx_tremolo.wav` | Tremolo | sine 440 Hz | rate=6 Hz, depth=0.8, sine waveform |
+| `fx_multivibrato.wav` | Multi Vibrato | saw chord | depth=0.6 |
+| `fx_filter_lowpass.wav` | Low Pass Filter | sweep | cutoff=2000 Hz, resonance=4 |
+| `fx_wah.wav` | Auto-Wah | saw chord | frequency=800 Hz, resonance=5, sensitivity=0.7, mode=auto |
+| `fx_parametric_eq.wav` | Parametric EQ | sweep | mid_freq=1000 Hz, mid_gain=8 dB, mid_q=2 |
 | `fx_reverb_room.wav` | Reverb (room) | percussion ADSR | decay=0.4, damping=0.5, mix=0.4 |
 | `fx_reverb_hall.wav` | Reverb (hall) | percussion ADSR | decay=0.8, damping=0.3, mix=0.5 |
 | `fx_delay.wav` | Delay | percussion ADSR | time=375 ms, feedback=0.5, mix=0.4 |
-| `fx_tremolo.wav` | Tremolo | sine 440 Hz | rate=6 Hz, depth=0.8, sine waveform |
+| `fx_tape_saturation.wav` | Tape Saturation | saw chord | drive=8, saturation=0.6 |
+| `fx_preamp.wav` | Clean Preamp | sine 440 Hz | gain=8 dB |
 | `fx_full_chain.wav` | Full chain: preamp -> distortion -> chorus -> delay -> reverb | saw chord | 5-effect chain with hall reverb tail |
 
 ## Format
