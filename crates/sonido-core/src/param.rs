@@ -51,6 +51,8 @@ pub struct SmoothedParam {
     sample_rate: f32,
     /// Smoothing time in milliseconds
     smoothing_time_ms: f32,
+    /// True when current ≈ target — skips interpolation math in `advance()`.
+    settled: bool,
 }
 
 impl SmoothedParam {
@@ -69,6 +71,7 @@ impl SmoothedParam {
             coeff: 0.0, // No smoothing until configured
             sample_rate: 44100.0,
             smoothing_time_ms: 0.0,
+            settled: true,
         }
     }
 
@@ -125,6 +128,7 @@ impl SmoothedParam {
     #[inline]
     pub fn set_target(&mut self, target: f32) {
         self.target = target;
+        self.settled = (self.current - target).abs() < 1e-6;
     }
 
     /// Set target and immediately snap to it (no smoothing).
@@ -134,6 +138,7 @@ impl SmoothedParam {
     pub fn set_immediate(&mut self, value: f32) {
         self.target = value;
         self.current = value;
+        self.settled = true;
     }
 
     /// Update sample rate and recalculate smoothing coefficient.
@@ -159,9 +164,16 @@ impl SmoothedParam {
     /// Call this once per sample in your audio processing loop.
     #[inline]
     pub fn advance(&mut self) -> f32 {
+        if self.settled {
+            return self.current;
+        }
         // One-pole lowpass: y[n] = y[n-1] + coeff * (target - y[n-1])
         // Equivalent to: y[n] = (1-coeff) * y[n-1] + coeff * target
         self.current = self.current + self.coeff * (self.target - self.current);
+        if (self.current - self.target).abs() < 1e-6 {
+            self.current = self.target;
+            self.settled = true;
+        }
         self.current
     }
 
@@ -182,7 +194,7 @@ impl SmoothedParam {
     /// Useful for knowing when smoothing is complete.
     #[inline]
     pub fn is_settled(&self) -> bool {
-        (self.current - self.target).abs() < 1e-6
+        self.settled
     }
 
     /// Skip ahead to the target value immediately.
@@ -191,6 +203,7 @@ impl SmoothedParam {
     #[inline]
     pub fn snap_to_target(&mut self) {
         self.current = self.target;
+        self.settled = true;
     }
 
     /// Recalculate the smoothing coefficient from sample rate and smoothing time.
