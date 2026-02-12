@@ -20,6 +20,7 @@ Architecture Decision Records (ADRs) for the Sonido DSP framework. Each record c
 - [ADR-014: PolyBLEP over BLIT/MinBLEP](#adr-014-polyblep-over-blitminblep)
 - [ADR-015: ModulationSource Trait Unification](#adr-015-modulationsource-trait-unification)
 - [ADR-016: Denormal Protection via flush_denormal()](#adr-016-denormal-protection-via-flush_denormal)
+- [ADR-017: Shared DSP Vocabulary and Gain Staging](#adr-017-shared-dsp-vocabulary-and-gain-staging)
 
 ---
 
@@ -558,3 +559,61 @@ pub fn flush_denormal(x: f32) -> f32 {
 - **Branch per sample**: The `if` condition adds a branch in the feedback path. This is mitigated by `#[inline(always)]` and the fact that the branch is highly predictable (almost always "not flushing" during active signal processing). Modern branch predictors handle this with negligible overhead.
 - **Not bit-exact zero**: Values between 0 and 1e-20 are forcibly zeroed, which technically changes the mathematical result. These values are at -400 dBFS, far below any audible or measurable signal level.
 - **Manual placement**: Unlike FTZ/DAZ (which is automatic and covers all operations), `flush_denormal()` must be placed explicitly at each point where subnormals could accumulate. Missing a call site leaves that path vulnerable. This is mitigated by denormal stress tests in the test suite.
+
+---
+
+## ADR-017: Shared DSP Vocabulary and Gain Staging
+
+**Status:** Accepted
+**Source:** `crates/sonido-core/src/gain.rs`, `param.rs`, `param_info.rs`, `one_pole.rs`, `math.rs`
+
+### Context
+
+After implementing 15 effects, a codebase audit revealed significant duplication:
+
+- 22 inline dry/wet mix calculations (`input * (1.0 - mix) + wet * mix`)
+- 35+ smoothing time magic numbers (`10.0` ms scattered across constructors)
+- 15+ identical `ParamDescriptor` struct literals for common params (Mix, Depth, Feedback)
+- 3 ad-hoc one-pole lowpass implementations (distortion tone, tape HF rolloff)
+- 3 local `db_to_linear`/`linear_to_db` functions (compressor, gate) duplicating core
+- No universal output level control (Wah at +12.5 dB, TapeSaturation at +7.1 dB at defaults)
+
+### Decision
+
+Extract a shared vocabulary into `sonido-core` consisting of:
+
+1. **`gain.rs`**: Universal output level contract — `output_level_param()`, `set_output_level_db()`, `output_param_descriptor()`. All 15 effects expose an output param at the last `ParameterInfo` index.
+
+2. **`SmoothedParam` presets**: Named constructors (`fast`, `standard`, `slow`, `interpolated`) replacing magic numbers with documented semantics.
+
+3. **`ParamDescriptor` factories**: `::mix()`, `::depth()`, `::feedback()`, `::time_ms()`, `::gain_db()` replacing 15+ identical struct literals.
+
+4. **`wet_dry_mix()` / `wet_dry_mix_stereo()`**: Shared crossfade replacing 22 inline calculations.
+
+5. **`OnePole`**: Reusable one-pole lowpass replacing 3 ad-hoc implementations.
+
+6. **`ParameterInfo::find_param_by_name()`**: Default method for case-insensitive param lookup.
+
+Fix gain staging bugs at the root:
+- **Wah**: Normalize SVF bandpass by Q for unity peak gain (algebraically exact)
+- **TapeSaturation**: Set default output to -6 dB to compensate for drive gain (matching Distortion's pattern)
+
+### Rationale
+
+**Single source of truth**: When the smoothing time convention changes, it changes in one place. When a new effect is added, it uses the vocabulary instead of reinventing it. The vocabulary enforces the project's DSP conventions at the API level.
+
+**Root fixes over compensation**: The Wah's gain bug is fixed by normalizing the transfer function (`filtered / Q`), not by adding an output trim. The TapeSaturation fix matches the Distortion's established drive/level compensation pattern.
+
+**Industry alignment**: NIH-plug uses `SmoothingStyle::Linear(10.0)` parameter presets, JUCE uses `NormalisableRange` with centralized param definitions, FunDSP uses shared smoothing filters. Our `SmoothedParam::standard()` / `ParamDescriptor::mix()` factories mirror these approaches without macro complexity.
+
+### Alternatives Considered
+
+- **Macro-based param generation**: Would reduce boilerplate further but adds compile-time complexity and makes debugging harder. The factory method approach is simpler and equally effective.
+- **ParamGroup container**: A struct holding N `SmoothedParam`s that forwards `set_sample_rate()` and `snap_to_target()`. Deferred — requires a design decision on representation (Vec vs tuple vs macro) and the current per-field approach is explicit and clear.
+
+### Consequences
+
+- 15 effects migrated to vocabulary, reducing total lines of DSP boilerplate by ~30%
+- Default-parameter golden regression tests (15 new) lock down factory defaults
+- Adding a new effect requires less copy-paste and automatically gets the output level contract
+- Param index stability is preserved — output is always the last index

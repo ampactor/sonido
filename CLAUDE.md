@@ -165,9 +165,9 @@ pub trait Effect {
 
 ## Key Patterns
 
-**SmoothedParam** - Use `advance()` per sample:
+**SmoothedParam** - Use `advance()` per sample. Preset constructors: `fast` (5ms), `standard` (10ms), `slow` (20ms), `interpolated` (50ms):
 ```rust
-let mut gain = SmoothedParam::with_config(1.0, 48000.0, 10.0);
+let mut gain = SmoothedParam::standard(1.0, 48000.0);  // 10ms smoothing
 gain.set_target(0.5);
 for sample in buffer { *sample *= gain.advance(); }
 ```
@@ -293,6 +293,9 @@ make dev-install                    # Symlink debug build to ~/.local/bin
 | Effect trait | crates/sonido-core/src/effect.rs |
 | ParameterInfo trait | crates/sonido-core/src/param_info.rs |
 | SmoothedParam | crates/sonido-core/src/param.rs |
+| Gain staging helpers | crates/sonido-core/src/gain.rs |
+| OnePole filter | crates/sonido-core/src/one_pole.rs |
+| Math (mix, dB, waveshape) | crates/sonido-core/src/math.rs |
 | ModulationSource trait | crates/sonido-core/src/modulation.rs |
 | TempoManager/NoteDivision | crates/sonido-core/src/tempo.rs |
 | Effect Registry | crates/sonido-registry/src/lib.rs |
@@ -316,7 +319,10 @@ make dev-install                    # Symlink debug build to ~/.local/bin
 
 ## Conventions
 
-- SmoothedParam: 5-10ms default smoothing, call `advance()` per sample
+- SmoothedParam: use preset constructors (`fast`/`standard`/`slow`/`interpolated`), call `advance()` per sample
+- ParamDescriptor: use factories (`::mix()`, `::depth()`, `::feedback()`) for common params
+- Output level: all effects expose `output` as last ParameterInfo index, use `gain::output_level_param()`
+- Dry/wet mix: use `wet_dry_mix()` / `wet_dry_mix_stereo()` from math.rs
 - libm for no_std math, std::f32 with std feature
 - Tests: `#[cfg(test)] mod tests` in each module
 - Benchmarks: block sizes 64/128/256/512/1024

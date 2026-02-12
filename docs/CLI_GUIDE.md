@@ -30,6 +30,7 @@ make dev-install
 | `generate` | Generate test signals and synthesis |
 | `analyze` | Spectral and audio analysis |
 | `compare` | A/B audio comparison |
+| `info` | Display WAV file metadata |
 | `devices` | List audio devices |
 | `effects` | List available effects |
 | `presets` | Manage effect presets |
@@ -731,6 +732,41 @@ sonido compare hardware_recording.wav software_output.wav
 # Detailed frequency band analysis with JSON export
 sonido compare dry.wav wet.wav --detailed --output report.json
 ```
+
+---
+
+## info
+
+Display WAV file metadata without processing.
+
+### Basic Usage
+
+```bash
+sonido info <FILE>
+```
+
+### Output
+
+Shows:
+- **Format**: PCM or IEEE Float with bit depth
+- **Channels**: channel count
+- **Sample Rate**: in Hz
+- **Duration**: in seconds and total frames
+- **File Size**: formatted as B/KB/MB
+
+### Example
+
+```bash
+sonido info recording.wav
+# File: recording.wav
+# Format: PCM 24-bit
+# Channels: 2
+# Sample Rate: 48000 Hz
+# Duration: 3.50s (168000 frames)
+# File Size: 1.01 MB
+```
+
+This replaces the need for external tools like `soxi` for basic WAV inspection.
 
 ---
 
