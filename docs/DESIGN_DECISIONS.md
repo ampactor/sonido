@@ -21,7 +21,8 @@ Architecture Decision Records (ADRs) for the Sonido DSP framework. Each record c
 - [ADR-015: ModulationSource Trait Unification](#adr-015-modulationsource-trait-unification)
 - [ADR-016: Denormal Protection via flush_denormal()](#adr-016-denormal-protection-via-flush_denormal)
 - [ADR-017: Shared DSP Vocabulary and Gain Staging](#adr-017-shared-dsp-vocabulary-and-gain-staging)
-- [ADR-018: Feedback-Adaptive Reverb Gain Compensation](#adr-018-feedback-adaptive-reverb-gain-compensation)
+- [ADR-018: Feedback-Adaptive Reverb Gain Compensation](#adr-018-feedback-adaptive-reverb-gain-compensation) *(superseded by ADR-019)*
+- [ADR-019: Generalized Feedback Compensation](#adr-019-generalized-feedback-compensation)
 
 ---
 
@@ -623,45 +624,57 @@ Fix gain staging bugs at the root:
 
 ## ADR-018: Feedback-Adaptive Reverb Gain Compensation
 
+**Status:** Superseded by ADR-019
+**Source:** `crates/sonido-effects/src/reverb.rs`
+
+Original reverb-only quadratic compensation (`1 - x² * 0.88`). Superseded by ADR-019 which generalizes feedback compensation across all comb-based effects using topology-aware formulas.
+
+---
+
+## ADR-019: Generalized Feedback Compensation
+
 **Status:** Accepted
-**Source:** `crates/sonido-effects/src/reverb.rs` (`update_comb_params`, `process`, `process_stereo`)
+**Source:** `crates/sonido-core/src/gain.rs`, `crates/sonido-effects/src/reverb.rs`
 
 ### Context
 
-CLI measurement revealed the Freeverb reverb peaks at +11.8 dB for hall settings (room_size=0.8, decay=0.8) with 0 dBFS input, violating the DSP Quality Standard's -1 dBFS peak ceiling (Rule 1).
+After applying `sqrt(1-fb)` wet-signal compensation to delay, flanger, phaser, and reverb, measurement showed 2/4 still exceeded the -1 dBFS peak ceiling on 440 Hz sine:
 
-**Root cause:** The static `comb_sum *= 0.125` compensates for the 8 parallel combs (1/8) but not for feedback-dependent energy accumulation. At hall feedback (~0.977), each comb's peak gain is ~43x, giving `0.125 * 43 = 5.4` (+14.7 dB theoretical). Allpass diffusers add transient amplification, yielding +11.8 dB measured.
+| Effect | Peak with sqrt | Status |
+|--------|---------------|--------|
+| delay (fb=0.4) | -0.8 dBFS | FAIL |
+| flanger (fb=0.5) | -0.5 dBFS | FAIL |
+| phaser (fb=0.5) | -1.1 dBFS | pass |
+| reverb | -1.6 dBFS | pass |
 
-STK FreeVerb uses `fixedGain = 0.015` (-36 dB input attenuation) + `scaleWet = 3.0`, but STK's feedback range is narrow (0.7-0.98). Sonido's range is 0.28-0.98; a fixed attenuation would make low-feedback settings inaudible.
+**Root cause:** For a feedback comb filter with coefficient `g`, peak gain at resonance = `1/(1-g)`. With `c = sqrt(1-g)`, output at mix `m` = `(1-m) + m/sqrt(1-g)` > 1 for all g > 0. The `sqrt` form is mathematically guaranteed insufficient for comb topologies.
 
 ### Decision
 
-Feedback-adaptive quadratic compensation applied to the comb output sum:
+Topology-aware compensation:
 
-```
-x = clamp((feedback - 0.7) * 3.33, 0, 1)
-compensation = 1 - x^2 * 0.88
-comb_sum *= 0.125 * compensation
-```
+1. **Single comb filters** (delay, flanger, phaser): `c = (1-fb)` — exact peak-gain cancellation. Implemented in `gain::feedback_wet_compensation()`.
 
-Computed in `update_comb_params()` alongside the existing feedback/damping calculation, cached as `self.comb_compensation`.
+2. **Parallel comb banks** (reverb): `c = sqrt(1-fb)` — moderate compensation, inlined in `reverb.rs`. The 1/8 parallel averaging provides ~18 dB additional headroom, making exact compensation unnecessarily aggressive.
 
 ### Rationale
 
-- **Applied to output, not input**: Preserves natural excitation and decay envelope shape. Attenuating the input would change the character of the reverb tail.
-- **Quadratic curve**: C1-continuous (no derivative discontinuity), safe for real-time parameter automation without audible stepping.
-- **Transparent below fb=0.7**: Room and small-room presets are completely unaffected. The compensation only engages where comb summation gain actually becomes problematic.
-- **Constant 0.88 targets measured overshoot**: At fb=0.977 (hall), compensation = 0.255 (-11.9 dB), countering the measured +11.8 dB.
+**Why `(1-fb)` is exact:** At resonance, a comb filter amplifies by `1/(1-fb)`. Scaling by `(1-fb)` gives: `(1-fb) × 1/(1-fb) = 1.0`. The compensated wet signal equals the dry signal — perfect crossfade, zero amplification at any mix setting.
+
+**Why reverb keeps `sqrt`:** 8 parallel combs with mutually-prime delay lengths means only 1–2 resonate at any frequency. The 1/8 averaging absorbs the overshoot that `sqrt` leaves. Using exact `(1-fb)` at hall settings (fb≈0.98) would attenuate the wet signal to 0.02 (−34 dB), producing an inaudibly quiet reverb.
+
+**Why phaser passes with `(1-fb)`:** Allpass cascades have unity magnitude at all frequencies. Resonance is narrowband (3 notch-peak pairs). Exact compensation is conservative but keeps the effect well within ceiling.
 
 ### Alternatives Considered
 
-- **Fixed input attenuation (STK approach)**: Would require ~-18 dB at input, making low-feedback settings too quiet. Rejected because Sonido's wider feedback range demands adaptive compensation.
-- **Per-comb normalization by `1/(1-feedback)`**: Mathematically exact for steady-state but causes audible pumping during parameter sweeps and over-compensates transient peaks.
-- **Limiter on wet output**: Addresses symptoms, not cause. Would clip the reverb tail rather than shape it, degrading quality at high feedback.
+- **Dynamic AGC**: Per-sample envelope tracking would adapt to any topology. Rejected — too expensive for embedded targets (Daisy Seed, Hothouse). Static compensation is the industry standard for pedal/embedded DSP.
+- **Fixed input attenuation**: Global -6 dB input pad. Rejected — unnecessarily quiet at low feedback, doesn't scale with the actual problem.
+- **Soft clipper on wet output**: Would prevent overshoot but introduces unwanted nonlinearity into clean effects (delay, phaser). Defeats the purpose of a transparent modulation effect.
 
 ### Consequences
 
-- Hall reverb peaks within -1 dBFS ceiling (down from +11.8 dB)
-- Default reverb (fb=0.805) is ~1 dB quieter — acceptable tradeoff
-- Flanger (+1.4 dB), phaser (+0.7 dB), delay (+0.5 dB) are NOT compensated — all within the ±1 dB bypass parity tolerance and their LFO/timing characteristics prevent sustained resonance
-- Golden files for reverb regenerated; all other effects unchanged
+- All 15 effects pass -1 dBFS peak ceiling (15/15)
+- delay: -0.8 → -2.0 dBFS, flanger: -0.5 → -2.1 dBFS, phaser: -1.1 → -2.6 dBFS
+- Reverb unchanged at -1.6 dBFS (topology-specific `sqrt` preserved)
+- At high feedback, wet signal is quieter but decay tail is longer — this IS the character of high feedback. The `output` param provides makeup gain.
+- Golden files regenerated for delay, flanger, phaser, reverb

@@ -151,6 +151,8 @@ Feedback delay with optional ping-pong stereo mode.
 
 **Ping-pong mode** (`delay.rs:129-135`): When enabled, the feedback path crosses channels -- the left delay line's output feeds back into the right delay line, and vice versa. This creates alternating left-right echoes that "bounce" across the stereo field. The effect reports `is_true_stereo() -> true` only when ping-pong is active.
 
+**Gain compensation**: The wet signal is scaled by `(1-feedback)` to exactly cancel comb-filter peak gain at resonance. At fb=0.4 (default), compensation = 0.6; the output at resonance equals the input. At high feedback the wet signal is quieter but the decay tail is longer. The `output` parameter provides makeup gain if needed.
+
 **Feedback stability**: Feedback is clamped to 0.95 maximum to prevent runaway oscillation. At feedback=0.95, each echo is 95% of the previous, so the signal decays by ~0.45 dB per repeat. Complete decay below -60 dB takes approximately 130 repeats.
 
 | Parameter | Description | Default | Range |
@@ -307,7 +309,7 @@ feedback = scaled_room + decay * (0.98 - scaled_room)
 ```
 This mapping ensures the feedback stays below 1.0 (stable) while providing a wide range of decay times. The damping parameter controls a one-pole lowpass filter inside each comb, simulating the frequency-dependent absorption of real room surfaces -- higher damping means more high-frequency absorption per reflection, producing a darker reverb tail.
 
-**Gain compensation:** At high feedback settings (room_size > 0.6, decay > 0.6), a feedback-adaptive compensation curve reduces the comb output to prevent peak ceiling violation. This is transparent at default/room settings and engages progressively for hall-like configurations. See DSP_FUNDAMENTALS.md for the formula.
+**Gain compensation:** The comb output is scaled by `sqrt(1-feedback)` — moderate compensation suited to the parallel-comb topology. The 1/8 averaging across 8 combs provides ~18 dB additional headroom, so the exact `(1-fb)` formula used by single-comb effects (delay, flanger) would be unnecessarily aggressive. See `docs/DSP_FUNDAMENTALS.md` (Feedback Resonance Compensation) and ADR-019.
 
 **Stereo width** (`reverb.rs:396-402`): A mid/side matrix controls stereo width. At width=0, both channels receive the average (mono). At width=1, channels are fully independent.
 
@@ -423,6 +425,8 @@ Classic flanger with modulated short delay.
 
 **Implementation** (`crates/sonido-effects/src/flanger.rs`): Base delay of 5 ms with up to 5 ms of LFO modulation (total range 1-10 ms). The feedback path feeds the delayed output back into the delay input, which deepens the comb filter notches and creates a more resonant, metallic character. At high feedback values, the comb filter approaches self-oscillation, producing pitched metallic tones.
 
+**Gain compensation**: The wet signal is scaled by `(1-feedback)` to exactly cancel comb-filter peak gain at resonance frequencies. At fb=0.5 (default), compensation = 0.5; the wet signal at resonance equals the dry signal. This keeps the flanger within the -1 dBFS peak ceiling at all feedback settings.
+
 **Stereo** (`flanger.rs:178-220`): The right channel LFO is phase-offset by 90 degrees from the left. This means the comb filter notches sweep at different times in each channel, creating a spatial motion effect. Each channel has its own delay line and feedback state.
 
 | Parameter | Description | Default | Range |
@@ -470,6 +474,8 @@ Multi-stage allpass phaser with LFO modulation.
 a = (tan(pi * fc / fs) - 1) / (tan(pi * fc / fs) + 1)
 ```
 When the allpass-shifted signal is mixed with the original, a notch appears at the frequency where the phase difference equals 180 degrees. Each pair of allpass stages produces one notch, so 6 stages (the default) creates 3 notches.
+
+**Gain compensation**: The wet signal is scaled by `(1-feedback)` via `gain::feedback_wet_compensation()`. Although the allpass cascade has unity magnitude (unlike true comb filters), this conservative compensation keeps the phaser well within the -1 dBFS peak ceiling at all feedback settings.
 
 **Frequency sweep** (`phaser.rs:242-245`): The center frequencies use exponential mapping for a natural-sounding sweep: `freq = min_freq * (max_freq/min_freq)^(lfo * depth)`. This ensures equal time is spent per octave rather than per Hz, matching human pitch perception. The default sweep range is 200 Hz to 4000 Hz. Each stage is slightly offset by a factor of `1 + stage_index * 0.1`, spreading the notches for a richer effect.
 

@@ -99,6 +99,8 @@ parameter setting within the declared range may produce unbounded energy growth.
 | Mechanism | Where | Details |
 |-----------|-------|---------|
 | Feedback cap at 95% | `ParamDescriptor::feedback()` | `max: 95.0` percent. Applied in `set_feedback()` via `clamp(0.0, 0.95)`. |
+| Wet-signal compensation | `gain::feedback_wet_compensation()` | Scales wet by `(1-fb)` for exact peak-gain cancellation in comb topologies. |
+| Reverb comb compensation | `reverb.rs:update_comb_params()` | Uses `sqrt(1-fb)` (moderate) — parallel averaging provides additional headroom. |
 | Denormal flushing | `flush_denormal()` in `crates/sonido-core/src/math.rs` | Prevents CPU stalls from subnormal float decay in feedback paths. |
 | Comb filter damping | `CombFilter::set_damp()` | One-pole lowpass in the feedback path ensures HF energy decays faster than LF. |
 | Allpass coefficient bounds | `AllpassFilter` | Coefficient clamped to stable range. |
@@ -183,21 +185,21 @@ compensation — a smooth quadratic curve that scales the comb output inversely
 with effective feedback. See `docs/DSP_FUNDAMENTALS.md` for the formula and
 `docs/DESIGN_DECISIONS.md` ADR-018 for rationale.
 
-### Flanger, Phaser, Delay: Rule 2 Notes
+### Delay, Flanger, Phaser: Feedback Compensation
 
-These effects show small deviations from bypass level due to their feedback
-and modulation characteristics:
+These effects use `gain::feedback_wet_compensation()` — exact `(1-fb)` wet-signal
+scaling that cancels comb-filter peak gain at resonance:
 
-| Effect | Deviation | Cause |
-|--------|-----------|-------|
-| Flanger | +1.4 dB | Comb resonance from short modulated delay with 50% feedback |
-| Phaser | +0.7 dB | Allpass cascade near-resonance at certain LFO sweep positions |
-| Delay | +0.5 dB | Feedback accumulation at 50% feedback, 50% mix |
+| Effect | Before (sqrt) | After (exact) | Feedback | Compensation |
+|--------|--------------|---------------|----------|-------------|
+| Delay | -0.8 dBFS | -2.0 dBFS | 0.4 | 0.6 |
+| Flanger | -0.5 dBFS | -2.1 dBFS | 0.5 | 0.5 |
+| Phaser | -1.1 dBFS | -2.6 dBFS | 0.5 | 0.5 |
 
-All three are **within the +/-1 dB tolerance** and pass Rule 2. The deviations
-are inherent to the DSP topology: time-varying delay with feedback produces
-momentary resonant peaks that cannot be eliminated without fundamentally
-changing the effect character. The +/-1 dB tolerance accounts for this.
+All three now pass Rule 1 (peak ceiling) with comfortable margin. The exact
+compensation guarantees the wet signal at resonance never exceeds the dry signal,
+regardless of feedback setting. See `docs/DSP_FUNDAMENTALS.md` (Feedback
+Resonance Compensation) and `docs/DESIGN_DECISIONS.md` ADR-019 for the math.
 
 ---
 

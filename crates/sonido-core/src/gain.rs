@@ -64,6 +64,32 @@ pub fn output_param_descriptor() -> ParamDescriptor {
     }
 }
 
+/// Exact wet-signal compensation for feedback comb resonance.
+///
+/// A feedback comb filter with coefficient `fb` has peak gain `1/(1-fb)`
+/// at resonance frequencies. Scaling the wet signal by `1-fb` exactly
+/// cancels this, guaranteeing the output never exceeds the input level.
+///
+/// For parallel comb banks (reverb), where 1/N averaging provides
+/// additional headroom, use `sqrt(1-fb)` instead — exact compensation
+/// is unnecessarily aggressive.
+///
+/// Reference: CCRMA PASP, "Feedback Comb Filters" — peak gain = 1/(1-|g|).
+///
+/// # Examples
+///
+/// ```rust
+/// use sonido_core::gain::feedback_wet_compensation;
+///
+/// assert_eq!(feedback_wet_compensation(0.0), 1.0);
+/// assert_eq!(feedback_wet_compensation(0.5), 0.5);
+/// assert!(feedback_wet_compensation(0.95) < 0.06);
+/// ```
+#[inline]
+pub fn feedback_wet_compensation(feedback: f32) -> f32 {
+    (1.0 - feedback.clamp(0.0, 0.99)).max(0.01)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -99,5 +125,44 @@ mod tests {
         assert_eq!(desc.name, "Output");
         assert_eq!(desc.default, 0.0);
         assert_eq!(desc.unit, ParamUnit::Decibels);
+    }
+
+    #[test]
+    fn feedback_compensation_zero() {
+        assert_eq!(feedback_wet_compensation(0.0), 1.0);
+    }
+
+    #[test]
+    fn feedback_compensation_half() {
+        let comp = feedback_wet_compensation(0.5);
+        assert!((comp - 0.5).abs() < 0.01, "Expected ~0.5, got {comp}");
+    }
+
+    #[test]
+    fn feedback_compensation_high() {
+        let comp = feedback_wet_compensation(0.95);
+        assert!((comp - 0.05).abs() < 0.01, "Expected ~0.05, got {comp}");
+    }
+
+    #[test]
+    fn feedback_compensation_monotonic() {
+        let values: Vec<f32> = (0..100)
+            .map(|i| feedback_wet_compensation(i as f32 / 100.0))
+            .collect();
+        for w in values.windows(2) {
+            assert!(
+                w[0] >= w[1],
+                "Must be monotonically decreasing: {} < {}",
+                w[0],
+                w[1]
+            );
+        }
+    }
+
+    #[test]
+    fn feedback_compensation_never_negative() {
+        for i in 0..=100 {
+            assert!(feedback_wet_compensation(i as f32 / 100.0) > 0.0);
+        }
     }
 }

@@ -307,12 +307,9 @@ impl Reverb {
         let scaled_room = 0.28 + room * 0.7;
         let feedback = scaled_room + decay * (0.98 - scaled_room);
 
-        // Feedback-adaptive compensation: smooth quadratic curve.
-        // Below fb=0.7: unity (room/small-room settings unaffected).
-        // At fb=0.98: ~0.12 (≈ -18 dB), countering comb summation gain.
-        // C1-continuous — safe for real-time parameter sweeps.
-        let x = ((feedback - 0.7) * 3.33).clamp(0.0, 1.0);
-        self.comb_compensation = 1.0 - x * x * 0.88;
+        // Reverb uses moderate compensation: parallel comb averaging (÷8)
+        // provides ~18 dB headroom, so exact (1-fb) is too aggressive.
+        self.comb_compensation = libm::sqrtf((1.0 - feedback).max(0.01));
 
         for comb in &mut self.combs {
             comb.set_feedback(feedback);

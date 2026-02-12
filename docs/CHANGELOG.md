@@ -10,6 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 #### sonido-core
+- `gain::feedback_wet_compensation()`: Exact `(1-fb)` comb-filter peak-gain cancellation for wet-signal compensation
+
+### Changed
+
+#### sonido-core
+- `feedback_wet_compensation()` formula changed from `sqrt(1-fb)` to `(1-fb)` — exact compensation for single comb topologies (delay, flanger, phaser)
+
+#### sonido-effects
+- Delay, Flanger, Phaser: wet-signal compensation now uses exact `(1-fb)` formula, bringing all three within -1 dBFS peak ceiling
+- Reverb: uses topology-specific `sqrt(1-fb)` inline (parallel comb averaging makes exact formula too aggressive)
+
+### Added
+
+#### sonido-core
 - `gain.rs`: Universal output level helpers — `output_level_param()`, `set_output_level_db()`, `output_param_descriptor()`
 - `one_pole.rs`: Reusable one-pole (6 dB/oct) lowpass filter for tone controls and HF rolloff
 - `math.rs`: `wet_dry_mix()`, `wet_dry_mix_stereo()`, `mono_sum()` crossfade helpers

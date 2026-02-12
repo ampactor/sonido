@@ -173,7 +173,8 @@ impl Effect for Flanger {
         self.feedback_sample = flush_denormal(delayed);
 
         // Mix dry and wet signals
-        wet_dry_mix(input, delayed, mix) * output_gain
+        let comp = sonido_core::gain::feedback_wet_compensation(feedback);
+        wet_dry_mix(input, delayed * comp, mix) * output_gain
     }
 
     #[inline]
@@ -216,7 +217,9 @@ impl Effect for Flanger {
         self.feedback_sample_r = flush_denormal(delayed_r);
 
         // Mix dry and wet signals
-        let (out_l, out_r) = wet_dry_mix_stereo(left, right, delayed_l, delayed_r, mix);
+        let comp = sonido_core::gain::feedback_wet_compensation(feedback);
+        let (out_l, out_r) =
+            wet_dry_mix_stereo(left, right, delayed_l * comp, delayed_r * comp, mix);
 
         (out_l * output_gain, out_r * output_gain)
     }

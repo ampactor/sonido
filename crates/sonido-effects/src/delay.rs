@@ -118,7 +118,8 @@ impl Effect for Delay {
         let feedback_signal = flush_denormal(input + (delayed * feedback));
         self.delay_line.write(feedback_signal);
 
-        wet_dry_mix(input, delayed, mix) * output_gain
+        let comp = sonido_core::gain::feedback_wet_compensation(feedback);
+        wet_dry_mix(input, delayed * comp, mix) * output_gain
     }
 
     #[inline]
@@ -147,7 +148,9 @@ impl Effect for Delay {
             self.delay_line_r.write(feedback_r);
         }
 
-        let (out_l, out_r) = wet_dry_mix_stereo(left, right, delayed_l, delayed_r, mix);
+        let comp = sonido_core::gain::feedback_wet_compensation(feedback);
+        let (out_l, out_r) =
+            wet_dry_mix_stereo(left, right, delayed_l * comp, delayed_r * comp, mix);
 
         (out_l * output_gain, out_r * output_gain)
     }
@@ -255,10 +258,10 @@ mod tests {
         // Process impulse
         delay.process(1.0);
 
-        // Look for delayed impulse
+        // Look for delayed impulse (threshold accounts for feedback_wet_compensation)
         let mut found = false;
         for _ in 0..5000 {
-            if delay.process(0.0) > 0.9 {
+            if delay.process(0.0) > 0.5 {
                 found = true;
                 break;
             }
@@ -287,14 +290,15 @@ mod tests {
         delay.process_stereo(1.0, 0.5);
 
         // Look for delayed impulse on both channels
+        // Thresholds account for feedback_wet_compensation at default fb=0.5
         let mut found_l = false;
         let mut found_r = false;
         for _ in 0..5000 {
             let (l, r) = delay.process_stereo(0.0, 0.0);
-            if l > 0.9 {
+            if l > 0.5 {
                 found_l = true;
             }
-            if r > 0.4 {
+            if r > 0.2 {
                 found_r = true;
             }
             if found_l && found_r {
@@ -321,14 +325,16 @@ mod tests {
         delay.process_stereo(1.0, 0.0);
 
         // With ping-pong, the feedback should cross channels
+        // Thresholds account for feedback_wet_compensation at fb=0.8:
+        // compensation = 1-0.8 = 0.2, so first echo ≈ 0.2
         let mut first_l_echo = false;
         let mut first_r_echo = false;
         for _i in 0..15000 {
             let (l, r) = delay.process_stereo(0.0, 0.0);
-            if !first_l_echo && l.abs() > 0.5 {
+            if !first_l_echo && l.abs() > 0.1 {
                 first_l_echo = true;
             }
-            if first_l_echo && r.abs() > 0.3 {
+            if first_l_echo && r.abs() > 0.05 {
                 first_r_echo = true;
                 break;
             }
