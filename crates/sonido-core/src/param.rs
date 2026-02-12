@@ -86,6 +86,38 @@ impl SmoothedParam {
         param
     }
 
+    /// 5 ms smoothing — drive, nonlinear gain parameters.
+    ///
+    /// Fast response avoids audible latency on parameters that affect
+    /// waveshaping and saturation characteristics.
+    pub fn fast(initial: f32, sample_rate: f32) -> Self {
+        Self::with_config(initial, sample_rate, 5.0)
+    }
+
+    /// 10 ms smoothing — most parameters (rate, depth, mix, level).
+    ///
+    /// The default choice for general-purpose parameter smoothing.
+    /// Provides a good balance between responsiveness and click-free changes.
+    pub fn standard(initial: f32, sample_rate: f32) -> Self {
+        Self::with_config(initial, sample_rate, 10.0)
+    }
+
+    /// 20 ms smoothing — filter coefficients, EQ, reverb decay.
+    ///
+    /// Slower response prevents audible "zipper" artifacts on parameters
+    /// that directly affect filter coefficients.
+    pub fn slow(initial: f32, sample_rate: f32) -> Self {
+        Self::with_config(initial, sample_rate, 20.0)
+    }
+
+    /// 50 ms smoothing — delay time, predelay (avoids pitch artifacts).
+    ///
+    /// Very slow response prevents the pitch-shifting artifacts that occur
+    /// when delay time changes cause the read pointer to jump.
+    pub fn interpolated(initial: f32, sample_rate: f32) -> Self {
+        Self::with_config(initial, sample_rate, 50.0)
+    }
+
     /// Set the target value (parameter will smooth towards this).
     ///
     /// The parameter will exponentially approach this value over the
