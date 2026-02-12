@@ -434,6 +434,27 @@ impl ParamDescriptor {
         }
     }
 
+    /// Standard LFO rate parameter in Hz.
+    ///
+    /// Used by modulation effects (chorus, flanger, phaser, tremolo).
+    ///
+    /// # Arguments
+    ///
+    /// * `min` - Minimum rate in Hz
+    /// * `max` - Maximum rate in Hz
+    /// * `default` - Default rate in Hz
+    pub fn rate_hz(min: f32, max: f32, default: f32) -> Self {
+        Self {
+            name: "Rate",
+            short_name: "Rate",
+            unit: ParamUnit::Hertz,
+            min,
+            max,
+            default,
+            step: 0.05,
+        }
+    }
+
     /// Clamps a value to this parameter's valid range.
     ///
     /// # Example
@@ -845,5 +866,17 @@ mod tests {
 
         // Test PartialEq
         assert_eq!(desc, cloned);
+    }
+
+    #[test]
+    fn test_rate_hz_factory() {
+        let desc = ParamDescriptor::rate_hz(0.05, 5.0, 0.5);
+        assert_eq!(desc.name, "Rate");
+        assert_eq!(desc.short_name, "Rate");
+        assert_eq!(desc.unit, ParamUnit::Hertz);
+        assert_eq!(desc.min, 0.05);
+        assert_eq!(desc.max, 5.0);
+        assert_eq!(desc.default, 0.5);
+        assert_eq!(desc.step, 0.05);
     }
 }

@@ -196,15 +196,7 @@ impl ParameterInfo for Tremolo {
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
         match index {
-            0 => Some(ParamDescriptor {
-                name: "Rate",
-                short_name: "Rate",
-                unit: ParamUnit::Hertz,
-                min: 0.5,
-                max: 20.0,
-                default: 5.0,
-                step: 0.1,
-            }),
+            0 => Some(ParamDescriptor::rate_hz(0.5, 20.0, 5.0)),
             1 => Some(ParamDescriptor::depth()),
             2 => Some(ParamDescriptor {
                 name: "Waveform",
