@@ -1,6 +1,7 @@
 //! Criterion benchmarks for sonido effects
 //!
 //! Run with: cargo bench
+#![allow(missing_docs)]
 
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use sonido_core::{Effect, EffectExt};
