@@ -92,7 +92,7 @@ Run each effect on a test file. Pass = exits with "Done!", output WAV exists, st
 | 4 | `cargo run -p sonido-cli -- process test_audio/noise.wav /tmp/out.wav --effect gate --param threshold=-40` | [ ] |
 | 5 | `cargo run -p sonido-cli -- process test_audio/sine_440.wav /tmp/out.wav --effect eq --param low_gain=6` | [ ] |
 | 6 | `cargo run -p sonido-cli -- process test_audio/noise.wav /tmp/out.wav --effect filter --param cutoff=2000` | [ ] |
-| 7 | `cargo run -p sonido-cli -- process test_audio/sine_440.wav /tmp/out.wav --effect wah --param sensitivity=80` | [ ] |
+| 7 | `cargo run -p sonido-cli -- process test_audio/sine_440.wav /tmp/out.wav --effect wah --param sensitivity=0.8` | [ ] |
 | 8 | `cargo run -p sonido-cli -- process test_audio/sine_440.wav /tmp/out.wav --effect tremolo --param rate=5 --param depth=0.8` | [ ] |
 | 9 | `cargo run -p sonido-cli -- process test_audio/sine_440.wav /tmp/out.wav --effect chorus --param rate=2 --param depth=0.5` | [ ] |
 | 10 | `cargo run -p sonido-cli -- process test_audio/sine_440.wav /tmp/out.wav --effect flanger --param rate=0.5 --param depth=0.7` | [ ] |
@@ -110,7 +110,7 @@ Verify aliases resolve to the same effect:
 cargo run -p sonido-cli -- process test_audio/noise.wav /tmp/out.wav --effect lowpass --param cutoff=2000
 cargo run -p sonido-cli -- process test_audio/sine_440.wav /tmp/out.wav --effect vibrato --param depth=0.5
 cargo run -p sonido-cli -- process test_audio/noise.wav /tmp/out.wav --effect noisegate --param threshold=-40
-cargo run -p sonido-cli -- process test_audio/sine_440.wav /tmp/out.wav --effect autowah --param sensitivity=80
+cargo run -p sonido-cli -- process test_audio/sine_440.wav /tmp/out.wav --effect autowah --param sensitivity=0.8
 cargo run -p sonido-cli -- process test_audio/sine_440.wav /tmp/out.wav --effect parametriceq --param low_gain=6
 ```
 
@@ -194,7 +194,7 @@ cargo run -p sonido-cli -- presets paths
 ```bash
 cargo run -p sonido-cli -- presets save test_preset --chain "distortion:drive=10|delay:time=200"
 cargo run -p sonido-cli -- presets show test_preset
-cargo run -p sonido-cli -- presets delete test_preset
+cargo run -p sonido-cli -- presets delete test_preset --force
 ```
 
 - [ ] Save succeeds

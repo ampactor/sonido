@@ -51,6 +51,7 @@ sonido process <INPUT> <OUTPUT> [OPTIONS]
 | `--param <KEY=VALUE>` | Effect parameter (can repeat) |
 | `--block-size <N>` | Processing block size (default: 512) |
 | `--bit-depth <N>` | Output bit depth: 16, 24, or 32 (default: 32) |
+| `--mono` | Force mono output (mix stereo to mono) |
 
 ### Examples
 
@@ -370,6 +371,8 @@ sonido analyze spectrum <INPUT> [OPTIONS]
 | `--window <TYPE>` | Window function: hamming, blackman, hann, rectangular (default: blackman) |
 | `-o, --output <FILE>` | Output CSV file |
 | `--peaks <N>` | Show top N peaks (default: 10) |
+| `--welch` | Use Welch's method for noise reduction |
+| `--overlap <N>` | Overlap ratio for Welch's method, 0.0-1.0 (default: 0.5) |
 
 ```bash
 # Analyze and show top peaks
@@ -390,11 +393,19 @@ sonido analyze transfer <INPUT> <OUTPUT_FILE> [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `--fft-size <N>` | FFT size (default: 4096) |
-| `-o, --output <FILE>` | Output JSON file |
+| `-o, --output <FILE>` | Output JSON or FRD file (format detected from extension) |
+| `--group-delay` | Include group delay in output |
+| `--smooth <N>` | Apply 1/N octave smoothing (e.g., 3 for 1/3 octave) |
 
 ```bash
 # Measure pedal response
 sonido analyze transfer dry.wav wet.wav --output response.json
+
+# Export as FRD for REW/Room EQ Wizard
+sonido analyze transfer dry.wav wet.wav --output response.frd
+
+# With group delay and smoothing
+sonido analyze transfer dry.wav wet.wav --group-delay --smooth 3 --output response.json
 ```
 
 #### ir
@@ -680,17 +691,32 @@ Output includes:
 
 ## compare
 
-Compare two audio files (A/B comparison).
+Compare two audio files (A/B comparison for reverse engineering).
 
 ```bash
-sonido compare <FILE_A> <FILE_B> [OPTIONS]
+sonido compare <REFERENCE> <IMPLEMENTATION> [OPTIONS]
 ```
+
+| Option | Description |
+|--------|-------------|
+| `--fft-size <N>` | FFT size for spectral analysis (default: 4096) |
+| `-o, --output <FILE>` | Output detailed JSON report |
+| `--detailed` | Show per-band frequency analysis |
 
 Calculates:
 - RMS difference
 - Peak difference
 - Correlation coefficient
 - Spectral differences
+- Per-band breakdown (with `--detailed`)
+
+```bash
+# Basic comparison
+sonido compare hardware_recording.wav software_output.wav
+
+# Detailed frequency band analysis with JSON export
+sonido compare dry.wav wet.wav --detailed --output report.json
+```
 
 ---
 
@@ -752,7 +778,14 @@ If no loopback devices are detected, platform-specific installation instructions
 List available effects and their parameters.
 
 ```bash
+# List all effects
 sonido effects
+
+# Show details for a specific effect (parameters, ranges, defaults, examples)
+sonido effects <EFFECT>
+
+# Show example CLI commands
+sonido effects --examples
 ```
 
 Shows all effects with:
@@ -771,6 +804,9 @@ Several effects have shorter alias names that can be used interchangeably:
 | `multivibrato` | `vibrato` |
 | `tape` | `tapesaturation` |
 | `preamp` | `cleanpreamp` |
+| `gate` | `noisegate` |
+| `wah` | `autowah` |
+| `eq` | `parametriceq`, `peq` |
 
 Examples:
 ```bash
@@ -781,6 +817,10 @@ sonido process input.wav output.wav --effect lowpass --param cutoff=2000
 # These are equivalent
 sonido process input.wav output.wav --effect multivibrato --param depth=0.6
 sonido process input.wav output.wav --effect vibrato --param depth=0.6
+
+# These are equivalent
+sonido process input.wav output.wav --effect gate --param threshold=-40
+sonido process input.wav output.wav --effect noisegate --param threshold=-40
 ```
 
 ---
@@ -841,7 +881,7 @@ sonido presets delete <NAME> [OPTIONS]
 
 | Option | Description |
 |--------|-------------|
-| `--force` | Don't ask for confirmation |
+| `--force` | Required — confirms deletion |
 
 #### copy
 
