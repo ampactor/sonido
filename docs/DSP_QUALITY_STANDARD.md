@@ -164,7 +164,7 @@ Status as of 2026-02-12 against 0 dBFS sine input at 48 kHz, default parameters.
 | Multi Vibrato | Modulation | PASS | PASS | PASS | PASS | N/A | PASS | PASS |
 | Delay | Time-Based | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | Reverb (Room) | Time-Based | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
-| Reverb (Hall) | Time-Based | **FAIL** | PASS | PASS | PASS | PASS | PASS | PASS |
+| Reverb (Hall) | Time-Based | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | Low Pass Filter | Filter | PASS | PASS | PASS | PASS | N/A | PASS | PASS |
 | Wah | Filter | PASS | PASS | PASS | PASS | N/A | PASS | PASS |
 | Parametric EQ | Filter | PASS | PASS | PASS | N/A | N/A | PASS | PASS |
@@ -175,25 +175,13 @@ Status as of 2026-02-12 against 0 dBFS sine input at 48 kHz, default parameters.
 - `**` Exempt from Rule 2 (gain-purpose effect)
 - `N/A` Rule does not apply (e.g., no feedback path, no mix control)
 
-### Reverb Hall Preset: Rule 1 Failure
+### Reverb Hall Preset: Gain Compensation
 
-The hall preset (room_size=0.8, decay=0.8, damping=0.3) peaks at **+11.8 dB**
-above input level with a 0 dBFS sine, violating Rule 1 by 12.8 dB.
-
-**Root cause:** Eight parallel comb filters sum constructively. With high
-room_size and decay, comb feedback approaches 0.98 (from
-`scaled_room + decay * (0.98 - scaled_room)` in `reverb.rs:301-302`). The
-summed output of 8 combs at near-unity feedback significantly exceeds unity
-gain.
-
-**Planned fix (Phase 3):** Feedback-adaptive output compensation. Scale the
-reverb wet signal inversely with effective feedback gain so that higher
-room/decay settings produce proportionally lower wet output. This preserves
-the reverb character while enforcing the peak ceiling.
-
-**Room preset status:** PASS. The room preset (room_size=0.5, decay=0.5,
-damping=0.5) produces adequate headroom because lower feedback keeps comb
-summation within bounds.
+The hall preset (room_size=0.8, decay=0.8, damping=0.3) previously peaked at
++11.8 dB above input level. This was fixed by feedback-adaptive comb
+compensation — a smooth quadratic curve that scales the comb output inversely
+with effective feedback. See `docs/DSP_FUNDAMENTALS.md` for the formula and
+`docs/DESIGN_DECISIONS.md` ADR-018 for rationale.
 
 ### Flanger, Phaser, Delay: Rule 2 Notes
 

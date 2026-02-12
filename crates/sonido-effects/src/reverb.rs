@@ -121,6 +121,11 @@ pub struct Reverb {
     cached_room: f32,
     cached_decay: f32,
     cached_damp: f32,
+
+    /// Feedback-adaptive comb output compensation.
+    /// Reduces wet gain at high feedback to prevent peak ceiling violation.
+    /// Computed in `update_comb_params()`.
+    comb_compensation: f32,
 }
 
 impl Reverb {
@@ -182,6 +187,7 @@ impl Reverb {
             cached_room: -1.0,
             cached_decay: -1.0,
             cached_damp: -1.0,
+            comb_compensation: 1.0,
         };
 
         reverb.update_comb_params();
@@ -301,6 +307,13 @@ impl Reverb {
         let scaled_room = 0.28 + room * 0.7;
         let feedback = scaled_room + decay * (0.98 - scaled_room);
 
+        // Feedback-adaptive compensation: smooth quadratic curve.
+        // Below fb=0.7: unity (room/small-room settings unaffected).
+        // At fb=0.98: ~0.12 (≈ -18 dB), countering comb summation gain.
+        // C1-continuous — safe for real-time parameter sweeps.
+        let x = ((feedback - 0.7) * 3.33).clamp(0.0, 1.0);
+        self.comb_compensation = 1.0 - x * x * 0.88;
+
         for comb in &mut self.combs {
             comb.set_feedback(feedback);
             comb.set_damp(damp);
@@ -339,7 +352,7 @@ impl Effect for Reverb {
         for comb in &mut self.combs {
             comb_sum += comb.process(predelayed);
         }
-        comb_sum *= 0.125; // Scale by 1/8
+        comb_sum *= 0.125 * self.comb_compensation;
 
         // Process through series allpass filters
         let mut diffused = comb_sum;
@@ -381,7 +394,7 @@ impl Effect for Reverb {
         for comb in &mut self.combs {
             comb_sum_l += comb.process(predelayed_l);
         }
-        comb_sum_l *= 0.125;
+        comb_sum_l *= 0.125 * self.comb_compensation;
 
         let mut diffused_l = comb_sum_l;
         for allpass in &mut self.allpasses {
@@ -393,7 +406,7 @@ impl Effect for Reverb {
         for comb in &mut self.combs_r {
             comb_sum_r += comb.process(predelayed_r);
         }
-        comb_sum_r *= 0.125;
+        comb_sum_r *= 0.125 * self.comb_compensation;
 
         let mut diffused_r = comb_sum_r;
         for allpass in &mut self.allpasses_r {

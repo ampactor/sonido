@@ -404,6 +404,34 @@ let feedback = scaled_room + decay * (0.98 - scaled_room);
 
 This maps the user-friendly 0-1 parameters to a feedback range that stays below 1.0 (ensuring stability) while providing musically useful control. At maximum settings (`room=1.0, decay=1.0`), feedback reaches 0.98, producing very long reverb tails without instability.
 
+### Feedback-Adaptive Comb Compensation
+
+At high feedback (room_size and decay both elevated), the 8 parallel comb filters produce summed energy far exceeding unity gain. The static `1/8` scaling compensates for the parallel split but not for feedback-dependent energy accumulation within each comb.
+
+A smooth quadratic compensation curve scales the comb output inversely with effective feedback:
+
+```
+x = clamp((feedback - 0.7) * 3.33, 0, 1)
+compensation = 1 - x² * 0.88
+```
+
+| Feedback | Compensation | dB |
+|----------|-------------|-----|
+| ≤ 0.70 | 1.000 | 0.0 |
+| 0.805 (default) | 0.892 | −1.0 |
+| 0.90 | 0.607 | −4.3 |
+| 0.977 (hall) | 0.255 | −11.9 |
+
+Design properties:
+
+- **C1-continuous** — no derivative discontinuity, safe for real-time parameter automation
+- **Transparent below 0.7** — room and small-room presets unaffected
+- **Applied to comb output** — preserves natural excitation and decay envelope shape
+
+Reference: STK FreeVerb uses a fixed `fixedGain = 0.015` (−36 dB) input attenuation. Sonido's wider feedback range (0.28–0.98 vs STK's 0.7–0.98) requires adaptive rather than fixed compensation.
+
+Source: `crates/sonido-effects/src/reverb.rs` (`update_comb_params`, `process_stereo`)
+
 ---
 
 ## Parameter Smoothing
