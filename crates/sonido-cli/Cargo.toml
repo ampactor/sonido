@@ -29,9 +29,5 @@ serde_json = "1.0"
 num-traits = { workspace = true }
 rustfft = { workspace = true }
 
-# TUI
-ratatui = "0.28"
-crossterm = "0.28"
-
 [lints]
 workspace = true

@@ -8,4 +8,3 @@ pub mod generate;
 pub mod presets;
 pub mod process;
 pub mod realtime;
-pub mod tui;

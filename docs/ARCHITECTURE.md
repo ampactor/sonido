@@ -275,7 +275,6 @@ Command-line interface tying everything together.
 - `devices`: Audio device management
 - `effects`: List available effects
 - `presets`: Preset management (list, show, save, delete)
-- `tui`: Interactive terminal UI for effect editing
 
 **Analyze subcommands for CFC research:**
 - `pac`: Phase-Amplitude Coupling analysis with surrogate testing

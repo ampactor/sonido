@@ -27,7 +27,6 @@ cargo build --release -p sonido-cli
 | `devices` | List audio devices |
 | `effects` | List available effects |
 | `presets` | Manage effect presets |
-| `tui` | Interactive terminal UI |
 
 ---
 
