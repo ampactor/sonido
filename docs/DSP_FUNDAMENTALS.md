@@ -404,33 +404,51 @@ let feedback = scaled_room + decay * (0.98 - scaled_room);
 
 This maps the user-friendly 0-1 parameters to a feedback range that stays below 1.0 (ensuring stability) while providing musically useful control. At maximum settings (`room=1.0, decay=1.0`), feedback reaches 0.98, producing very long reverb tails without instability.
 
-### Feedback-Adaptive Comb Compensation
+### Feedback Resonance Compensation
 
-At high feedback (room_size and decay both elevated), the 8 parallel comb filters produce summed energy far exceeding unity gain. The static `1/8` scaling compensates for the parallel split but not for feedback-dependent energy accumulation within each comb.
+A feedback comb filter with coefficient `g` has peak gain `1/(1-g)` at resonance frequencies (where the round-trip delay produces constructive interference). At `g=0.5`, peak gain is 2× (+6 dB); at `g=0.9`, peak gain is 10× (+20 dB). Without compensation, the wet signal at resonance exceeds the dry signal for any `g > 0`, violating the -1 dBFS peak ceiling.
 
-A smooth quadratic compensation curve scales the comb output inversely with effective feedback:
+**Exact compensation: `c = (1-g)`**
+
+Scaling the wet signal by `(1-g)` exactly cancels peak-gain amplification:
 
 ```
-x = clamp((feedback - 0.7) * 3.33, 0, 1)
-compensation = 1 - x² * 0.88
+output_at_resonance = c × 1/(1-g) = (1-g)/(1-g) = 1.0
 ```
 
-| Feedback | Compensation | dB |
-|----------|-------------|-----|
-| ≤ 0.70 | 1.000 | 0.0 |
-| 0.805 (default) | 0.892 | −1.0 |
-| 0.90 | 0.607 | −4.3 |
-| 0.977 (hall) | 0.255 | −11.9 |
+The compensated wet signal at resonance equals the dry signal — a perfect crossfade with zero amplification at any mix setting. This is implemented in `gain::feedback_wet_compensation()` and used by delay, flanger, and phaser.
 
-Design properties:
+| Feedback | Compensation | Peak wet at resonance |
+|----------|-------------|----------------------|
+| 0.0 | 1.000 | 1.0 |
+| 0.4 (delay default) | 0.600 | 1.0 |
+| 0.5 (flanger/phaser default) | 0.500 | 1.0 |
+| 0.9 | 0.100 | 1.0 |
+| 0.95 | 0.050 | 1.0 |
 
-- **C1-continuous** — no derivative discontinuity, safe for real-time parameter automation
-- **Transparent below 0.7** — room and small-room presets unaffected
-- **Applied to comb output** — preserves natural excitation and decay envelope shape
+At low feedback (g=0.1), compensation is 0.9 — barely any attenuation. At high feedback (g=0.9), compensation is 0.1 — the wet signal is quieter but the decay tail is correspondingly longer. The `output` parameter provides makeup gain if needed.
 
-Reference: STK FreeVerb uses a fixed `fixedGain = 0.015` (−36 dB) input attenuation. Sonido's wider feedback range (0.28–0.98 vs STK's 0.7–0.98) requires adaptive rather than fixed compensation.
+**Moderate compensation for parallel banks: `c = sqrt(1-g)`**
 
-Source: `crates/sonido-effects/src/reverb.rs` (`update_comb_params`, `process_stereo`)
+Reverb uses 8 parallel comb filters averaged (÷8 = −18 dB headroom). At any frequency, only 1–2 combs resonate simultaneously (the mutually-prime delay lengths prevent coincident resonance). The effective gain is far less than the theoretical per-comb peak, so exact `(1-g)` compensation is unnecessarily aggressive — it would attenuate the wet signal by ~7 dB more than needed at typical hall settings.
+
+The reverb uses `sqrt(1-g)` inline: the geometric mean of unity and exact compensation. This sits between no attenuation and full cancellation, matching the reverb's parallel-averaging topology.
+
+**Topology distinction:**
+
+| Topology | Peak gain | Compensation | Effects |
+|----------|-----------|-------------|---------|
+| Single comb (delay, flanger) | `1/(1-g)` | `(1-g)` exact | Delay, Flanger |
+| Allpass cascade (phaser) | Unity magnitude | `(1-g)` conservative | Phaser |
+| Parallel comb bank (reverb) | `~1/(8(1-g))` | `sqrt(1-g)` moderate | Reverb |
+
+The phaser's allpass cascade has unity magnitude at all frequencies — resonance is narrowband (3 notch-peak pairs vs hundreds of comb teeth). Exact compensation is conservative but harmless, keeping the phaser well within ceiling.
+
+**Industry context:** Static wet-signal compensation is the standard approach for embedded/pedal DSP (FV-1, EQD Afterneath). DAW-grade reverbs (MAX/MSP gen~, Valhalla) sometimes use dynamic AGC, but the per-sample envelope tracking is too expensive for Sonido's embedded targets (Daisy Seed, Hothouse).
+
+Reference: CCRMA PASP, "Feedback Comb Filters" — peak gain = 1/(1-|g|).
+
+Source: `crates/sonido-core/src/gain.rs` (`feedback_wet_compensation`), `crates/sonido-effects/src/reverb.rs` (`update_comb_params`)
 
 ---
 

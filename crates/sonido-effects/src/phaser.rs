@@ -270,7 +270,8 @@ impl Effect for Phaser {
         // Store for next iteration
         self.feedback_sample = flush_denormal(wet);
 
-        wet_dry_mix(input, wet, mix) * output_gain
+        let comp = sonido_core::gain::feedback_wet_compensation(feedback);
+        wet_dry_mix(input, wet * comp, mix) * output_gain
     }
 
     #[inline]
@@ -320,8 +321,9 @@ impl Effect for Phaser {
         }
         self.feedback_sample_r = flush_denormal(wet_r);
 
-        let out_l = wet_dry_mix(left, wet_l, mix) * output_gain;
-        let out_r = wet_dry_mix(right, wet_r, mix) * output_gain;
+        let comp = sonido_core::gain::feedback_wet_compensation(feedback);
+        let out_l = wet_dry_mix(left, wet_l * comp, mix) * output_gain;
+        let out_r = wet_dry_mix(right, wet_r * comp, mix) * output_gain;
 
         (out_l, out_r)
     }
