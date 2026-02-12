@@ -318,6 +318,7 @@ make dev-install                    # Symlink debug build to ~/.local/bin
 | DSP Theory Reference | docs/DSP_FUNDAMENTALS.md |
 | Architecture Decisions | docs/DESIGN_DECISIONS.md |
 | DSP Quality Standard | docs/DSP_QUALITY_STANDARD.md |
+| Daisy Seed Integration | docs/DAISY_SEED.md |
 
 ## Conventions
 
