@@ -38,6 +38,7 @@ The distortion applies a static nonlinear transfer function (waveshaper) to the 
 | `tone` | Tone frequency in Hz | 4000.0 | 500-10000 |
 | `level` | Output level in dB | -6.0 | -20 to 0 |
 | `waveshape` | Waveshape type | softclip | softclip, hardclip, foldback, asymmetric |
+| `foldback_threshold` | Foldback waveshape threshold | 0.8 | 0.1-1.0 |
 
 ### Waveshape Types and Their Harmonic Character
 
@@ -119,6 +120,7 @@ Dual-voice modulated delay chorus.
 | `rate` | LFO rate in Hz | 1.0 | 0.1-10 |
 | `depth` | Modulation depth (0-1) | 0.5 | 0-1 |
 | `mix` | Wet/dry mix (0-1) | 0.5 | 0-1 |
+| `output` | Output level in dB | 0.0 | -20 to 20 |
 
 ### Tips
 
@@ -151,6 +153,7 @@ Feedback delay with optional ping-pong stereo mode.
 | `feedback` | Feedback amount (0-1) | 0.4 | 0-0.95 |
 | `mix` | Wet/dry mix (0-1) | 0.5 | 0-1 |
 | `ping_pong` | Ping-pong stereo mode (0=off, 1=on) | 0.0 | 0-1 |
+| `output` | Output level in dB | 0.0 | -20 to 20 |
 
 ### Tips
 
@@ -175,7 +178,8 @@ Resonant lowpass filter (2-pole). Also available as `lowpass`.
 | Parameter | Description | Default | Range |
 |-----------|-------------|---------|-------|
 | `cutoff` | Cutoff frequency in Hz | 1000.0 | 20-20000 |
-| `resonance` | Resonance (Q factor) | 0.707 | 0.1-10 |
+| `resonance` | Resonance (Q factor) | 0.707 | 0.1-20 |
+| `output` | Output level in dB | 0.0 | -20 to 20 |
 
 ### Tips
 
@@ -202,6 +206,7 @@ Simulates the complex pitch modulation of analog tape machines with 10 independe
 |-----------|-------------|---------|-------|
 | `depth` | Overall depth (0-1) | 0.5 | 0-1 |
 | `mix` | Wet/dry mix (0-100%) | 100.0 | 0-100 |
+| `output` | Output level in dB | 0.0 | -20 to 20 |
 
 ### Tips
 
@@ -225,7 +230,7 @@ Tape saturation with HF rolloff.
 |-----------|-------------|---------|-------|
 | `drive` | Drive amount in dB | 6.0 | 0-24 |
 | `saturation` | Saturation amount (0-1) | 0.5 | 0-1 |
-| `output` | Output level in dB | 0.0 | -12 to 12 |
+| `output` | Output level in dB | -6.0 | -12 to 12 |
 | `hf_rolloff` | HF rolloff frequency in Hz | 12000.0 | 1000-20000 |
 | `bias` | Tape bias offset | 0.0 | -0.2 to 0.2 |
 
@@ -307,6 +312,7 @@ This mapping ensures the feedback stays below 1.0 (stable) while providing a wid
 | `mix` | Wet/dry mix (0-1) | 0.5 | 0-1 |
 | `stereo_width` | Stereo width (0-100%) | 100.0 | 0-100 |
 | `reverb_type` | Reverb type (0=room, 1=hall) | 0.0 | 0-1 |
+| `output` | Output level in dB | 0.0 | -20 to 20 |
 
 ### Reverb Types
 
@@ -349,6 +355,7 @@ Amplitude modulation with multiple waveforms.
 | `rate` | LFO rate in Hz | 5.0 | 0.5-20 |
 | `depth` | Modulation depth (0-1) | 0.5 | 0-1 |
 | `waveform` | Waveform type | sine | sine, triangle, square, samplehold |
+| `output` | Output level in dB | 0.0 | -20 to 20 |
 
 ### Waveform Types
 
@@ -382,6 +389,7 @@ Noise gate with threshold and hold.
 | `attack` | Attack time in ms | 1.0 | 0.1-50 |
 | `release` | Release time in ms | 100.0 | 10-1000 |
 | `hold` | Hold time in ms | 50.0 | 0-500 |
+| `output` | Output level in dB | 0.0 | -20 to 20 |
 
 ### Tips
 
@@ -415,6 +423,7 @@ Classic flanger with modulated short delay.
 | `depth` | Modulation depth (0-1) | 0.5 | 0-1 |
 | `feedback` | Feedback amount (0-1) | 0.5 | 0-0.95 |
 | `mix` | Wet/dry mix (0-1) | 0.5 | 0-1 |
+| `output` | Output level in dB | 0.0 | -20 to 20 |
 
 ### Flanger vs. Chorus vs. Phaser
 
@@ -463,6 +472,8 @@ When the allpass-shifted signal is mixed with the original, a notch appears at t
 | `stages` | Number of allpass stages | 6 | 2-12 |
 | `feedback` | Feedback/resonance (0-1) | 0.5 | 0-0.95 |
 | `mix` | Wet/dry mix (0-1) | 0.5 | 0-1 |
+| `stereo_spread` | Stereo LFO phase offset (0=mono, 0.5=180°) | 0.25 | 0-0.5 |
+| `output` | Output level in dB | 0.0 | -20 to 20 |
 
 ### Tips
 
@@ -491,6 +502,11 @@ Auto-wah and manual wah with envelope follower. Also available as `autowah`.
 | `resonance` | Filter Q (sharpness) | 5.0 | 1-10 |
 | `sensitivity` | Envelope sensitivity (0-1) | 0.5 | 0-1 |
 | `mode` | Wah mode | auto | auto, manual |
+| `output` | Output level in dB | 0.0 | -20 to 20 |
+
+### Gain Normalization
+
+The wah uses an SVF bandpass filter whose peak gain at the center frequency equals Q. Without compensation, high-resonance settings (Q=5-10) would produce +14 to +20 dB of gain at the center frequency. The implementation normalizes the bandpass output by dividing by Q (`wah.rs:202`), ensuring unity peak gain regardless of the resonance setting. The normalized signal is then blended 80% wet / 20% dry, preserving the body of the original signal as real wah pedals do.
 
 ### Modes
 
@@ -534,6 +550,7 @@ sonido process in.wav --effect wah \
 | `high_freq` | High band frequency in Hz | 5000.0 | 1000-15000 |
 | `high_gain` | High band gain in dB | 0.0 | -12 to 12 |
 | `high_q` | High band Q | 1.0 | 0.5-5 |
+| `output` | Output level in dB | 0.0 | -20 to 20 |
 
 ### Tips
 

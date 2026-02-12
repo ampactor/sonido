@@ -9,7 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### sonido-core
+- `gain.rs`: Universal output level helpers — `output_level_param()`, `set_output_level_db()`, `output_param_descriptor()`
+- `one_pole.rs`: Reusable one-pole (6 dB/oct) lowpass filter for tone controls and HF rolloff
+- `math.rs`: `wet_dry_mix()`, `wet_dry_mix_stereo()`, `mono_sum()` crossfade helpers
+- `SmoothedParam` preset constructors: `fast()` (5 ms), `standard()` (10 ms), `slow()` (20 ms), `interpolated()` (50 ms)
+- `ParamDescriptor` factory methods: `mix()`, `depth()`, `feedback()`, `time_ms()`, `gain_db()`
+- `ParameterInfo::find_param_by_name()` default method for case-insensitive parameter lookup
+
+#### sonido-effects
+- Universal `output` parameter (±20 dB) on 11 effects: Chorus, Delay, Flanger, Phaser, Tremolo, MultiVibrato, Gate, Wah, LowPassFilter, ParametricEq, Reverb
+- Default-parameter golden regression tests for all 15 effects
+
 #### sonido-cli
+- `info` command for WAV file metadata (format, channels, sample rate, duration, file size)
+- `foldback_threshold` and `stereo_spread` parameters wired in CLI effect processing
 - Auto-generated output filename when OUTPUT argument is omitted — derives name from input stem + effect specification
 - `make dev-install` target for fast debug-build iteration (symlinks to `~/.local/bin`)
 
@@ -24,10 +38,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 #### sonido-effects
+- **Wah gain staging**: Normalized SVF bandpass output by Q for unity peak gain at any resonance setting (was +12.5 dB at Q=5)
+- **TapeSaturation gain staging**: Default output level set to -6 dB to compensate for drive gain (was 0 dB, producing +7.1 dB at defaults)
+- **Chorus/Phaser/Flanger reset**: Added missing `snap_to_target()` calls on all SmoothedParams in `reset()`, preventing parameter smoothing artifacts after reset
+- **Compressor/Gate**: Deleted local `db_to_linear`/`linear_to_db` functions, now use `sonido_core` imports
+- **Factory preset**: Fixed `tape_warmth` preset referencing nonexistent `warmth` parameter (now `saturation`)
 - Fixed stereo cross-contamination in LowPassFilter, ParametricEq, Wah, TapeSaturation, MultiVibrato — each channel now has independent filter state
 - Aligned `new()` defaults with ParameterInfo for Distortion (drive=12, level=-6, tone=4000), Compressor (threshold=-18), Delay (time=300, feedback=0.4), TapeSaturation (drive=6), Reverb (room_size=0.5)
 
 ### Changed
+
+#### sonido-effects
+- All 15 effects migrated to shared DSP vocabulary: `SmoothedParam` presets, `ParamDescriptor` factories, `wet_dry_mix()` helpers
+- Distortion and TapeSaturation tone filters replaced with `OnePole` struct from sonido-core
+- TapeSaturation output default changed from 0 dB to -6 dB (compensates for drive gain)
 
 #### sonido-cli
 - Process command always outputs stereo WAV — mono input is duplicated to stereo before processing

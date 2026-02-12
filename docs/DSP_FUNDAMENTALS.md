@@ -18,6 +18,8 @@ This document explains the digital signal processing theory behind Sonido's impl
 - [Dynamics Processing](#dynamics-processing)
 - [Modulation Effects](#modulation-effects)
 - [Tempo Synchronization](#tempo-synchronization)
+- [Gain Staging](#gain-staging)
+- [Shared DSP Vocabulary](#shared-dsp-vocabulary)
 - [Denormal Protection](#denormal-protection)
 - [Numerical Considerations](#numerical-considerations)
 
@@ -607,6 +609,111 @@ The `TempoManager` tracks musical position using a sample counter and provides:
 - **Division conversion**: Convert note divisions to Hz, ms, or samples at the current tempo
 
 Transport control (`play`, `stop`, `reset`) gates the position counter, ensuring effects stay synchronized when playback stops and resumes.
+
+---
+
+## Gain Staging
+
+**Source:** `crates/sonido-core/src/gain.rs`
+
+### The Problem
+
+Nonlinear effects (distortion, saturation, wah) generate gain that depends on the input signal and parameter settings. Without explicit output level control, effects can produce unexpectedly hot output that clips downstream processors. At the same time, effects with inherent gain reduction (compressor, gate) need makeup gain to restore levels.
+
+### Universal Output Level
+
+All effects in Sonido expose an `output` parameter (last index in `ParameterInfo`) that provides ±20 dB of post-processing level control. The output level is applied as a linear gain multiplier at the end of the processing chain, after all DSP but before the final output.
+
+The `gain.rs` module provides the shared implementation (`gain.rs:1-30`):
+
+```rust
+pub fn output_level_param(sample_rate: f32) -> SmoothedParam {
+    SmoothedParam::standard(1.0, sample_rate)  // 0 dB, 10ms smoothing
+}
+
+pub fn set_output_level_db(param: &mut SmoothedParam, db: f32) {
+    param.set_target(db_to_linear(db.clamp(OUTPUT_MIN_DB, OUTPUT_MAX_DB)));
+}
+```
+
+The output level is stored internally as linear gain (1.0 = 0 dB) for efficient per-sample multiplication, with dB conversion only at the parameter interface boundary.
+
+### Per-Effect Gain Staging
+
+| Effect | Net Gain at Defaults | Output Default | Strategy |
+|--------|---------------------|----------------|----------|
+| Distortion | +3.7 dB (signal-dependent) | -6.0 dB | Drive compensated by output level |
+| TapeSaturation | ~0 dB | -6.0 dB | Drive compensated by output level |
+| Wah | ~0 dB | 0.0 dB | BP normalized by Q (see below) |
+| Compressor | -4.5 dB | makeup 0 dB | Safety-first (user adds makeup) |
+| All others | ~0 dB | 0.0 dB | Unity gain at defaults |
+
+### Wah Bandpass Normalization
+
+The SVF bandpass filter has peak gain equal to Q at the center frequency (`svf.rs:99`: `k = 1/Q`). With the default Q=5, the raw bandpass output would be 5x the input level (+14 dB). Rather than compensating with an output level trim (a band-aid), the implementation normalizes the transfer function directly (`wah.rs:202`):
+
+```rust
+let normalized = filtered / resonance;  // Unity peak gain at any Q
+let out = normalized * 0.8 + input * 0.2;  // 80/20 wet/dry blend for body
+```
+
+At the center frequency: `(input * Q) / Q * 0.8 + input * 0.2 = input`. Unity. The normalization is algebraically exact regardless of Q.
+
+### Shared Dry/Wet Mix
+
+**Source:** `crates/sonido-core/src/math.rs`
+
+The dry/wet mix pattern appears in nearly every effect. Rather than inlining `input * (1.0 - mix) + wet * mix` (which appears ~22 times across the codebase), all effects use the shared `wet_dry_mix()` helper:
+
+```rust
+pub fn wet_dry_mix(dry: f32, wet: f32, mix: f32) -> f32 {
+    dry + (wet - dry) * mix  // one fewer multiply than the expanded form
+}
+```
+
+The `wet_dry_mix_stereo()` variant applies the same crossfade to both channels. These helpers are semantically identical to the inline form but eliminate duplication and make the mix operation self-documenting.
+
+---
+
+## Shared DSP Vocabulary
+
+**Source:** `crates/sonido-core/src/gain.rs`, `param.rs`, `param_info.rs`, `one_pole.rs`, `math.rs`
+
+Sonido extracts recurring DSP patterns into a shared vocabulary in `sonido-core`. This eliminates copy-paste duplication across the 15 effects while establishing consistent conventions.
+
+### SmoothedParam Presets
+
+Rather than scattering magic numbers (`10.0`, `5.0`, `20.0`, `50.0`) across constructors, effects use named presets with documented semantics:
+
+| Preset | Time | Use Case |
+|--------|------|----------|
+| `SmoothedParam::fast()` | 5 ms | Drive, nonlinear gain — needs fast response |
+| `SmoothedParam::standard()` | 10 ms | Most params (rate, depth, mix, level) |
+| `SmoothedParam::slow()` | 20 ms | Filter coefficients, EQ, reverb decay |
+| `SmoothedParam::interpolated()` | 50 ms | Delay time, predelay (avoids pitch artifacts) |
+
+### ParamDescriptor Factories
+
+Common parameter descriptors are constructed via factory methods rather than inline struct literals:
+
+- `ParamDescriptor::mix()` — 0-100%, default 50%
+- `ParamDescriptor::depth()` — 0-100%, default 50%
+- `ParamDescriptor::feedback()` — 0-95%, default 50%
+- `ParamDescriptor::time_ms(name, short, min, max, default)` — custom time param
+- `ParamDescriptor::gain_db(name, short, min, max, default)` — custom gain param
+
+### OnePole Filter
+
+**Source:** `crates/sonido-core/src/one_pole.rs`
+
+A minimal one-pole (6 dB/octave) lowpass filter used for tone controls and HF rolloff. Replaces ad-hoc inline implementations in distortion and tape saturation with a shared struct:
+
+```rust
+let mut tone = OnePole::new(48000.0, 4000.0);
+let filtered = tone.process(input);  // one-pole lowpass at 4 kHz
+```
+
+The coefficient `exp(-2*pi*freq/sample_rate)` gives the standard one-pole response with -3 dB at the specified frequency.
 
 ---
 
