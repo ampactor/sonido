@@ -72,6 +72,12 @@ pub fn available_effects() -> Vec<EffectInfo> {
                     default: "softclip",
                     range: "softclip|hardclip|foldback|asymmetric",
                 },
+                ParameterInfo {
+                    name: "foldback_threshold",
+                    description: "Foldback threshold (foldback mode only)",
+                    default: "0.8",
+                    range: "0.1-1.0",
+                },
             ],
         },
         EffectInfo {
@@ -233,6 +239,12 @@ pub fn available_effects() -> Vec<EffectInfo> {
                     description: "Wet/dry mix (0-1)",
                     default: "0.5",
                     range: "0-1",
+                },
+                ParameterInfo {
+                    name: "stereo_spread",
+                    description: "Stereo LFO phase offset (0-0.5)",
+                    default: "0.25",
+                    range: "0-0.5",
                 },
             ],
         },
@@ -542,6 +554,9 @@ pub fn create_effect_with_params(
                     "tone" => effect.set_tone_hz(parse_f32(key, value)?),
                     "level" => effect.set_level_db(parse_f32(key, value)?),
                     "waveshape" | "shape" => effect.set_waveshape(parse_waveshape(value)?),
+                    "foldback_threshold" | "foldback" => {
+                        effect.set_foldback_threshold(parse_f32(key, value)?);
+                    }
                     _ => {
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
@@ -636,6 +651,9 @@ pub fn create_effect_with_params(
                     "stages" | "stg" => effect.set_stages(parse_f32(key, value)? as usize),
                     "feedback" | "fdbk" => effect.set_feedback(parse_f32(key, value)?),
                     "mix" => effect.set_mix(parse_f32(key, value)?),
+                    "stereo_spread" | "spread" => {
+                        effect.set_stereo_spread(parse_f32(key, value)?);
+                    }
                     _ => {
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),

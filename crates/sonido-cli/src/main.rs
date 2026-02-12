@@ -36,6 +36,9 @@ enum Commands {
     /// List available effects and their parameters
     Effects(commands::effects::EffectsArgs),
 
+    /// Display WAV file information
+    Info(commands::info::InfoArgs),
+
     /// Manage effect presets (list, show, save, delete)
     Presets(commands::presets::PresetsArgs),
 }
@@ -51,6 +54,7 @@ fn main() -> anyhow::Result<()> {
         Commands::Compare(args) => commands::compare::run(args),
         Commands::Devices(args) => commands::devices::run(args),
         Commands::Effects(args) => commands::effects::run(args),
+        Commands::Info(args) => commands::info::run(args),
         Commands::Presets(args) => commands::presets::run(args),
     }
 }
