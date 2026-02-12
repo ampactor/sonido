@@ -15,6 +15,8 @@ use sonido_core::{
 /// | Index | Name | Range | Default |
 /// |-------|------|-------|---------|
 /// | 0 | Gain | -20.0–20.0 dB | 0.0 |
+/// | 1 | Output | -20.0–20.0 dB | 0.0 |
+/// | 2 | Headroom | 6.0–40.0 dB | 20.0 |
 ///
 /// # Example
 ///
@@ -152,7 +154,7 @@ impl Effect for CleanPreamp {
 
 impl ParameterInfo for CleanPreamp {
     fn param_count(&self) -> usize {
-        1
+        3
     }
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
@@ -166,6 +168,24 @@ impl ParameterInfo for CleanPreamp {
                 default: 0.0,
                 step: 0.5,
             }),
+            1 => Some(ParamDescriptor {
+                name: "Output",
+                short_name: "Output",
+                unit: ParamUnit::Decibels,
+                min: -20.0,
+                max: 20.0,
+                default: 0.0,
+                step: 0.5,
+            }),
+            2 => Some(ParamDescriptor {
+                name: "Headroom",
+                short_name: "Hroom",
+                unit: ParamUnit::Decibels,
+                min: 6.0,
+                max: 40.0,
+                default: 20.0,
+                step: 1.0,
+            }),
             _ => None,
         }
     }
@@ -173,13 +193,18 @@ impl ParameterInfo for CleanPreamp {
     fn get_param(&self, index: usize) -> f32 {
         match index {
             0 => self.gain_db(),
+            1 => self.output_db(),
+            2 => self.headroom_db,
             _ => 0.0,
         }
     }
 
     fn set_param(&mut self, index: usize, value: f32) {
-        if index == 0 {
-            self.set_gain_db(value.clamp(-20.0, 20.0));
+        match index {
+            0 => self.set_gain_db(value.clamp(-20.0, 20.0)),
+            1 => self.set_output_db(value.clamp(-20.0, 20.0)),
+            2 => self.set_headroom_db(value),
+            _ => {}
         }
     }
 }

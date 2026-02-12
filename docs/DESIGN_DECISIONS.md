@@ -327,7 +327,8 @@ The offset is approximately 23 samples (~0.5 ms at 44.1 kHz).
 ### Rationale
 
 - **Decorrelation**: Offset delay times ensure the left and right reverb tails are uncorrelated, producing a convincing stereo image. Identical tanks would produce a mono reverb panned to center.
-- **Width control**: A `stereo_width` parameter blends between the decorrelated channels (full stereo) and their average (mono), using mid-side processing. This gives users continuous control from mono to wide stereo.
+- **Width control**: A `stereo_width` parameter (exposed via `ParameterInfo` at index 5, range 0.0–1.0, default 1.0) blends between the decorrelated channels (full stereo) and their average (mono), using mid-side processing. This gives users continuous control from mono to wide stereo.
+- **Type presets**: A `reverb_type` parameter (index 6) selects between Room (0), Hall (1), and Plate (2) presets, each with tuned defaults for room size, decay, and damping. The default Room preset uses room_size 0.5 for a medium, natural-sounding space.
 - **No cross-feed**: Each channel has its own processing path. The left input excites only the left tank. This is simpler than cross-coupled topologies and avoids feedback loops between channels.
 
 ### Tradeoffs
@@ -373,13 +374,14 @@ Applications need to create effects by name at runtime (for presets, configurati
 
 ### Decision
 
-A centralized `EffectRegistry` that maps string names to factory functions, returning `Box<dyn Effect + dyn ParameterInfo>`.
+A centralized `EffectRegistry` that maps string names to factory functions, returning `Box<dyn EffectWithParams + Send>` (combining `Effect` + `ParameterInfo`).
 
 ### Rationale
 
 - **Decoupling**: Application code does not need to import every effect type
 - **Categorization**: Effects are organized by `EffectCategory` (Dynamics, Distortion, Modulation, etc.) for UI grouping
-- **Metadata**: Each registry entry includes name, description, category, and parameter count
+- **Metadata**: Each registry entry includes name, description, category, and parameter count — currently 15 effects with param counts ranging from 2 to 9
+- **Parameter discovery**: `param_index_by_name()` enables CLI and config systems to resolve parameter names to indices at runtime
 - **`no_std` compatible**: The registry uses `alloc` (for `Box` and `Vec`) but not `std`
 
 ---

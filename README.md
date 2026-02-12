@@ -95,19 +95,25 @@ Install the CLI:
 
 ```bash
 cargo install --path crates/sonido-cli
+
+# Or for development (debug build, symlinked to ~/.local/bin)
+make dev-install
 ```
 
 ### Process audio files
 
 ```bash
-# Apply a single effect
+# Apply a single effect (output filename auto-generated)
+sonido process input.wav --effect distortion --param drive=15
+
+# Explicit output filename
 sonido process input.wav output.wav --effect distortion --param drive=15
 
 # Chain multiple effects
-sonido process input.wav output.wav --chain "preamp:gain=6|distortion:drive=12|delay:time=300"
+sonido process input.wav --chain "preamp:gain=6|distortion:drive=12|delay:time=300"
 
 # Use a preset file
-sonido process input.wav output.wav --preset presets/guitar_crunch.toml
+sonido process input.wav --preset presets/guitar_crunch.toml
 ```
 
 ### Real-time processing

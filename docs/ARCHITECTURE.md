@@ -327,12 +327,12 @@ Real-time audio effects processor with professional GUI built on egui.
                 └───────────────┘    └────────────────────┘
 ```
 
-### CLI Stereo Detection
+### CLI Stereo Output
 
-The CLI automatically detects input format:
-- Mono input: duplicates to stereo, processes, outputs stereo
-- Stereo input: processes stereo, outputs stereo
-- Use `--mono` flag to force mono output
+The CLI always produces stereo output:
+- Mono input: duplicates to stereo, processes, outputs 2-channel WAV
+- Stereo input: processes stereo, outputs 2-channel WAV
+- Use `--mono` flag to force mono (1-channel) output
 
 ### GUI Processing
 

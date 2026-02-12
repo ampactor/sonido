@@ -48,12 +48,19 @@ use sonido_core::{
 /// ```
 #[derive(Debug, Clone)]
 pub struct ParametricEq {
-    /// Low band biquad filter
+    /// Low band biquad filter (left channel)
     low_filter: Biquad,
-    /// Mid band biquad filter
+    /// Mid band biquad filter (left channel)
     mid_filter: Biquad,
-    /// High band biquad filter
+    /// High band biquad filter (left channel)
     high_filter: Biquad,
+
+    /// Low band biquad filter (right channel)
+    low_filter_r: Biquad,
+    /// Mid band biquad filter (right channel)
+    mid_filter_r: Biquad,
+    /// High band biquad filter (right channel)
+    high_filter_r: Biquad,
 
     // Low band parameters
     low_freq: SmoothedParam,
@@ -97,6 +104,9 @@ impl ParametricEq {
             low_filter: Biquad::new(),
             mid_filter: Biquad::new(),
             high_filter: Biquad::new(),
+            low_filter_r: Biquad::new(),
+            mid_filter_r: Biquad::new(),
+            high_filter_r: Biquad::new(),
 
             low_freq: SmoothedParam::with_config(100.0, sample_rate, 20.0),
             low_gain: SmoothedParam::with_config(0.0, sample_rate, 10.0),
@@ -240,6 +250,7 @@ impl ParametricEq {
 
         let (b0, b1, b2, a0, a1, a2) = peaking_eq_coefficients(freq, q, gain, self.sample_rate);
         self.low_filter.set_coefficients(b0, b1, b2, a0, a1, a2);
+        self.low_filter_r.set_coefficients(b0, b1, b2, a0, a1, a2);
         self.low_needs_update = false;
     }
 
@@ -250,6 +261,7 @@ impl ParametricEq {
 
         let (b0, b1, b2, a0, a1, a2) = peaking_eq_coefficients(freq, q, gain, self.sample_rate);
         self.mid_filter.set_coefficients(b0, b1, b2, a0, a1, a2);
+        self.mid_filter_r.set_coefficients(b0, b1, b2, a0, a1, a2);
         self.mid_needs_update = false;
     }
 
@@ -260,6 +272,7 @@ impl ParametricEq {
 
         let (b0, b1, b2, a0, a1, a2) = peaking_eq_coefficients(freq, q, gain, self.sample_rate);
         self.high_filter.set_coefficients(b0, b1, b2, a0, a1, a2);
+        self.high_filter_r.set_coefficients(b0, b1, b2, a0, a1, a2);
         self.high_needs_update = false;
     }
 
@@ -315,11 +328,6 @@ impl Effect for ParametricEq {
 
     #[inline]
     fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
-        // Dual-mono: process each channel through the same filter cascade
-        // Note: The biquad filters share state, so processing is interleaved.
-        // For true dual-mono EQ, separate filter instances would be needed per channel.
-
-        // Advance smoothed parameters once
         self.low_freq.advance();
         self.low_gain.advance();
         self.low_q.advance();
@@ -330,7 +338,6 @@ impl Effect for ParametricEq {
         self.high_gain.advance();
         self.high_q.advance();
 
-        // Update coefficients if needed
         if self.low_needs_update
             || !self.low_freq.is_settled()
             || !self.low_gain.is_settled()
@@ -353,15 +360,15 @@ impl Effect for ParametricEq {
             self.update_high_coefficients();
         }
 
-        // Process left channel
+        // Process left channel through L filters
         let left_low = self.low_filter.process(left);
         let left_mid = self.mid_filter.process(left_low);
         let left_out = self.high_filter.process(left_mid);
 
-        // Process right channel (filter state is shared)
-        let right_low = self.low_filter.process(right);
-        let right_mid = self.mid_filter.process(right_low);
-        let right_out = self.high_filter.process(right_mid);
+        // Process right channel through R filters
+        let right_low = self.low_filter_r.process(right);
+        let right_mid = self.mid_filter_r.process(right_low);
+        let right_out = self.high_filter_r.process(right_mid);
 
         (left_out, right_out)
     }
@@ -389,6 +396,9 @@ impl Effect for ParametricEq {
         self.low_filter.clear();
         self.mid_filter.clear();
         self.high_filter.clear();
+        self.low_filter_r.clear();
+        self.mid_filter_r.clear();
+        self.high_filter_r.clear();
 
         self.low_freq.snap_to_target();
         self.low_gain.snap_to_target();

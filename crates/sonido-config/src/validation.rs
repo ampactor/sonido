@@ -333,7 +333,7 @@ fn get_effect_params(effect_id: &str) -> Vec<ParamValidationInfo> {
                 default: 0.0,
             },
         ],
-        // Compressor: 5 params (Threshold, Ratio, Attack, Release, Makeup)
+        // Compressor: 6 params (Threshold, Ratio, Attack, Release, Makeup, Knee)
         "compressor" => vec![
             ParamValidationInfo {
                 name: "threshold".into(),
@@ -369,6 +369,13 @@ fn get_effect_params(effect_id: &str) -> Vec<ParamValidationInfo> {
                 min: 0.0,
                 max: 24.0,
                 default: 0.0,
+            },
+            ParamValidationInfo {
+                name: "knee".into(),
+                index: 5,
+                min: 0.0,
+                max: 12.0,
+                default: 6.0,
             },
         ],
         // Chorus: 3 params (Rate, Depth, Mix)
@@ -464,7 +471,7 @@ fn get_effect_params(effect_id: &str) -> Vec<ParamValidationInfo> {
                 default: 50.0,
             },
         ],
-        // Delay: 3 params (Time, Feedback, Mix)
+        // Delay: 4 params (Time, Feedback, Mix, Ping-Pong)
         "delay" => vec![
             ParamValidationInfo {
                 name: "time".into(),
@@ -487,6 +494,13 @@ fn get_effect_params(effect_id: &str) -> Vec<ParamValidationInfo> {
                 max: 100.0,
                 default: 50.0,
             },
+            ParamValidationInfo {
+                name: "ping_pong".into(),
+                index: 3,
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+            },
         ],
         // LowPass Filter: 2 params (Cutoff, Resonance)
         "filter" => vec![
@@ -505,15 +519,24 @@ fn get_effect_params(effect_id: &str) -> Vec<ParamValidationInfo> {
                 default: 0.707,
             },
         ],
-        // MultiVibrato: 1 param (Depth)
-        "multivibrato" => vec![ParamValidationInfo {
-            name: "depth".into(),
-            index: 0,
-            min: 0.0,
-            max: 200.0,
-            default: 100.0,
-        }],
-        // Tape Saturation: 2 params (Drive, Saturation)
+        // MultiVibrato: 2 params (Depth, Mix)
+        "multivibrato" => vec![
+            ParamValidationInfo {
+                name: "depth".into(),
+                index: 0,
+                min: 0.0,
+                max: 200.0,
+                default: 100.0,
+            },
+            ParamValidationInfo {
+                name: "mix".into(),
+                index: 1,
+                min: 0.0,
+                max: 100.0,
+                default: 100.0,
+            },
+        ],
+        // Tape Saturation: 5 params (Drive, Saturation, Output, HF Rolloff, Bias)
         "tape" => vec![
             ParamValidationInfo {
                 name: "drive".into(),
@@ -529,16 +552,53 @@ fn get_effect_params(effect_id: &str) -> Vec<ParamValidationInfo> {
                 max: 100.0,
                 default: 50.0,
             },
+            ParamValidationInfo {
+                name: "output".into(),
+                index: 2,
+                min: -12.0,
+                max: 12.0,
+                default: 0.0,
+            },
+            ParamValidationInfo {
+                name: "hf_rolloff".into(),
+                index: 3,
+                min: 1000.0,
+                max: 20000.0,
+                default: 12000.0,
+            },
+            ParamValidationInfo {
+                name: "bias".into(),
+                index: 4,
+                min: -0.2,
+                max: 0.2,
+                default: 0.0,
+            },
         ],
-        // Clean Preamp: 1 param (Gain)
-        "preamp" => vec![ParamValidationInfo {
-            name: "gain".into(),
-            index: 0,
-            min: -20.0,
-            max: 20.0,
-            default: 0.0,
-        }],
-        // Reverb: 5 params (Room Size, Decay, Damping, Pre-Delay, Mix)
+        // Clean Preamp: 3 params (Gain, Output, Headroom)
+        "preamp" => vec![
+            ParamValidationInfo {
+                name: "gain".into(),
+                index: 0,
+                min: -20.0,
+                max: 20.0,
+                default: 0.0,
+            },
+            ParamValidationInfo {
+                name: "output".into(),
+                index: 1,
+                min: -20.0,
+                max: 20.0,
+                default: 0.0,
+            },
+            ParamValidationInfo {
+                name: "headroom".into(),
+                index: 2,
+                min: 6.0,
+                max: 40.0,
+                default: 20.0,
+            },
+        ],
+        // Reverb: 7 params (Room Size, Decay, Damping, Pre-Delay, Mix, Stereo Width, Type)
         "reverb" => vec![
             ParamValidationInfo {
                 name: "room_size".into(),
@@ -574,6 +634,20 @@ fn get_effect_params(effect_id: &str) -> Vec<ParamValidationInfo> {
                 min: 0.0,
                 max: 100.0,
                 default: 50.0,
+            },
+            ParamValidationInfo {
+                name: "stereo_width".into(),
+                index: 5,
+                min: 0.0,
+                max: 100.0,
+                default: 100.0,
+            },
+            ParamValidationInfo {
+                name: "reverb_type".into(),
+                index: 6,
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
             },
         ],
         // Tremolo: 3 params (Rate, Depth, Waveform)
@@ -1001,7 +1075,7 @@ mod tests {
         assert_eq!(params[0].max, 40.0);
 
         let params = validator.effect_params("reverb").unwrap();
-        assert_eq!(params.len(), 5);
+        assert_eq!(params.len(), 7);
     }
 
     #[test]

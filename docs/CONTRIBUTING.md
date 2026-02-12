@@ -9,6 +9,9 @@ git clone https://github.com/suds/sonido
 cd sonido
 cargo build
 cargo test
+
+# Symlink debug build to ~/.local/bin for quick iteration
+make dev-install
 ```
 
 ## Continuous Integration

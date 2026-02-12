@@ -49,7 +49,7 @@ impl ReverbType {
     /// Returns (room_size, decay, damping, predelay_ms)
     pub fn defaults(&self) -> (f32, f32, f32, f32) {
         match self {
-            ReverbType::Room => (0.4, 0.5, 0.5, 10.0),
+            ReverbType::Room => (0.5, 0.5, 0.5, 10.0),
             ReverbType::Hall => (0.8, 0.8, 0.3, 25.0),
         }
     }
@@ -69,6 +69,8 @@ impl ReverbType {
 /// | 2 | Damping | 0–100% | 50.0 |
 /// | 3 | Pre-Delay | 0.0–100.0 ms | 10.0 |
 /// | 4 | Mix | 0–100% | 50.0 |
+/// | 5 | Stereo Width | 0–100% | 100.0 |
+/// | 6 | Reverb Type | 0–1 (Room, Hall) | 0 |
 ///
 /// # Example
 ///
@@ -496,7 +498,7 @@ impl Effect for Reverb {
 
 impl ParameterInfo for Reverb {
     fn param_count(&self) -> usize {
-        5
+        7
     }
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
@@ -546,6 +548,24 @@ impl ParameterInfo for Reverb {
                 default: 50.0,
                 step: 1.0,
             }),
+            5 => Some(ParamDescriptor {
+                name: "Stereo Width",
+                short_name: "Width",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 100.0,
+                default: 100.0,
+                step: 1.0,
+            }),
+            6 => Some(ParamDescriptor {
+                name: "Reverb Type",
+                short_name: "Type",
+                unit: ParamUnit::None,
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+                step: 1.0,
+            }),
             _ => None,
         }
     }
@@ -557,6 +577,11 @@ impl ParameterInfo for Reverb {
             2 => self.damping() * 100.0,
             3 => self.predelay_ms(),
             4 => self.mix() * 100.0,
+            5 => self.stereo_width * 100.0,
+            6 => match self.reverb_type {
+                ReverbType::Room => 0.0,
+                ReverbType::Hall => 1.0,
+            },
             _ => 0.0,
         }
     }
@@ -568,6 +593,11 @@ impl ParameterInfo for Reverb {
             2 => self.set_damping(value / 100.0),
             3 => self.set_predelay_ms(value),
             4 => self.set_mix(value / 100.0),
+            5 => self.set_stereo_width(value / 100.0),
+            6 => match value as u8 {
+                0 => self.set_reverb_type(ReverbType::Room),
+                _ => self.set_reverb_type(ReverbType::Hall),
+            },
             _ => {}
         }
     }

@@ -66,6 +66,7 @@ impl VibratoUnit {
 /// | Index | Name | Range | Default |
 /// |-------|------|-------|---------|
 /// | 0 | Depth | 0–200% | 100.0 |
+/// | 1 | Mix | 0–100% | 100.0 |
 ///
 /// # Example
 ///
@@ -82,6 +83,7 @@ impl VibratoUnit {
 /// ```
 pub struct MultiVibrato {
     vibratos: [VibratoUnit; NUM_VIBRATOS],
+    vibratos_r: [VibratoUnit; NUM_VIBRATOS],
     sample_rate: f32,
     /// Overall mix (0.0 = dry, 1.0 = full effect)
     mix: f32,
@@ -114,9 +116,12 @@ impl MultiVibrato {
 
         let vibratos = configs
             .map(|(rate, depth, waveform)| VibratoUnit::new(sample_rate, rate, depth, waveform));
+        let vibratos_r = configs
+            .map(|(rate, depth, waveform)| VibratoUnit::new(sample_rate, rate, depth, waveform));
 
         Self {
             vibratos,
+            vibratos_r,
             sample_rate,
             mix: 1.0,
             depth_scale: SmoothedParam::with_config(1.0, sample_rate, 10.0),
@@ -162,20 +167,16 @@ impl Effect for MultiVibrato {
 
     #[inline]
     fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
-        // Dual-mono: process each channel through the same vibrato units
-        // Note: vibrato delay lines are shared, giving a slight linked character
         let depth_scale = self.depth_scale.advance();
 
-        // Process left through all vibratos
         let mut wet_l = 0.0f32;
         for vib in &mut self.vibratos {
             wet_l += vib.process(left, self.sample_rate, depth_scale);
         }
         wet_l /= NUM_VIBRATOS as f32;
 
-        // Process right through all vibratos
         let mut wet_r = 0.0f32;
-        for vib in &mut self.vibratos {
+        for vib in &mut self.vibratos_r {
             wet_r += vib.process(right, self.sample_rate, depth_scale);
         }
         wet_r /= NUM_VIBRATOS as f32;
@@ -190,12 +191,18 @@ impl Effect for MultiVibrato {
         for vib in &mut self.vibratos {
             vib.reset();
         }
+        for vib in &mut self.vibratos_r {
+            vib.reset();
+        }
         self.depth_scale.snap_to_target();
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
         for vib in &mut self.vibratos {
+            vib.set_sample_rate(sample_rate);
+        }
+        for vib in &mut self.vibratos_r {
             vib.set_sample_rate(sample_rate);
         }
         self.depth_scale.set_sample_rate(sample_rate);
@@ -209,7 +216,7 @@ impl Effect for MultiVibrato {
 
 impl ParameterInfo for MultiVibrato {
     fn param_count(&self) -> usize {
-        1
+        2
     }
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
@@ -223,6 +230,15 @@ impl ParameterInfo for MultiVibrato {
                 default: 100.0,
                 step: 1.0,
             }),
+            1 => Some(ParamDescriptor {
+                name: "Mix",
+                short_name: "Mix",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 100.0,
+                default: 100.0,
+                step: 1.0,
+            }),
             _ => None,
         }
     }
@@ -230,13 +246,16 @@ impl ParameterInfo for MultiVibrato {
     fn get_param(&self, index: usize) -> f32 {
         match index {
             0 => self.depth_scale.target() * 100.0,
+            1 => self.mix * 100.0,
             _ => 0.0,
         }
     }
 
     fn set_param(&mut self, index: usize, value: f32) {
-        if index == 0 {
-            self.set_depth(value / 100.0);
+        match index {
+            0 => self.set_depth(value / 100.0),
+            1 => self.set_mix(value / 100.0),
+            _ => {}
         }
     }
 }

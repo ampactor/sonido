@@ -56,7 +56,7 @@ struct GainComputer {
 impl GainComputer {
     fn new() -> Self {
         Self {
-            threshold_db: -20.0,
+            threshold_db: -18.0,
             ratio: 4.0,
             knee_db: 6.0,
         }
@@ -90,6 +90,7 @@ impl GainComputer {
 /// | 2 | Attack | 0.1–100.0 ms | 10.0 |
 /// | 3 | Release | 10.0–1000.0 ms | 100.0 |
 /// | 4 | Makeup Gain | 0.0–24.0 dB | 0.0 |
+/// | 5 | Knee | 0.0–12.0 dB | 6.0 |
 ///
 /// # Example
 ///
@@ -213,7 +214,7 @@ impl Effect for Compressor {
 
 impl ParameterInfo for Compressor {
     fn param_count(&self) -> usize {
-        5
+        6
     }
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
@@ -263,6 +264,15 @@ impl ParameterInfo for Compressor {
                 default: 0.0,
                 step: 0.5,
             }),
+            5 => Some(ParamDescriptor {
+                name: "Knee",
+                short_name: "Knee",
+                unit: ParamUnit::Decibels,
+                min: 0.0,
+                max: 12.0,
+                default: 6.0,
+                step: 0.5,
+            }),
             _ => None,
         }
     }
@@ -274,6 +284,7 @@ impl ParameterInfo for Compressor {
             2 => self.envelope_follower.attack_ms(),
             3 => self.envelope_follower.release_ms(),
             4 => linear_to_db(self.makeup_gain.target()),
+            5 => self.gain_computer.knee_db,
             _ => 0.0,
         }
     }
@@ -285,6 +296,7 @@ impl ParameterInfo for Compressor {
             2 => self.set_attack_ms(value),
             3 => self.set_release_ms(value),
             4 => self.set_makeup_gain_db(value),
+            5 => self.set_knee_db(value),
             _ => {}
         }
     }

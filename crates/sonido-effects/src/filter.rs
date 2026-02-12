@@ -29,6 +29,7 @@ use sonido_core::{
 #[derive(Debug, Clone)]
 pub struct LowPassFilter {
     biquad: Biquad,
+    biquad_r: Biquad,
     cutoff: SmoothedParam,
     q: SmoothedParam,
     sample_rate: f32,
@@ -40,6 +41,7 @@ impl LowPassFilter {
     pub fn new(sample_rate: f32) -> Self {
         let mut filter = Self {
             biquad: Biquad::new(),
+            biquad_r: Biquad::new(),
             cutoff: SmoothedParam::with_config(1000.0, sample_rate, 20.0),
             q: SmoothedParam::with_config(0.707, sample_rate, 20.0),
             sample_rate,
@@ -69,6 +71,7 @@ impl LowPassFilter {
 
         let (b0, b1, b2, a0, a1, a2) = lowpass_coefficients(cutoff, q, self.sample_rate);
         self.biquad.set_coefficients(b0, b1, b2, a0, a1, a2);
+        self.biquad_r.set_coefficients(b0, b1, b2, a0, a1, a2);
         self.needs_update = false;
     }
 }
@@ -88,8 +91,6 @@ impl Effect for LowPassFilter {
 
     #[inline]
     fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
-        // Dual-mono: process each channel through the same filter
-        // Note: biquad state is shared, giving slight coloration
         self.cutoff.advance();
         self.q.advance();
 
@@ -98,7 +99,7 @@ impl Effect for LowPassFilter {
         }
 
         let out_l = self.biquad.process(left);
-        let out_r = self.biquad.process(right);
+        let out_r = self.biquad_r.process(right);
 
         (out_l, out_r)
     }
@@ -113,6 +114,7 @@ impl Effect for LowPassFilter {
 
     fn reset(&mut self) {
         self.biquad.clear();
+        self.biquad_r.clear();
         self.cutoff.snap_to_target();
         self.q.snap_to_target();
         self.needs_update = true;

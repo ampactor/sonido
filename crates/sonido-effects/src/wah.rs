@@ -48,8 +48,10 @@ pub enum WahMode {
 /// ```
 #[derive(Debug, Clone)]
 pub struct Wah {
-    /// Bandpass filter for wah sound
+    /// Bandpass filter for wah sound (left channel)
     filter: StateVariableFilter,
+    /// Bandpass filter for wah sound (right channel)
+    filter_r: StateVariableFilter,
     /// Envelope follower for auto-wah
     envelope: EnvelopeFollower,
     /// Base/center frequency
@@ -79,15 +81,21 @@ impl Wah {
     pub fn new(sample_rate: f32) -> Self {
         let mut filter = StateVariableFilter::new(sample_rate);
         filter.set_output_type(SvfOutput::Bandpass);
-        filter.set_resonance(5.0); // High Q for classic wah tone
+        filter.set_resonance(5.0);
         filter.set_cutoff(800.0);
 
+        let mut filter_r = StateVariableFilter::new(sample_rate);
+        filter_r.set_output_type(SvfOutput::Bandpass);
+        filter_r.set_resonance(5.0);
+        filter_r.set_cutoff(800.0);
+
         let mut envelope = EnvelopeFollower::new(sample_rate);
-        envelope.set_attack_ms(5.0); // Fast attack for transient response
-        envelope.set_release_ms(50.0); // Medium release for smooth decay
+        envelope.set_attack_ms(5.0);
+        envelope.set_release_ms(50.0);
 
         Self {
             filter,
+            filter_r,
             envelope,
             frequency: SmoothedParam::with_config(800.0, sample_rate, 5.0),
             resonance: SmoothedParam::with_config(5.0, sample_rate, 10.0),
@@ -195,12 +203,11 @@ impl Effect for Wah {
 
     #[inline]
     fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
-        // Linked stereo: use combined envelope for both channels
         let base_freq = self.frequency.advance();
         let resonance = self.resonance.advance();
         let sensitivity = self.sensitivity.advance();
 
-        // Use combined signal for envelope detection
+        // Linked envelope detection from combined signal
         let combined = (left + right) * 0.5;
 
         let target_freq = match self.mode {
@@ -218,13 +225,13 @@ impl Effect for Wah {
 
         self.filter.set_cutoff(target_freq);
         self.filter.set_resonance(resonance);
+        self.filter_r.set_cutoff(target_freq);
+        self.filter_r.set_resonance(resonance);
 
-        // Process left channel through filter
         let filtered_l = self.filter.process(left);
         let out_l = filtered_l * 0.8 + left * 0.2;
 
-        // Process right channel through same filter (shared state gives slight coloration)
-        let filtered_r = self.filter.process(right);
+        let filtered_r = self.filter_r.process(right);
         let out_r = filtered_r * 0.8 + right * 0.2;
 
         (out_l, out_r)
@@ -233,6 +240,7 @@ impl Effect for Wah {
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
         self.filter.set_sample_rate(sample_rate);
+        self.filter_r.set_sample_rate(sample_rate);
         self.envelope.set_sample_rate(sample_rate);
         self.frequency.set_sample_rate(sample_rate);
         self.resonance.set_sample_rate(sample_rate);
@@ -241,6 +249,7 @@ impl Effect for Wah {
 
     fn reset(&mut self) {
         self.filter.reset();
+        self.filter_r.reset();
         self.envelope.reset();
         self.frequency.snap_to_target();
         self.resonance.snap_to_target();
