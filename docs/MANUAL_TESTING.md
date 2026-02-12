@@ -10,10 +10,10 @@ Work through each phase in order. Every step has a checkbox and pass/fail criter
 ### 0.1 Build
 
 ```bash
-cargo build -p sonido-cli -p sonido-gui
+cargo build
 ```
 
-- [ ] Both crates compile without errors
+- [ ] Workspace compiles without errors
 
 ### 0.2 Generate Test Audio
 
