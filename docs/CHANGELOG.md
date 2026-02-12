@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### sonido-core
+- `DcBlocker` high-pass filter for removing DC offset from audio signals
+- `flush_denormal()` utility in `math.rs` for clearing denormalized floats
+
+#### Build & QA
+- Overnight QA script for full test/lint/doc/bench pipeline
+- Audio demos and test audio files
+- Walkthrough script and expanded demo coverage
+
+### Changed
+
+#### Production Hardening
+- **Denormal guards**: Added `flush_denormal()` calls in feedback paths of `CombFilter`, `AllpassFilter`, `Delay`, `Flanger`, and `Chorus` to prevent CPU spikes from denormalized float arithmetic
+- **Distortion stereo fix**: Separated tone filter state per channel (`tone_filter_state_r`) for correct dual-mono behavior in stereo mode
+- **DC blocker in reverb**: Added `DcBlocker` to reverb output path to eliminate DC offset accumulation in long reverb tails
+- **Benchmark lint**: Suppressed `missing_docs` lint in benchmark harnesses where criterion macro-generated functions cannot carry doc comments
+
+### Improved
+
+- Missing rustdoc coverage for public items across workspace
+- Code formatting applied consistently (`cargo fmt`)
+- README updated with performance benchmarks and demo instructions
+
+---
+
 #### sonido-synth (NEW CRATE)
 
 Full synthesis engine for building synthesizers with `no_std` support.
