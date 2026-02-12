@@ -7,8 +7,11 @@ use std::path::Path;
 /// WAV file specification.
 #[derive(Debug, Clone, Copy)]
 pub struct WavSpec {
+    /// Number of audio channels (1 = mono, 2 = stereo).
     pub channels: u16,
+    /// Sample rate in Hz (e.g., 44100, 48000).
     pub sample_rate: u32,
+    /// Bit depth per sample (e.g., 16, 24, 32).
     pub bits_per_sample: u16,
 }
 
@@ -119,7 +122,9 @@ pub fn write_wav<P: AsRef<Path>>(path: P, samples: &[f32], spec: WavSpec) -> Res
 /// Stereo audio data with separate left and right channels.
 #[derive(Debug, Clone)]
 pub struct StereoSamples {
+    /// Left channel samples.
     pub left: Vec<f32>,
+    /// Right channel samples.
     pub right: Vec<f32>,
 }
 

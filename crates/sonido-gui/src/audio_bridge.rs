@@ -77,20 +77,35 @@ impl Clone for AtomicParam {
 /// Effect bypass states (atomic bools for lock-free access).
 #[derive(Debug)]
 pub struct BypassStates {
+    /// Preamp bypass state.
     pub preamp: AtomicBool,
+    /// Distortion bypass state.
     pub distortion: AtomicBool,
+    /// Compressor bypass state.
     pub compressor: AtomicBool,
+    /// Gate bypass state.
     pub gate: AtomicBool,
+    /// Parametric EQ bypass state.
     pub eq: AtomicBool,
+    /// Wah bypass state.
     pub wah: AtomicBool,
+    /// Chorus bypass state.
     pub chorus: AtomicBool,
+    /// Flanger bypass state.
     pub flanger: AtomicBool,
+    /// Phaser bypass state.
     pub phaser: AtomicBool,
+    /// Tremolo bypass state.
     pub tremolo: AtomicBool,
+    /// Delay bypass state.
     pub delay: AtomicBool,
+    /// Filter bypass state.
     pub filter: AtomicBool,
+    /// Multi-vibrato bypass state.
     pub multivibrato: AtomicBool,
+    /// Tape saturation bypass state.
     pub tape: AtomicBool,
+    /// Reverb bypass state.
     pub reverb: AtomicBool,
 }
 
@@ -121,97 +136,139 @@ impl Default for BypassStates {
 /// All parameters use atomic operations for lock-free access.
 #[derive(Debug)]
 pub struct SharedParams {
-    // Global
+    /// Input gain in dB.
     pub input_gain: AtomicParam,
+    /// Master output volume in dB.
     pub master_volume: AtomicParam,
 
-    // Preamp
+    /// Preamp gain in dB.
     pub preamp_gain: AtomicParam,
 
-    // Distortion
+    /// Distortion drive amount in dB.
     pub dist_drive: AtomicParam,
+    /// Distortion tone control.
     pub dist_tone: AtomicParam,
+    /// Distortion output level.
     pub dist_level: AtomicParam,
-    pub dist_waveshape: AtomicU32, // 0-3 for WaveShape enum
+    /// Distortion waveshape type (0–3, maps to `WaveShape` enum).
+    pub dist_waveshape: AtomicU32,
 
-    // Compressor
+    /// Compressor threshold in dB.
     pub comp_threshold: AtomicParam,
+    /// Compressor ratio.
     pub comp_ratio: AtomicParam,
+    /// Compressor attack time in ms.
     pub comp_attack: AtomicParam,
+    /// Compressor release time in ms.
     pub comp_release: AtomicParam,
+    /// Compressor makeup gain in dB.
     pub comp_makeup: AtomicParam,
 
-    // Gate
+    /// Gate threshold in dB.
     pub gate_threshold: AtomicParam,
+    /// Gate attack time in ms.
     pub gate_attack: AtomicParam,
+    /// Gate release time in ms.
     pub gate_release: AtomicParam,
+    /// Gate hold time in ms.
     pub gate_hold: AtomicParam,
 
-    // Parametric EQ
+    /// Low-band EQ center frequency in Hz.
     pub eq_low_freq: AtomicParam,
+    /// Low-band EQ gain in dB.
     pub eq_low_gain: AtomicParam,
+    /// Low-band EQ Q factor.
     pub eq_low_q: AtomicParam,
+    /// Mid-band EQ center frequency in Hz.
     pub eq_mid_freq: AtomicParam,
+    /// Mid-band EQ gain in dB.
     pub eq_mid_gain: AtomicParam,
+    /// Mid-band EQ Q factor.
     pub eq_mid_q: AtomicParam,
+    /// High-band EQ center frequency in Hz.
     pub eq_high_freq: AtomicParam,
+    /// High-band EQ gain in dB.
     pub eq_high_gain: AtomicParam,
+    /// High-band EQ Q factor.
     pub eq_high_q: AtomicParam,
 
-    // Wah
+    /// Wah filter frequency in Hz.
     pub wah_frequency: AtomicParam,
+    /// Wah filter resonance.
     pub wah_resonance: AtomicParam,
+    /// Wah envelope sensitivity.
     pub wah_sensitivity: AtomicParam,
-    pub wah_mode: AtomicU32, // 0=Auto, 1=Manual
+    /// Wah mode (0 = auto, 1 = manual).
+    pub wah_mode: AtomicU32,
 
-    // Chorus
+    /// Chorus LFO rate in Hz.
     pub chorus_rate: AtomicParam,
+    /// Chorus modulation depth.
     pub chorus_depth: AtomicParam,
+    /// Chorus wet/dry mix.
     pub chorus_mix: AtomicParam,
 
-    // Flanger
+    /// Flanger LFO rate in Hz.
     pub flanger_rate: AtomicParam,
+    /// Flanger modulation depth.
     pub flanger_depth: AtomicParam,
+    /// Flanger feedback amount.
     pub flanger_feedback: AtomicParam,
+    /// Flanger wet/dry mix.
     pub flanger_mix: AtomicParam,
 
-    // Phaser
+    /// Phaser LFO rate in Hz.
     pub phaser_rate: AtomicParam,
+    /// Phaser modulation depth.
     pub phaser_depth: AtomicParam,
+    /// Phaser feedback amount.
     pub phaser_feedback: AtomicParam,
+    /// Phaser wet/dry mix.
     pub phaser_mix: AtomicParam,
-    pub phaser_stages: AtomicU32, // 2-12
+    /// Number of phaser allpass stages (2–12).
+    pub phaser_stages: AtomicU32,
 
-    // Tremolo
+    /// Tremolo LFO rate in Hz.
     pub tremolo_rate: AtomicParam,
+    /// Tremolo modulation depth.
     pub tremolo_depth: AtomicParam,
-    pub tremolo_waveform: AtomicU32, // 0=Sine, 1=Triangle, 2=Square, 3=S&H
+    /// Tremolo waveform (0 = sine, 1 = triangle, 2 = square, 3 = S&H).
+    pub tremolo_waveform: AtomicU32,
 
-    // Delay
+    /// Delay time in ms.
     pub delay_time: AtomicParam,
+    /// Delay feedback amount.
     pub delay_feedback: AtomicParam,
+    /// Delay wet/dry mix.
     pub delay_mix: AtomicParam,
 
-    // Filter
+    /// Filter cutoff frequency in Hz.
     pub filter_cutoff: AtomicParam,
+    /// Filter resonance.
     pub filter_resonance: AtomicParam,
 
-    // MultiVibrato
+    /// Vibrato modulation depth.
     pub vibrato_depth: AtomicParam,
 
-    // Tape Saturation
+    /// Tape saturation drive amount.
     pub tape_drive: AtomicParam,
+    /// Tape saturation amount.
     pub tape_saturation: AtomicParam,
 
-    // Reverb
+    /// Reverb room size.
     pub reverb_room_size: AtomicParam,
+    /// Reverb decay time.
     pub reverb_decay: AtomicParam,
+    /// Reverb high-frequency damping.
     pub reverb_damping: AtomicParam,
+    /// Reverb pre-delay in ms.
     pub reverb_predelay: AtomicParam,
+    /// Reverb wet/dry mix.
     pub reverb_mix: AtomicParam,
-    pub reverb_type: AtomicU32, // 0-1 for ReverbType enum
+    /// Reverb algorithm type (0–1, maps to `ReverbType` enum).
+    pub reverb_type: AtomicU32,
 
-    // Bypass states
+    /// Effect bypass states.
     pub bypass: BypassStates,
 }
 
@@ -316,15 +373,21 @@ impl Default for SharedParams {
 /// Metering data sent from audio thread to GUI.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MeteringData {
+    /// Input signal peak level (linear).
     pub input_peak: f32,
+    /// Input signal RMS level (linear).
     pub input_rms: f32,
+    /// Output signal peak level (linear).
     pub output_peak: f32,
+    /// Output signal RMS level (linear).
     pub output_rms: f32,
-    pub gain_reduction: f32, // For compressor
+    /// Compressor gain reduction in dB.
+    pub gain_reduction: f32,
 }
 
 /// Audio bridge for communication between GUI and audio threads.
 pub struct AudioBridge {
+    /// Shared parameters accessible by both GUI and audio threads.
     pub params: Arc<SharedParams>,
     metering_tx: Sender<MeteringData>,
     metering_rx: Receiver<MeteringData>,

@@ -4,18 +4,31 @@ use egui::{Color32, CornerRadius, Stroke, Style, Visuals};
 
 /// Theme colors for the GUI.
 pub struct Theme {
+    /// Main window background color.
     pub background: Color32,
+    /// Panel/card background color.
     pub panel_bg: Color32,
+    /// Primary accent color for active elements.
     pub accent: Color32,
+    /// Dimmed accent color for inactive elements.
     pub accent_dim: Color32,
+    /// Primary text color.
     pub text_primary: Color32,
+    /// Secondary/muted text color.
     pub text_secondary: Color32,
+    /// Meter color for safe signal levels.
     pub meter_green: Color32,
+    /// Meter color for hot signal levels.
     pub meter_yellow: Color32,
+    /// Meter color for clipping signal levels.
     pub meter_red: Color32,
+    /// Knob background track color.
     pub knob_track: Color32,
+    /// Knob filled arc color.
     pub knob_fill: Color32,
+    /// Bypass indicator color when effect is off.
     pub bypass_off: Color32,
+    /// Bypass indicator color when effect is on.
     pub bypass_on: Color32,
 }
 

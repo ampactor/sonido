@@ -10,10 +10,12 @@ use std::sync::atomic::Ordering;
 pub struct PhaserPanel;
 
 impl PhaserPanel {
+    /// Create a new phaser panel.
     pub fn new() -> Self {
         Self
     }
 
+    /// Render the phaser effect controls.
     pub fn ui(&mut self, ui: &mut Ui, params: &Arc<SharedParams>) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {

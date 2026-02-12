@@ -9,10 +9,14 @@ use sonido_core::{
 /// Tremolo waveform type.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum TremoloWaveform {
+    /// Sine waveform — smooth, classic tremolo.
     #[default]
     Sine,
+    /// Triangle waveform — linear volume sweep.
     Triangle,
+    /// Square waveform — hard on/off gating.
     Square,
+    /// Sample-and-hold — random stepped volume changes.
     SampleHold,
 }
 

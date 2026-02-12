@@ -10,10 +10,12 @@ use std::sync::atomic::Ordering;
 pub struct GatePanel;
 
 impl GatePanel {
+    /// Create a new gate panel.
     pub fn new() -> Self {
         Self
     }
 
+    /// Render the noise gate controls.
     pub fn ui(&mut self, ui: &mut Ui, params: &Arc<SharedParams>) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {

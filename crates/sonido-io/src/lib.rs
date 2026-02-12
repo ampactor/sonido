@@ -38,23 +38,30 @@ pub use wav::{StereoSamples, WavSpec, read_wav, read_wav_stereo, write_wav, writ
 /// Error types for audio I/O operations.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// WAV file read/write error.
     #[error("WAV file error: {0}")]
     Wav(#[from] hound::Error),
 
+    /// Audio stream setup or runtime error.
     #[error("Audio stream error: {0}")]
     Stream(String),
 
+    /// No audio device available on the system.
     #[error("No audio device available")]
     NoDevice,
 
+    /// The requested sample format is not supported.
     #[error("Unsupported sample format: {0}")]
     UnsupportedFormat(String),
 
+    /// The requested audio device was not found.
     #[error("Device not found: {0}")]
     DeviceNotFound(String),
 
+    /// Standard I/O error.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }
 
+/// Convenience result type for audio I/O operations.
 pub type Result<T> = std::result::Result<T, Error>;

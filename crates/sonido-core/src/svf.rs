@@ -12,10 +12,14 @@ use crate::flush_denormal;
 /// State Variable Filter output type
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SvfOutput {
+    /// Low-pass filter output — passes frequencies below the cutoff.
     #[default]
     Lowpass,
+    /// High-pass filter output — passes frequencies above the cutoff.
     Highpass,
+    /// Band-pass filter output — passes frequencies near the cutoff.
     Bandpass,
+    /// Notch (band-reject) filter output — rejects frequencies near the cutoff.
     Notch,
 }
 

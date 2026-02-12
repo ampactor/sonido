@@ -102,8 +102,10 @@ impl NoteDivision {
 /// Transport state for tempo-synced processing.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum TransportState {
+    /// Transport is stopped — no position advance.
     #[default]
     Stopped,
+    /// Transport is playing — position advances each sample.
     Playing,
 }
 

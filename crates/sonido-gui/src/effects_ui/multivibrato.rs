@@ -10,10 +10,12 @@ use std::sync::atomic::Ordering;
 pub struct MultiVibratoPanel;
 
 impl MultiVibratoPanel {
+    /// Create a new multi-vibrato panel.
     pub fn new() -> Self {
         Self
     }
 
+    /// Render the multi-vibrato effect controls.
     pub fn ui(&mut self, ui: &mut Ui, params: &Arc<SharedParams>) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {

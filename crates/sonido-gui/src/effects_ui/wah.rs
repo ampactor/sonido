@@ -13,10 +13,12 @@ const WAH_MODES: &[&str] = &["Auto", "Manual"];
 pub struct WahPanel;
 
 impl WahPanel {
+    /// Create a new wah panel.
     pub fn new() -> Self {
         Self
     }
 
+    /// Render the wah effect controls.
     pub fn ui(&mut self, ui: &mut Ui, params: &Arc<SharedParams>) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {

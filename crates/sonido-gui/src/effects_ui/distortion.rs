@@ -13,10 +13,12 @@ const WAVESHAPES: &[&str] = &["Soft Clip", "Hard Clip", "Foldback", "Asymmetric"
 pub struct DistortionPanel;
 
 impl DistortionPanel {
+    /// Create a new distortion panel.
     pub fn new() -> Self {
         Self
     }
 
+    /// Render the distortion effect controls.
     pub fn ui(&mut self, ui: &mut Ui, params: &Arc<SharedParams>) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {

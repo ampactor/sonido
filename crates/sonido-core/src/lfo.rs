@@ -11,11 +11,16 @@ use crate::tempo::NoteDivision;
 /// LFO waveform type
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum LfoWaveform {
+    /// Sine waveform — smooth, natural-sounding modulation.
     #[default]
     Sine,
+    /// Triangle waveform — linear ramps with harder corners than sine.
     Triangle,
+    /// Sawtooth waveform — linear ramp up with sharp reset.
     Saw,
+    /// Square waveform — abrupt on/off switching.
     Square,
+    /// Sample-and-hold — random stepped values at the LFO rate.
     SampleAndHold,
 }
 

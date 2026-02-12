@@ -9,7 +9,9 @@ pub enum ConfigError {
     /// Failed to read a file
     #[error("failed to read file '{path}': {source}")]
     ReadFile {
+        /// Path of the file that could not be read.
         path: PathBuf,
+        /// Underlying I/O error.
         #[source]
         source: std::io::Error,
     },
@@ -17,7 +19,9 @@ pub enum ConfigError {
     /// Failed to write a file
     #[error("failed to write file '{path}': {source}")]
     WriteFile {
+        /// Path of the file that could not be written.
         path: PathBuf,
+        /// Underlying I/O error.
         #[source]
         source: std::io::Error,
     },
@@ -41,8 +45,11 @@ pub enum ConfigError {
     /// Invalid parameter
     #[error("invalid parameter '{param}' for effect '{effect}': {reason}")]
     InvalidParameter {
+        /// Name of the effect containing the invalid parameter.
         effect: String,
+        /// Name of the invalid parameter.
         param: String,
+        /// Description of why the parameter is invalid.
         reason: String,
     },
 
@@ -53,7 +60,9 @@ pub enum ConfigError {
     /// Failed to create directory
     #[error("failed to create directory '{path}': {source}")]
     CreateDir {
+        /// Path of the directory that could not be created.
         path: PathBuf,
+        /// Underlying I/O error.
         #[source]
         source: std::io::Error,
     },

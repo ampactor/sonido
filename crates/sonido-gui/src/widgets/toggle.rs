@@ -102,6 +102,7 @@ pub struct FootswitchToggle<'a> {
 }
 
 impl<'a> FootswitchToggle<'a> {
+    /// Create a new footswitch toggle with the given state and label.
     pub fn new(active: &'a mut bool, label: &'a str) -> Self {
         Self { active, label }
     }

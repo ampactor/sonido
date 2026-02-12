@@ -10,10 +10,12 @@ use std::sync::atomic::Ordering;
 pub struct TapePanel;
 
 impl TapePanel {
+    /// Create a new tape saturation panel.
     pub fn new() -> Self {
         Self
     }
 
+    /// Render the tape saturation controls.
     pub fn ui(&mut self, ui: &mut Ui, params: &Arc<SharedParams>) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
