@@ -3,7 +3,7 @@
 //! Uses RBJ cookbook peaking EQ filters for precise frequency shaping.
 
 use sonido_core::{
-    Biquad, Effect, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam,
+    Biquad, Effect, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, gain,
     peaking_eq_coefficients,
 };
 
@@ -25,6 +25,7 @@ use sonido_core::{
 /// | 6 | High Frequency | 1000.0–15000.0 Hz | 5000.0 |
 /// | 7 | High Gain | -12.0–12.0 dB | 0.0 |
 /// | 8 | High Q | 0.5–5.0 | 1.0 |
+/// | 9 | Output | −20.0–20.0 dB | 0.0 |
 ///
 /// # Example
 ///
@@ -77,6 +78,9 @@ pub struct ParametricEq {
     high_gain: SmoothedParam,
     high_q: SmoothedParam,
 
+    /// Output level
+    output_level: SmoothedParam,
+
     /// Sample rate
     sample_rate: f32,
 
@@ -108,17 +112,19 @@ impl ParametricEq {
             mid_filter_r: Biquad::new(),
             high_filter_r: Biquad::new(),
 
-            low_freq: SmoothedParam::with_config(100.0, sample_rate, 20.0),
-            low_gain: SmoothedParam::with_config(0.0, sample_rate, 10.0),
-            low_q: SmoothedParam::with_config(1.0, sample_rate, 20.0),
+            low_freq: SmoothedParam::slow(100.0, sample_rate),
+            low_gain: SmoothedParam::standard(0.0, sample_rate),
+            low_q: SmoothedParam::slow(1.0, sample_rate),
 
-            mid_freq: SmoothedParam::with_config(1000.0, sample_rate, 20.0),
-            mid_gain: SmoothedParam::with_config(0.0, sample_rate, 10.0),
-            mid_q: SmoothedParam::with_config(1.0, sample_rate, 20.0),
+            mid_freq: SmoothedParam::slow(1000.0, sample_rate),
+            mid_gain: SmoothedParam::standard(0.0, sample_rate),
+            mid_q: SmoothedParam::slow(1.0, sample_rate),
 
-            high_freq: SmoothedParam::with_config(5000.0, sample_rate, 20.0),
-            high_gain: SmoothedParam::with_config(0.0, sample_rate, 10.0),
-            high_q: SmoothedParam::with_config(1.0, sample_rate, 20.0),
+            high_freq: SmoothedParam::slow(5000.0, sample_rate),
+            high_gain: SmoothedParam::standard(0.0, sample_rate),
+            high_q: SmoothedParam::slow(1.0, sample_rate),
+
+            output_level: gain::output_level_param(sample_rate),
 
             sample_rate,
             low_needs_update: true,
@@ -296,6 +302,7 @@ impl Effect for ParametricEq {
         self.high_freq.advance();
         self.high_gain.advance();
         self.high_q.advance();
+        let output_gain = self.output_level.advance();
 
         // Update coefficients if needed
         if self.low_needs_update
@@ -323,7 +330,7 @@ impl Effect for ParametricEq {
         // Process through cascaded filters
         let after_low = self.low_filter.process(input);
         let after_mid = self.mid_filter.process(after_low);
-        self.high_filter.process(after_mid)
+        self.high_filter.process(after_mid) * output_gain
     }
 
     #[inline]
@@ -337,6 +344,7 @@ impl Effect for ParametricEq {
         self.high_freq.advance();
         self.high_gain.advance();
         self.high_q.advance();
+        let output_gain = self.output_level.advance();
 
         if self.low_needs_update
             || !self.low_freq.is_settled()
@@ -363,12 +371,12 @@ impl Effect for ParametricEq {
         // Process left channel through L filters
         let left_low = self.low_filter.process(left);
         let left_mid = self.mid_filter.process(left_low);
-        let left_out = self.high_filter.process(left_mid);
+        let left_out = self.high_filter.process(left_mid) * output_gain;
 
         // Process right channel through R filters
         let right_low = self.low_filter_r.process(right);
         let right_mid = self.mid_filter_r.process(right_low);
-        let right_out = self.high_filter_r.process(right_mid);
+        let right_out = self.high_filter_r.process(right_mid) * output_gain;
 
         (left_out, right_out)
     }
@@ -385,6 +393,7 @@ impl Effect for ParametricEq {
         self.high_freq.set_sample_rate(sample_rate);
         self.high_gain.set_sample_rate(sample_rate);
         self.high_q.set_sample_rate(sample_rate);
+        self.output_level.set_sample_rate(sample_rate);
 
         self.low_needs_update = true;
         self.mid_needs_update = true;
@@ -409,6 +418,7 @@ impl Effect for ParametricEq {
         self.high_freq.snap_to_target();
         self.high_gain.snap_to_target();
         self.high_q.snap_to_target();
+        self.output_level.snap_to_target();
 
         self.low_needs_update = true;
         self.mid_needs_update = true;
@@ -419,7 +429,7 @@ impl Effect for ParametricEq {
 
 impl ParameterInfo for ParametricEq {
     fn param_count(&self) -> usize {
-        9 // 3 params per band x 3 bands
+        10 // 3 params per band x 3 bands + output level
     }
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
@@ -508,6 +518,7 @@ impl ParameterInfo for ParametricEq {
                 default: 1.0,
                 step: 0.1,
             }),
+            9 => Some(gain::output_param_descriptor()),
             _ => None,
         }
     }
@@ -523,6 +534,7 @@ impl ParameterInfo for ParametricEq {
             6 => self.high_freq.target(),
             7 => self.high_gain.target(),
             8 => self.high_q.target(),
+            9 => gain::output_level_db(&self.output_level),
             _ => 0.0,
         }
     }
@@ -538,6 +550,7 @@ impl ParameterInfo for ParametricEq {
             6 => self.set_high_freq(value),
             7 => self.set_high_gain(value),
             8 => self.set_high_q(value),
+            9 => gain::set_output_level_db(&mut self.output_level, value),
             _ => {}
         }
     }
@@ -634,7 +647,7 @@ mod tests {
     fn test_eq_parameter_info() {
         let eq = ParametricEq::new(48000.0);
 
-        assert_eq!(eq.param_count(), 9);
+        assert_eq!(eq.param_count(), 10);
 
         // Check low band params
         let low_freq = eq.param_info(0).unwrap();

@@ -52,8 +52,8 @@ impl CleanPreamp {
     /// Create new clean preamp
     pub fn new(sample_rate: f32) -> Self {
         Self {
-            gain: SmoothedParam::with_config(1.0, sample_rate, 10.0),
-            output: SmoothedParam::with_config(1.0, sample_rate, 10.0),
+            gain: SmoothedParam::standard(1.0, sample_rate),
+            output: SmoothedParam::standard(1.0, sample_rate),
             headroom_db: 20.0, // +20dB headroom
             sample_rate,
         }

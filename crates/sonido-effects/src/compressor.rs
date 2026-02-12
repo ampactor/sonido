@@ -28,22 +28,10 @@
 //! - **Fast release** (< 100ms): Pumping effect, good for drums
 //! - **Slow release** (> 200ms): Smooth, transparent compression
 
-use libm::{log10f, powf};
 use sonido_core::{
     Effect, EnvelopeFollower, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam,
+    db_to_linear, linear_to_db,
 };
-
-/// Converts linear amplitude to decibels.
-#[inline]
-fn linear_to_db(linear: f32) -> f32 {
-    20.0 * log10f(linear.max(1e-6))
-}
-
-/// Converts decibels to linear amplitude.
-#[inline]
-fn db_to_linear(db: f32) -> f32 {
-    powf(10.0, db / 20.0)
-}
 
 /// Gain computer for calculating compression curve.
 #[derive(Debug, Clone)]
@@ -123,7 +111,7 @@ impl Compressor {
         Self {
             envelope_follower: EnvelopeFollower::new(sample_rate),
             gain_computer: GainComputer::new(),
-            makeup_gain: SmoothedParam::with_config(1.0, sample_rate, 10.0),
+            makeup_gain: SmoothedParam::standard(1.0, sample_rate),
             sample_rate,
             last_gain_reduction_db: 0.0,
         }

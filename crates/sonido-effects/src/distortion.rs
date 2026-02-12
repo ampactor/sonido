@@ -24,9 +24,8 @@
 //! - **Tone** (500-10000 Hz): One-pole lowpass to tame harsh highs.
 //! - **Level** (-20-0 dB): Output level compensation.
 
-use libm::expf;
 use sonido_core::{
-    Effect, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, asymmetric_clip,
+    Effect, OnePole, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, asymmetric_clip,
     db_to_linear, foldback, hard_clip, linear_to_db, soft_clip,
 };
 
@@ -73,7 +72,6 @@ pub struct Distortion {
     // Parameters with smoothing
     drive: SmoothedParam,
     level: SmoothedParam,
-    tone_coeff: SmoothedParam,
 
     // Current settings
     sample_rate: f32,
@@ -83,9 +81,9 @@ pub struct Distortion {
     waveshape: WaveShape,
     foldback_threshold: f32,
 
-    // Filter state
-    tone_filter_state: f32,
-    tone_filter_state_r: f32,
+    // Tone filters (one-pole lowpass, one per channel)
+    tone_filter: OnePole,
+    tone_filter_r: OnePole,
 }
 
 impl Distortion {
@@ -93,19 +91,16 @@ impl Distortion {
     ///
     /// Defaults: Drive 12dB, Level -6dB, Tone 4kHz, SoftClip
     pub fn new(sample_rate: f32) -> Self {
-        let mut dist = Self {
-            drive: SmoothedParam::with_config(db_to_linear(12.0), sample_rate, 5.0),
-            level: SmoothedParam::with_config(db_to_linear(-6.0), sample_rate, 5.0),
-            tone_coeff: SmoothedParam::with_config(0.0, sample_rate, 5.0),
+        Self {
+            drive: SmoothedParam::fast(db_to_linear(12.0), sample_rate),
+            level: SmoothedParam::fast(db_to_linear(-6.0), sample_rate),
             sample_rate,
             tone_freq_hz: 4000.0,
             waveshape: WaveShape::default(),
             foldback_threshold: 0.8,
-            tone_filter_state: 0.0,
-            tone_filter_state_r: 0.0,
-        };
-        dist.recalculate_tone_coeff();
-        dist
+            tone_filter: OnePole::new(sample_rate, 4000.0),
+            tone_filter_r: OnePole::new(sample_rate, 4000.0),
+        }
     }
 
     /// Set drive amount in decibels.
@@ -121,7 +116,8 @@ impl Distortion {
     /// Set tone control frequency in Hz.
     pub fn set_tone_hz(&mut self, freq_hz: f32) {
         self.tone_freq_hz = freq_hz;
-        self.recalculate_tone_coeff();
+        self.tone_filter.set_frequency(freq_hz);
+        self.tone_filter_r.set_frequency(freq_hz);
     }
 
     /// Set the waveshaping algorithm.
@@ -154,12 +150,6 @@ impl Distortion {
         self.waveshape
     }
 
-    fn recalculate_tone_coeff(&mut self) {
-        let normalized = self.tone_freq_hz / self.sample_rate;
-        let coeff = 1.0 - expf(-core::f32::consts::TAU * normalized);
-        self.tone_coeff.set_target(coeff);
-    }
-
     #[inline]
     fn apply_waveshape(&self, x: f32) -> f32 {
         match self.waveshape {
@@ -169,12 +159,6 @@ impl Distortion {
             WaveShape::Asymmetric => asymmetric_clip(x),
         }
     }
-
-    #[inline]
-    fn tone_filter(state: &mut f32, input: f32, coeff: f32) -> f32 {
-        *state += coeff * (input - *state);
-        *state
-    }
 }
 
 impl Effect for Distortion {
@@ -182,11 +166,10 @@ impl Effect for Distortion {
     fn process(&mut self, input: f32) -> f32 {
         let drive = self.drive.advance();
         let level = self.level.advance();
-        let tone_coeff = self.tone_coeff.advance();
 
         let driven = input * drive;
         let shaped = self.apply_waveshape(driven);
-        let filtered = Self::tone_filter(&mut self.tone_filter_state, shaped, tone_coeff);
+        let filtered = self.tone_filter.process(shaped);
 
         filtered * level
     }
@@ -196,18 +179,17 @@ impl Effect for Distortion {
         // Dual-mono: process each channel independently with separate filter states
         let drive = self.drive.advance();
         let level = self.level.advance();
-        let tone_coeff = self.tone_coeff.advance();
 
         // Process left channel
         let driven_l = left * drive;
         let shaped_l = self.apply_waveshape(driven_l);
-        let filtered_l = Self::tone_filter(&mut self.tone_filter_state, shaped_l, tone_coeff);
+        let filtered_l = self.tone_filter.process(shaped_l);
         let out_l = filtered_l * level;
 
         // Process right channel with separate filter state
         let driven_r = right * drive;
         let shaped_r = self.apply_waveshape(driven_r);
-        let filtered_r = Self::tone_filter(&mut self.tone_filter_state_r, shaped_r, tone_coeff);
+        let filtered_r = self.tone_filter_r.process(shaped_r);
         let out_r = filtered_r * level;
 
         (out_l, out_r)
@@ -217,16 +199,15 @@ impl Effect for Distortion {
         self.sample_rate = sample_rate;
         self.drive.set_sample_rate(sample_rate);
         self.level.set_sample_rate(sample_rate);
-        self.tone_coeff.set_sample_rate(sample_rate);
-        self.recalculate_tone_coeff();
+        self.tone_filter.set_sample_rate(sample_rate);
+        self.tone_filter_r.set_sample_rate(sample_rate);
     }
 
     fn reset(&mut self) {
-        self.tone_filter_state = 0.0;
-        self.tone_filter_state_r = 0.0;
+        self.tone_filter.reset();
+        self.tone_filter_r.reset();
         self.drive.snap_to_target();
         self.level.snap_to_target();
-        self.tone_coeff.snap_to_target();
     }
 }
 

@@ -64,6 +64,7 @@ impl TremoloWaveform {
 /// | 0 | Rate | 0.5–20.0 Hz | 5.0 |
 /// | 1 | Depth | 0–100% | 50.0 |
 /// | 2 | Waveform | 0–3 (Sine, Triangle, Square, SampleHold) | 0 |
+/// | 3 | Output | -20.0–20.0 dB | 0.0 |
 ///
 /// # Example
 ///
@@ -84,6 +85,7 @@ pub struct Tremolo {
     lfo: Lfo,
     rate: SmoothedParam,
     depth: SmoothedParam,
+    output_level: SmoothedParam,
     waveform: TremoloWaveform,
     sample_rate: f32,
 }
@@ -96,8 +98,9 @@ impl Tremolo {
 
         Self {
             lfo,
-            rate: SmoothedParam::with_config(5.0, sample_rate, 10.0),
-            depth: SmoothedParam::with_config(0.5, sample_rate, 10.0),
+            rate: SmoothedParam::standard(5.0, sample_rate),
+            depth: SmoothedParam::standard(0.5, sample_rate),
+            output_level: sonido_core::gain::output_level_param(sample_rate),
             waveform: TremoloWaveform::Sine,
             sample_rate,
         }
@@ -140,6 +143,7 @@ impl Effect for Tremolo {
     fn process(&mut self, input: f32) -> f32 {
         let rate = self.rate.advance();
         let depth = self.depth.advance();
+        let output_gain = self.output_level.advance();
 
         self.lfo.set_frequency(rate);
 
@@ -151,7 +155,7 @@ impl Effect for Tremolo {
         // When lfo_unipolar = 0.0, gain = 1.0 - depth
         let gain = 1.0 - (depth * (1.0 - lfo_unipolar));
 
-        input * gain
+        input * gain * output_gain
     }
 
     #[inline]
@@ -159,13 +163,14 @@ impl Effect for Tremolo {
         // Dual-mono: same gain applied to both channels
         let rate = self.rate.advance();
         let depth = self.depth.advance();
+        let output_gain = self.output_level.advance();
 
         self.lfo.set_frequency(rate);
 
         let lfo_unipolar = self.lfo.advance_unipolar();
         let gain = 1.0 - (depth * (1.0 - lfo_unipolar));
 
-        (left * gain, right * gain)
+        (left * gain * output_gain, right * gain * output_gain)
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
@@ -173,18 +178,20 @@ impl Effect for Tremolo {
         self.lfo.set_sample_rate(sample_rate);
         self.rate.set_sample_rate(sample_rate);
         self.depth.set_sample_rate(sample_rate);
+        self.output_level.set_sample_rate(sample_rate);
     }
 
     fn reset(&mut self) {
         self.lfo.reset();
         self.rate.snap_to_target();
         self.depth.snap_to_target();
+        self.output_level.snap_to_target();
     }
 }
 
 impl ParameterInfo for Tremolo {
     fn param_count(&self) -> usize {
-        3
+        4
     }
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
@@ -198,15 +205,7 @@ impl ParameterInfo for Tremolo {
                 default: 5.0,
                 step: 0.1,
             }),
-            1 => Some(ParamDescriptor {
-                name: "Depth",
-                short_name: "Depth",
-                unit: ParamUnit::Percent,
-                min: 0.0,
-                max: 100.0,
-                default: 50.0,
-                step: 1.0,
-            }),
+            1 => Some(ParamDescriptor::depth()),
             2 => Some(ParamDescriptor {
                 name: "Waveform",
                 short_name: "Wave",
@@ -216,6 +215,7 @@ impl ParameterInfo for Tremolo {
                 default: 0.0,
                 step: 1.0,
             }),
+            3 => Some(sonido_core::gain::output_param_descriptor()),
             _ => None,
         }
     }
@@ -225,6 +225,7 @@ impl ParameterInfo for Tremolo {
             0 => self.rate.target(),
             1 => self.depth.target() * 100.0,
             2 => self.waveform.to_index() as f32,
+            3 => sonido_core::gain::output_level_db(&self.output_level),
             _ => 0.0,
         }
     }
@@ -234,6 +235,7 @@ impl ParameterInfo for Tremolo {
             0 => self.set_rate(value),
             1 => self.set_depth(value / 100.0),
             2 => self.set_waveform(TremoloWaveform::from_index(value as usize)),
+            3 => sonido_core::gain::set_output_level_db(&mut self.output_level, value),
             _ => {}
         }
     }
@@ -337,7 +339,7 @@ mod tests {
     fn test_tremolo_parameters() {
         let mut tremolo = Tremolo::new(44100.0);
 
-        assert_eq!(tremolo.param_count(), 3);
+        assert_eq!(tremolo.param_count(), 4);
 
         // Test rate parameter
         tremolo.set_param(0, 10.0);

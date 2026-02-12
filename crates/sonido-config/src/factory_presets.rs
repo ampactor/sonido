@@ -216,7 +216,7 @@ gain = "2"
 type = "tape"
 [effects.params]
 drive = "60"
-warmth = "70"
+saturation = "70"
 
 [[effects]]
 type = "compressor"

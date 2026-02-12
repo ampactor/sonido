@@ -7,8 +7,8 @@
 
 use libm::ceilf;
 use sonido_core::{
-    Effect, InterpolatedDelay, Lfo, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam,
-    flush_denormal,
+    Effect, InterpolatedDelay, Lfo, ParamDescriptor, ParameterInfo, SmoothedParam, flush_denormal,
+    wet_dry_mix, wet_dry_mix_stereo,
 };
 
 /// Flanger effect with LFO-modulated delay.
@@ -21,6 +21,7 @@ use sonido_core::{
 /// | 1 | Depth | 0–100% | 50.0 |
 /// | 2 | Feedback | 0–95% | 50.0 |
 /// | 3 | Mix | 0–100% | 50.0 |
+/// | 4 | Output | -20.0–20.0 dB | 0.0 |
 ///
 /// # Example
 ///
@@ -47,6 +48,7 @@ pub struct Flanger {
     depth: SmoothedParam,
     feedback: SmoothedParam,
     mix: SmoothedParam,
+    output_level: SmoothedParam,
     sample_rate: f32,
     /// Base delay in samples (5ms)
     base_delay_samples: f32,
@@ -85,10 +87,11 @@ impl Flanger {
             delay_r: InterpolatedDelay::new(max_delay_samples),
             lfo: Lfo::new(sample_rate, 0.5),
             lfo_r,
-            rate: SmoothedParam::with_config(0.5, sample_rate, 10.0),
-            depth: SmoothedParam::with_config(0.5, sample_rate, 10.0),
-            feedback: SmoothedParam::with_config(0.5, sample_rate, 10.0),
-            mix: SmoothedParam::with_config(0.5, sample_rate, 10.0),
+            rate: SmoothedParam::standard(0.5, sample_rate),
+            depth: SmoothedParam::standard(0.5, sample_rate),
+            feedback: SmoothedParam::standard(0.5, sample_rate),
+            mix: SmoothedParam::standard(0.5, sample_rate),
+            output_level: sonido_core::gain::output_level_param(sample_rate),
             sample_rate,
             base_delay_samples,
             max_mod_samples,
@@ -146,6 +149,7 @@ impl Effect for Flanger {
         let depth = self.depth.advance();
         let feedback = self.feedback.advance();
         let mix = self.mix.advance();
+        let output_gain = self.output_level.advance();
 
         // Update LFO frequency
         self.lfo.set_frequency(rate);
@@ -154,8 +158,6 @@ impl Effect for Flanger {
         let lfo_value = self.lfo.advance_unipolar();
 
         // Calculate delay time: base delay + modulation
-        // When depth=1 and lfo=0: delay = base - max_mod = 0 (clamped to min)
-        // When depth=1 and lfo=1: delay = base + max_mod = 10ms
         let mod_amount = (lfo_value * 2.0 - 1.0) * depth * self.max_mod_samples;
         let delay_samples = (self.base_delay_samples + mod_amount)
             .max((Self::MIN_DELAY_MS / 1000.0) * self.sample_rate);
@@ -171,7 +173,7 @@ impl Effect for Flanger {
         self.feedback_sample = flush_denormal(delayed);
 
         // Mix dry and wet signals
-        input * (1.0 - mix) + delayed * mix
+        wet_dry_mix(input, delayed, mix) * output_gain
     }
 
     #[inline]
@@ -181,6 +183,7 @@ impl Effect for Flanger {
         let depth = self.depth.advance();
         let feedback = self.feedback.advance();
         let mix = self.mix.advance();
+        let output_gain = self.output_level.advance();
 
         // Update LFO frequencies
         self.lfo.set_frequency(rate);
@@ -213,10 +216,9 @@ impl Effect for Flanger {
         self.feedback_sample_r = flush_denormal(delayed_r);
 
         // Mix dry and wet signals
-        let out_l = left * (1.0 - mix) + delayed_l * mix;
-        let out_r = right * (1.0 - mix) + delayed_r * mix;
+        let (out_l, out_r) = wet_dry_mix_stereo(left, right, delayed_l, delayed_r, mix);
 
-        (out_l, out_r)
+        (out_l * output_gain, out_r * output_gain)
     }
 
     fn is_true_stereo(&self) -> bool {
@@ -235,6 +237,7 @@ impl Effect for Flanger {
         self.depth.set_sample_rate(sample_rate);
         self.feedback.set_sample_rate(sample_rate);
         self.mix.set_sample_rate(sample_rate);
+        self.output_level.set_sample_rate(sample_rate);
     }
 
     fn reset(&mut self) {
@@ -245,12 +248,17 @@ impl Effect for Flanger {
         self.lfo_r.set_phase(self.stereo_spread); // Restore phase offset
         self.feedback_sample = 0.0;
         self.feedback_sample_r = 0.0;
+        self.rate.snap_to_target();
+        self.depth.snap_to_target();
+        self.feedback.snap_to_target();
+        self.mix.snap_to_target();
+        self.output_level.snap_to_target();
     }
 }
 
 impl ParameterInfo for Flanger {
     fn param_count(&self) -> usize {
-        4
+        5
     }
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
@@ -258,39 +266,16 @@ impl ParameterInfo for Flanger {
             0 => Some(ParamDescriptor {
                 name: "Rate",
                 short_name: "Rate",
-                unit: ParamUnit::Hertz,
+                unit: sonido_core::ParamUnit::Hertz,
                 min: 0.05,
                 max: 5.0,
                 default: 0.5,
                 step: 0.05,
             }),
-            1 => Some(ParamDescriptor {
-                name: "Depth",
-                short_name: "Depth",
-                unit: ParamUnit::Percent,
-                min: 0.0,
-                max: 100.0,
-                default: 50.0,
-                step: 1.0,
-            }),
-            2 => Some(ParamDescriptor {
-                name: "Feedback",
-                short_name: "Fdbk",
-                unit: ParamUnit::Percent,
-                min: 0.0,
-                max: 95.0,
-                default: 50.0,
-                step: 1.0,
-            }),
-            3 => Some(ParamDescriptor {
-                name: "Mix",
-                short_name: "Mix",
-                unit: ParamUnit::Percent,
-                min: 0.0,
-                max: 100.0,
-                default: 50.0,
-                step: 1.0,
-            }),
+            1 => Some(ParamDescriptor::depth()),
+            2 => Some(ParamDescriptor::feedback()),
+            3 => Some(ParamDescriptor::mix()),
+            4 => Some(sonido_core::gain::output_param_descriptor()),
             _ => None,
         }
     }
@@ -301,6 +286,7 @@ impl ParameterInfo for Flanger {
             1 => self.depth.target() * 100.0,
             2 => self.feedback.target() * 100.0,
             3 => self.mix.target() * 100.0,
+            4 => sonido_core::gain::output_level_db(&self.output_level),
             _ => 0.0,
         }
     }
@@ -311,6 +297,7 @@ impl ParameterInfo for Flanger {
             1 => self.set_depth(value / 100.0),
             2 => self.set_feedback(value / 100.0),
             3 => self.set_mix(value / 100.0),
+            4 => sonido_core::gain::set_output_level_db(&mut self.output_level, value),
             _ => {}
         }
     }
@@ -385,7 +372,7 @@ mod tests {
     fn test_flanger_parameter_info() {
         let flanger = Flanger::new(44100.0);
 
-        assert_eq!(flanger.param_count(), 4);
+        assert_eq!(flanger.param_count(), 5);
 
         let rate_info = flanger.param_info(0).unwrap();
         assert_eq!(rate_info.name, "Rate");

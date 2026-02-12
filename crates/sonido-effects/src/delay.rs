@@ -2,8 +2,8 @@
 
 use libm::ceilf;
 use sonido_core::{
-    Effect, InterpolatedDelay, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam,
-    flush_denormal,
+    Effect, InterpolatedDelay, ParamDescriptor, ParameterInfo, SmoothedParam, flush_denormal,
+    wet_dry_mix, wet_dry_mix_stereo,
 };
 
 /// Classic delay effect with feedback and optional ping-pong stereo mode.
@@ -19,6 +19,7 @@ use sonido_core::{
 /// | 1 | Feedback | 0–95% | 40.0 |
 /// | 2 | Mix | 0–100% | 50.0 |
 /// | 3 | Ping Pong | 0–1 | 0 |
+/// | 4 | Output | -20.0–20.0 dB | 0.0 |
 ///
 /// # Example
 ///
@@ -43,6 +44,7 @@ pub struct Delay {
     delay_time: SmoothedParam,
     feedback: SmoothedParam,
     mix: SmoothedParam,
+    output_level: SmoothedParam,
     sample_rate: f32,
     /// Ping-pong mode: feedback crosses between L/R channels
     ping_pong: bool,
@@ -64,9 +66,10 @@ impl Delay {
             delay_line: InterpolatedDelay::new(max_delay_samples),
             delay_line_r: InterpolatedDelay::new(max_delay_samples),
             max_delay_samples: max_delay_samples_f32,
-            delay_time: SmoothedParam::with_config(default_delay_samples, sample_rate, 50.0),
-            feedback: SmoothedParam::with_config(0.4, sample_rate, 10.0),
-            mix: SmoothedParam::with_config(0.5, sample_rate, 10.0),
+            delay_time: SmoothedParam::interpolated(default_delay_samples, sample_rate),
+            feedback: SmoothedParam::standard(0.4, sample_rate),
+            mix: SmoothedParam::standard(0.5, sample_rate),
+            output_level: sonido_core::gain::output_level_param(sample_rate),
             sample_rate,
             ping_pong: false,
         }
@@ -109,12 +112,13 @@ impl Effect for Delay {
         let delay_samples = self.delay_time.advance();
         let feedback = self.feedback.advance();
         let mix = self.mix.advance();
+        let output_gain = self.output_level.advance();
 
         let delayed = self.delay_line.read(delay_samples);
         let feedback_signal = flush_denormal(input + (delayed * feedback));
         self.delay_line.write(feedback_signal);
 
-        input * (1.0 - mix) + delayed * mix
+        wet_dry_mix(input, delayed, mix) * output_gain
     }
 
     #[inline]
@@ -122,6 +126,7 @@ impl Effect for Delay {
         let delay_samples = self.delay_time.advance();
         let feedback = self.feedback.advance();
         let mix = self.mix.advance();
+        let output_gain = self.output_level.advance();
 
         // Read from both delay lines
         let delayed_l = self.delay_line.read(delay_samples);
@@ -142,10 +147,9 @@ impl Effect for Delay {
             self.delay_line_r.write(feedback_r);
         }
 
-        let out_l = left * (1.0 - mix) + delayed_l * mix;
-        let out_r = right * (1.0 - mix) + delayed_r * mix;
+        let (out_l, out_r) = wet_dry_mix_stereo(left, right, delayed_l, delayed_r, mix);
 
-        (out_l, out_r)
+        (out_l * output_gain, out_r * output_gain)
     }
 
     fn is_true_stereo(&self) -> bool {
@@ -157,6 +161,7 @@ impl Effect for Delay {
         self.delay_time.set_sample_rate(sample_rate);
         self.feedback.set_sample_rate(sample_rate);
         self.mix.set_sample_rate(sample_rate);
+        self.output_level.set_sample_rate(sample_rate);
     }
 
     fn reset(&mut self) {
@@ -165,52 +170,44 @@ impl Effect for Delay {
         self.delay_time.snap_to_target();
         self.feedback.snap_to_target();
         self.mix.snap_to_target();
+        self.output_level.snap_to_target();
     }
 }
 
 impl ParameterInfo for Delay {
     fn param_count(&self) -> usize {
-        4
+        5
     }
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
         match index {
-            0 => Some(ParamDescriptor {
-                name: "Delay Time",
-                short_name: "Time",
-                unit: ParamUnit::Milliseconds,
-                min: 1.0,
-                max: 2000.0,
-                default: 300.0,
-                step: 1.0,
-            }),
+            0 => Some(ParamDescriptor::time_ms(
+                "Delay Time",
+                "Time",
+                1.0,
+                2000.0,
+                300.0,
+            )),
             1 => Some(ParamDescriptor {
                 name: "Feedback",
                 short_name: "Feedback",
-                unit: ParamUnit::Percent,
+                unit: sonido_core::ParamUnit::Percent,
                 min: 0.0,
                 max: 95.0,
                 default: 40.0,
                 step: 1.0,
             }),
-            2 => Some(ParamDescriptor {
-                name: "Mix",
-                short_name: "Mix",
-                unit: ParamUnit::Percent,
-                min: 0.0,
-                max: 100.0,
-                default: 50.0,
-                step: 1.0,
-            }),
+            2 => Some(ParamDescriptor::mix()),
             3 => Some(ParamDescriptor {
                 name: "Ping Pong",
                 short_name: "PngPng",
-                unit: ParamUnit::None,
+                unit: sonido_core::ParamUnit::None,
                 min: 0.0,
                 max: 1.0,
                 default: 0.0,
                 step: 1.0,
             }),
+            4 => Some(sonido_core::gain::output_param_descriptor()),
             _ => None,
         }
     }
@@ -227,6 +224,7 @@ impl ParameterInfo for Delay {
                     0.0
                 }
             }
+            4 => sonido_core::gain::output_level_db(&self.output_level),
             _ => 0.0,
         }
     }
@@ -237,6 +235,7 @@ impl ParameterInfo for Delay {
             1 => self.set_feedback(value / 100.0),
             2 => self.set_mix(value / 100.0),
             3 => self.set_ping_pong(value > 0.5),
+            4 => sonido_core::gain::set_output_level_db(&mut self.output_level, value),
             _ => {}
         }
     }
@@ -322,10 +321,6 @@ mod tests {
         delay.process_stereo(1.0, 0.0);
 
         // With ping-pong, the feedback should cross channels
-        // First echo appears on LEFT after 100ms (from left delay line)
-        // Then the feedback crosses to RIGHT delay line
-        // Second echo appears on RIGHT after another 100ms
-        // So we need to wait 2x delay time (200ms = 8820 samples) to see right echo
         let mut first_l_echo = false;
         let mut first_r_echo = false;
         for _i in 0..15000 {
@@ -333,12 +328,10 @@ mod tests {
             if !first_l_echo && l.abs() > 0.5 {
                 first_l_echo = true;
             }
-            // Right echo should come after left echo (from ping-pong cross-feed)
             if first_l_echo && r.abs() > 0.3 {
                 first_r_echo = true;
                 break;
             }
-            // Don't check too many if we found both
             if first_l_echo && first_r_echo {
                 break;
             }
@@ -348,5 +341,11 @@ mod tests {
             first_r_echo,
             "Ping-pong should produce echo on right channel from left input"
         );
+    }
+
+    #[test]
+    fn test_delay_param_count() {
+        let delay = Delay::new(44100.0);
+        assert_eq!(delay.param_count(), 5);
     }
 }
