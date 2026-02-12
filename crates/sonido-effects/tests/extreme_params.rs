@@ -119,7 +119,7 @@ fn test_extreme_delay() {
 
 #[test]
 fn test_extreme_reverb() {
-    run_extreme_test("Reverb", |sr| Reverb::new(sr));
+    run_extreme_test("Reverb", Reverb::new);
 }
 
 #[test]
