@@ -283,6 +283,7 @@ cargo test --no-default-features    # no_std check
 cargo bench                         # Benchmarks
 cargo run -p sonido-gui             # Launch GUI
 cargo run -p sonido-cli -- --help   # CLI help
+make dev-install                    # Symlink debug build to ~/.local/bin
 ```
 
 ## Key Files

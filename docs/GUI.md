@@ -132,19 +132,22 @@ When an effect is selected, its parameter panel appears below the chain. Each pa
 
 ### Preamp
 - **Gain**: -20 to +20 dB
+- **Output**: -20 to +20 dB output level
+- **Headroom**: 6 to 40 dB clipping ceiling
 
 ### Distortion
-- **Drive**: 0 to 40 dB
-- **Tone**: 500 to 10000 Hz lowpass filter
-- **Level**: -20 to 0 dB output level
+- **Drive**: 0 to 40 dB (default 12)
+- **Tone**: 500 to 10000 Hz lowpass filter (default 4000)
+- **Level**: -20 to 0 dB output level (default -6)
 - **Waveshape**: SoftClip, HardClip, Foldback, Asymmetric
 
 ### Compressor
-- **Threshold**: -40 to 0 dB
+- **Threshold**: -60 to 0 dB (default -18)
 - **Ratio**: 1:1 to 20:1
 - **Attack**: 0.1 to 100 ms
 - **Release**: 10 to 1000 ms
-- **Makeup**: 0 to 20 dB
+- **Makeup**: 0 to 24 dB
+- **Knee**: 0 to 12 dB knee width
 
 ### Chorus
 - **Rate**: 0.1 to 10 Hz LFO rate
@@ -152,9 +155,10 @@ When an effect is selected, its parameter panel appears below the chain. Each pa
 - **Mix**: 0 to 1 wet/dry mix
 
 ### Delay
-- **Time**: 1 to 2000 ms delay time
-- **Feedback**: 0 to 0.95 feedback amount
+- **Time**: 1 to 2000 ms delay time (default 300)
+- **Feedback**: 0 to 0.95 feedback amount (default 0.4)
 - **Mix**: 0 to 1 wet/dry mix
+- **Ping-Pong**: On/Off stereo ping-pong mode
 
 ### Filter (Lowpass)
 - **Cutoff**: 20 to 20000 Hz
@@ -162,17 +166,22 @@ When an effect is selected, its parameter panel appears below the chain. Each pa
 
 ### MultiVibrato
 - **Depth**: 0 to 1 overall modulation depth
+- **Mix**: 0 to 100% wet/dry mix
 
 ### Tape Saturation
-- **Drive**: 0 to 24 dB
+- **Drive**: 0 to 24 dB (default 6)
 - **Saturation**: 0 to 1
+- **Output**: -12 to +12 dB output level
+- **HF Rolloff**: 1000 to 20000 Hz high-frequency rolloff
+- **Bias**: -0.2 to 0.2 tape bias offset
 
 ### Reverb
-- **Room Size**: 0 to 1
+- **Room Size**: 0 to 1 (default 0.5)
 - **Decay**: 0 to 1
 - **Damping**: 0 to 1 (0 = bright, 1 = dark)
 - **Pre-delay**: 0 to 100 ms
 - **Mix**: 0 to 1 wet/dry mix
+- **Stereo Width**: 0 to 100% stereo decorrelation
 - **Type**: Room, Hall
 
 ### Tremolo

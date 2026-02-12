@@ -17,8 +17,8 @@ Some effects have alternate names for convenience:
 Both names work interchangeably in the CLI:
 
 ```bash
-sonido process in.wav out.wav --effect filter --param cutoff=2000
-sonido process in.wav out.wav --effect lowpass --param cutoff=2000  # Same effect
+sonido process in.wav --effect filter --param cutoff=2000
+sonido process in.wav --effect lowpass --param cutoff=2000  # Same effect
 ```
 
 ## distortion
@@ -57,7 +57,7 @@ The tone control is a one-pole lowpass filter (`distortion.rs:174-176`) placed a
 ### Example
 
 ```bash
-sonido process in.wav out.wav --effect distortion \
+sonido process in.wav --effect distortion \
     --param drive=15 --param tone=3500 --param waveshape=softclip
 ```
 
@@ -86,6 +86,7 @@ The gain computer implements a soft-knee transfer curve (`compressor.rs:66-79`).
 | `attack` | Attack time in ms | 10.0 | 0.1-100 |
 | `release` | Release time in ms | 100.0 | 10-1000 |
 | `makeup` | Makeup gain in dB | 0.0 | 0-24 |
+| `knee` | Knee width in dB | 6.0 | 0-12 |
 
 ### Tips
 
@@ -97,7 +98,7 @@ The gain computer implements a soft-knee transfer curve (`compressor.rs:66-79`).
 ### Example
 
 ```bash
-sonido process in.wav out.wav --effect compressor \
+sonido process in.wav --effect compressor \
     --param threshold=-20 --param ratio=4 --param attack=10 --param release=100
 ```
 
@@ -128,7 +129,7 @@ Dual-voice modulated delay chorus.
 ### Example
 
 ```bash
-sonido process in.wav out.wav --effect chorus \
+sonido process in.wav --effect chorus \
     --param rate=1.5 --param depth=0.6 --param mix=0.5
 ```
 
@@ -149,6 +150,7 @@ Feedback delay with optional ping-pong stereo mode.
 | `time` | Delay time in ms | 300.0 | 1-2000 |
 | `feedback` | Feedback amount (0-1) | 0.4 | 0-0.95 |
 | `mix` | Wet/dry mix (0-1) | 0.5 | 0-1 |
+| `ping_pong` | Ping-pong stereo mode (0=off, 1=on) | 0.0 | 0-1 |
 
 ### Tips
 
@@ -160,7 +162,7 @@ Feedback delay with optional ping-pong stereo mode.
 ### Example
 
 ```bash
-sonido process in.wav out.wav --effect delay \
+sonido process in.wav --effect delay \
     --param time=375 --param feedback=0.5 --param mix=0.4
 ```
 
@@ -184,7 +186,7 @@ Resonant lowpass filter (2-pole). Also available as `lowpass`.
 ### Example
 
 ```bash
-sonido process in.wav out.wav --effect filter \
+sonido process in.wav --effect filter \
     --param cutoff=2000 --param resonance=2.0
 ```
 
@@ -199,6 +201,7 @@ Simulates the complex pitch modulation of analog tape machines with 10 independe
 | Parameter | Description | Default | Range |
 |-----------|-------------|---------|-------|
 | `depth` | Overall depth (0-1) | 0.5 | 0-1 |
+| `mix` | Wet/dry mix (0-100%) | 100.0 | 0-100 |
 
 ### Tips
 
@@ -209,7 +212,7 @@ Simulates the complex pitch modulation of analog tape machines with 10 independe
 ### Example
 
 ```bash
-sonido process in.wav out.wav --effect multivibrato --param depth=0.4
+sonido process in.wav --effect multivibrato --param depth=0.4
 ```
 
 ---
@@ -222,17 +225,22 @@ Tape saturation with HF rolloff.
 |-----------|-------------|---------|-------|
 | `drive` | Drive amount in dB | 6.0 | 0-24 |
 | `saturation` | Saturation amount (0-1) | 0.5 | 0-1 |
+| `output` | Output level in dB | 0.0 | -12 to 12 |
+| `hf_rolloff` | HF rolloff frequency in Hz | 12000.0 | 1000-20000 |
+| `bias` | Tape bias offset | 0.0 | -0.2 to 0.2 |
 
 ### Tips
 
 - **Subtle warmth**: drive=3, saturation=0.3
 - **Tape compression**: drive=6, saturation=0.5
 - **Saturated tape**: drive=12, saturation=0.7
+- **Dark tape**: hf_rolloff=4000 — rolls off high frequencies earlier
+- **Bias offset**: Small bias values add asymmetric harmonic content
 
 ### Example
 
 ```bash
-sonido process in.wav out.wav --effect tape \
+sonido process in.wav --effect tape \
     --param drive=6 --param saturation=0.5
 ```
 
@@ -245,15 +253,17 @@ Clean preamp/gain stage.
 | Parameter | Description | Default | Range |
 |-----------|-------------|---------|-------|
 | `gain` | Gain in dB | 0.0 | -20 to 20 |
+| `output` | Output level in dB | 0.0 | -20 to 20 |
+| `headroom` | Headroom in dB | 20.0 | 6 to 40 |
 
 ### Tips
 
-Use before other effects to boost quiet signals, or after to control output level.
+Use before other effects to boost quiet signals, or after to control output level. The headroom parameter sets the clipping ceiling -- lower values produce softer compression at high gain.
 
 ### Example
 
 ```bash
-sonido process in.wav out.wav --effect preamp --param gain=6
+sonido process in.wav --effect preamp --param gain=6
 ```
 
 ---
@@ -295,7 +305,8 @@ This mapping ensures the feedback stays below 1.0 (stable) while providing a wid
 | `damping` | HF damping (0=bright, 1=dark) | 0.5 | 0-1 |
 | `predelay` | Pre-delay time in ms | 10.0 | 0-100 |
 | `mix` | Wet/dry mix (0-1) | 0.5 | 0-1 |
-| `type` | Reverb type preset | room | room, hall |
+| `stereo_width` | Stereo width (0-100%) | 100.0 | 0-100 |
+| `reverb_type` | Reverb type (0=room, 1=hall) | 0.0 | 0-1 |
 
 ### Reverb Types
 
@@ -315,15 +326,15 @@ This mapping ensures the feedback stays below 1.0 (stable) while providing a wid
 
 ```bash
 # Room reverb
-sonido process in.wav out.wav --effect reverb \
+sonido process in.wav --effect reverb \
     --param room_size=0.5 --param decay=0.6 --param mix=0.4
 
 # Hall reverb preset
-sonido process in.wav out.wav --effect reverb \
-    --param type=hall --param mix=0.5
+sonido process in.wav --effect reverb \
+    --param reverb_type=1 --param mix=0.5
 
 # Custom dark hall
-sonido process in.wav out.wav --effect reverb \
+sonido process in.wav --effect reverb \
     --param room_size=0.8 --param decay=0.9 --param damping=0.7 --param predelay=25
 ```
 
@@ -355,7 +366,7 @@ Amplitude modulation with multiple waveforms.
 ### Example
 
 ```bash
-sonido process in.wav out.wav --effect tremolo \
+sonido process in.wav --effect tremolo \
     --param rate=6 --param depth=0.5 --param waveform=sine
 ```
 
@@ -382,7 +393,7 @@ Noise gate with threshold and hold.
 ### Example
 
 ```bash
-sonido process in.wav out.wav --effect gate \
+sonido process in.wav --effect gate \
     --param threshold=-40 --param attack=1 --param release=100 --param hold=50
 ```
 
@@ -425,7 +436,7 @@ All three are modulation effects, but they differ in mechanism:
 ### Example
 
 ```bash
-sonido process in.wav out.wav --effect flanger \
+sonido process in.wav --effect flanger \
     --param rate=0.5 --param depth=0.6 --param feedback=0.5 --param mix=0.5
 ```
 
@@ -464,7 +475,7 @@ When the allpass-shifted signal is mixed with the original, a notch appears at t
 ### Example
 
 ```bash
-sonido process in.wav out.wav --effect phaser \
+sonido process in.wav --effect phaser \
     --param rate=0.4 --param depth=0.6 --param stages=6 --param feedback=0.5
 ```
 
@@ -498,11 +509,11 @@ Auto-wah and manual wah with envelope follower. Also available as `autowah`.
 
 ```bash
 # Auto-wah
-sonido process in.wav out.wav --effect wah \
+sonido process in.wav --effect wah \
     --param frequency=700 --param resonance=6 --param sensitivity=0.7
 
 # Manual wah (fixed position)
-sonido process in.wav out.wav --effect wah \
+sonido process in.wav --effect wah \
     --param frequency=1200 --param mode=manual
 ```
 
@@ -544,12 +555,12 @@ For convenience, you can use abbreviated parameter names:
 
 ```bash
 # Boost bass and highs (smiley face EQ)
-sonido process in.wav out.wav --effect eq \
+sonido process in.wav --effect eq \
     --param low_freq=100 --param low_gain=4 \
     --param high_freq=8000 --param high_gain=3
 
 # Cut mud, add presence
-sonido process in.wav out.wav --effect eq \
+sonido process in.wav --effect eq \
     --param mf=300 --param mg=-4 --param mq=1.5 \
     --param mf=3000 --param mg=2
 ```
@@ -593,7 +604,7 @@ effect1:param1=value1,param2=value2|effect2:param=value
 
 **Guitar Hall**
 ```bash
---chain "distortion:drive=10|compressor:threshold=-18|reverb:type=hall,mix=0.4"
+--chain "distortion:drive=10|compressor:threshold=-18|reverb:reverb_type=1,mix=0.4"
 ```
 
 **Funk Wah**

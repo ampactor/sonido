@@ -18,6 +18,7 @@ use sonido_core::{
 /// | 0 | Delay Time | 1.0–2000.0 ms | 300.0 |
 /// | 1 | Feedback | 0–95% | 40.0 |
 /// | 2 | Mix | 0–100% | 50.0 |
+/// | 3 | Ping Pong | 0–1 | 0 |
 ///
 /// # Example
 ///
@@ -57,14 +58,14 @@ impl Delay {
     pub fn with_max_delay_ms(sample_rate: f32, max_delay_ms: f32) -> Self {
         let max_delay_samples = ceilf((max_delay_ms / 1000.0) * sample_rate) as usize;
         let max_delay_samples_f32 = max_delay_samples as f32;
-        let default_delay_samples = ((500.0 / 1000.0) * sample_rate).min(max_delay_samples_f32);
+        let default_delay_samples = ((300.0 / 1000.0) * sample_rate).min(max_delay_samples_f32);
 
         Self {
             delay_line: InterpolatedDelay::new(max_delay_samples),
             delay_line_r: InterpolatedDelay::new(max_delay_samples),
             max_delay_samples: max_delay_samples_f32,
             delay_time: SmoothedParam::with_config(default_delay_samples, sample_rate, 50.0),
-            feedback: SmoothedParam::with_config(0.3, sample_rate, 10.0),
+            feedback: SmoothedParam::with_config(0.4, sample_rate, 10.0),
             mix: SmoothedParam::with_config(0.5, sample_rate, 10.0),
             sample_rate,
             ping_pong: false,
@@ -169,7 +170,7 @@ impl Effect for Delay {
 
 impl ParameterInfo for Delay {
     fn param_count(&self) -> usize {
-        3
+        4
     }
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
@@ -201,6 +202,15 @@ impl ParameterInfo for Delay {
                 default: 50.0,
                 step: 1.0,
             }),
+            3 => Some(ParamDescriptor {
+                name: "Ping Pong",
+                short_name: "PngPng",
+                unit: ParamUnit::None,
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+                step: 1.0,
+            }),
             _ => None,
         }
     }
@@ -210,6 +220,13 @@ impl ParameterInfo for Delay {
             0 => self.delay_time.target() / self.sample_rate * 1000.0,
             1 => self.feedback.target() * 100.0,
             2 => self.mix.target() * 100.0,
+            3 => {
+                if self.ping_pong {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
             _ => 0.0,
         }
     }
@@ -219,6 +236,7 @@ impl ParameterInfo for Delay {
             0 => self.set_delay_time_ms(value),
             1 => self.set_feedback(value / 100.0),
             2 => self.set_mix(value / 100.0),
+            3 => self.set_ping_pong(value > 0.5),
             _ => {}
         }
     }

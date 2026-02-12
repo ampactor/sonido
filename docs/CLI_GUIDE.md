@@ -15,6 +15,12 @@ cargo build --release -p sonido-cli
 # Binary at target/release/sonido
 ```
 
+For development (debug build, symlinked to `~/.local/bin`):
+
+```bash
+make dev-install
+```
+
 ## Commands Overview
 
 | Command | Description |
@@ -37,8 +43,12 @@ Process an audio file through one or more effects.
 ### Basic Usage
 
 ```bash
-sonido process <INPUT> <OUTPUT> [OPTIONS]
+sonido process <INPUT> [OUTPUT] [OPTIONS]
 ```
+
+When OUTPUT is omitted, the output filename is auto-generated from the input stem and
+the effect specification. For example, `sonido process input.wav --effect reverb` produces
+`input_reverb.wav`.
 
 ### Options
 
@@ -50,26 +60,31 @@ sonido process <INPUT> <OUTPUT> [OPTIONS]
 | `--param <KEY=VALUE>` | Effect parameter (can repeat) |
 | `--block-size <N>` | Processing block size (default: 512) |
 | `--bit-depth <N>` | Output bit depth: 16, 24, or 32 (default: 32) |
-| `--mono` | Force mono output (mix stereo to mono) |
+| `--mono` | Force mono output (default is always stereo, even for mono input) |
 
 ### Examples
 
 ```bash
-# Single effect with default parameters
-sonido process input.wav output.wav --effect distortion
+# Single effect with auto-generated output filename
+sonido process input.wav --effect distortion
+# -> produces input_distortion.wav
 
-# Single effect with custom parameters
+# Single effect with explicit output and custom parameters
 sonido process input.wav output.wav --effect distortion --param drive=15 --param tone=4000
 
-# Effect chain (effects separated by |)
-sonido process input.wav output.wav \
+# Effect chain with auto-naming
+sonido process input.wav \
     --chain "preamp:gain=6|distortion:drive=12|delay:time=300,feedback=0.4"
+# -> produces input_preamp_distortion_delay.wav
 
 # Using a preset file
 sonido process input.wav output.wav --preset presets/guitar_crunch.toml
 
 # Output as 16-bit WAV
 sonido process input.wav output.wav --effect compressor --bit-depth 16
+
+# Force mono output (default is stereo)
+sonido process input.wav --effect reverb --mono
 ```
 
 ### Chain Syntax
@@ -88,13 +103,13 @@ effect1:param1=value1,param2=value2|effect2:param=value|effect3
 
 ```bash
 # Effects without parameters can omit the colon entirely
-sonido process input.wav output.wav --chain "distortion|delay:time=300"
+sonido process input.wav --chain "distortion|delay:time=300"
 
 # Whitespace around pipes is ignored
-sonido process input.wav output.wav --chain "preamp:gain=6 | distortion | delay:time=300"
+sonido process input.wav --chain "preamp:gain=6 | distortion | delay:time=300"
 
 # Empty segments between pipes are skipped
-sonido process input.wav output.wav --chain "preamp:gain=6||distortion"
+sonido process input.wav --chain "preamp:gain=6||distortion"
 ```
 
 ---
@@ -810,16 +825,16 @@ Several effects have shorter alias names that can be used interchangeably:
 Examples:
 ```bash
 # These are equivalent
-sonido process input.wav output.wav --effect filter --param cutoff=2000
-sonido process input.wav output.wav --effect lowpass --param cutoff=2000
+sonido process input.wav --effect filter --param cutoff=2000
+sonido process input.wav --effect lowpass --param cutoff=2000
 
 # These are equivalent
-sonido process input.wav output.wav --effect multivibrato --param depth=0.6
-sonido process input.wav output.wav --effect vibrato --param depth=0.6
+sonido process input.wav --effect multivibrato --param depth=0.6
+sonido process input.wav --effect vibrato --param depth=0.6
 
 # These are equivalent
-sonido process input.wav output.wav --effect gate --param threshold=-40
-sonido process input.wav output.wav --effect noisegate --param threshold=-40
+sonido process input.wav --effect gate --param threshold=-40
+sonido process input.wav --effect noisegate --param threshold=-40
 ```
 
 ---

@@ -108,6 +108,12 @@ pub fn available_effects() -> Vec<EffectInfo> {
                     default: "0.0",
                     range: "0-20",
                 },
+                ParameterInfo {
+                    name: "knee",
+                    description: "Knee width in dB",
+                    default: "6.0",
+                    range: "0-12",
+                },
             ],
         },
         EffectInfo {
@@ -154,6 +160,12 @@ pub fn available_effects() -> Vec<EffectInfo> {
                     name: "mix",
                     description: "Wet/dry mix (0-1)",
                     default: "0.5",
+                    range: "0-1",
+                },
+                ParameterInfo {
+                    name: "ping_pong",
+                    description: "Ping-pong stereo mode (0=off, 1=on)",
+                    default: "0",
                     range: "0-1",
                 },
             ],
@@ -245,12 +257,20 @@ pub fn available_effects() -> Vec<EffectInfo> {
         EffectInfo {
             name: "multivibrato",
             description: "10-unit tape wow/flutter vibrato",
-            parameters: &[ParameterInfo {
-                name: "depth",
-                description: "Overall depth (0-1)",
-                default: "0.5",
-                range: "0-1",
-            }],
+            parameters: &[
+                ParameterInfo {
+                    name: "depth",
+                    description: "Overall depth (0-1)",
+                    default: "0.5",
+                    range: "0-1",
+                },
+                ParameterInfo {
+                    name: "mix",
+                    description: "Wet/dry mix (0-1)",
+                    default: "1.0",
+                    range: "0-1",
+                },
+            ],
         },
         EffectInfo {
             name: "tape",
@@ -268,17 +288,49 @@ pub fn available_effects() -> Vec<EffectInfo> {
                     default: "0.5",
                     range: "0-1",
                 },
+                ParameterInfo {
+                    name: "output",
+                    description: "Output level in dB",
+                    default: "0.0",
+                    range: "-12-12",
+                },
+                ParameterInfo {
+                    name: "hf_rolloff",
+                    description: "HF rolloff frequency in Hz",
+                    default: "12000.0",
+                    range: "1000-20000",
+                },
+                ParameterInfo {
+                    name: "bias",
+                    description: "Tape bias (-0.2 to 0.2)",
+                    default: "0.0",
+                    range: "-0.2-0.2",
+                },
             ],
         },
         EffectInfo {
             name: "preamp",
             description: "Clean preamp/gain stage",
-            parameters: &[ParameterInfo {
-                name: "gain",
-                description: "Gain in dB",
-                default: "0.0",
-                range: "-20-20",
-            }],
+            parameters: &[
+                ParameterInfo {
+                    name: "gain",
+                    description: "Gain in dB",
+                    default: "0.0",
+                    range: "-20-20",
+                },
+                ParameterInfo {
+                    name: "output",
+                    description: "Output level in dB",
+                    default: "0.0",
+                    range: "-20-20",
+                },
+                ParameterInfo {
+                    name: "headroom",
+                    description: "Headroom before clipping in dB",
+                    default: "20.0",
+                    range: "6-40",
+                },
+            ],
         },
         EffectInfo {
             name: "reverb",
@@ -312,6 +364,12 @@ pub fn available_effects() -> Vec<EffectInfo> {
                     name: "mix",
                     description: "Wet/dry mix (0-1)",
                     default: "0.5",
+                    range: "0-1",
+                },
+                ParameterInfo {
+                    name: "stereo_width",
+                    description: "Stereo width (0-1)",
+                    default: "1.0",
                     range: "0-1",
                 },
                 ParameterInfo {
@@ -503,6 +561,7 @@ pub fn create_effect_with_params(
                     "attack" => effect.set_attack_ms(parse_f32(key, value)?),
                     "release" => effect.set_release_ms(parse_f32(key, value)?),
                     "makeup" => effect.set_makeup_gain_db(parse_f32(key, value)?),
+                    "knee" => effect.set_knee_db(parse_f32(key, value)?),
                     _ => {
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
@@ -537,6 +596,9 @@ pub fn create_effect_with_params(
                     "time" => effect.set_delay_time_ms(parse_f32(key, value)?),
                     "feedback" => effect.set_feedback(parse_f32(key, value)?),
                     "mix" => effect.set_mix(parse_f32(key, value)?),
+                    "ping_pong" | "pingpong" => {
+                        effect.set_ping_pong(parse_f32(key, value)? > 0.5);
+                    }
                     _ => {
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
@@ -605,6 +667,7 @@ pub fn create_effect_with_params(
             for (key, value) in params {
                 match key.as_str() {
                     "depth" => effect.set_depth(parse_f32(key, value)?),
+                    "mix" => effect.set_mix(parse_f32(key, value)?),
                     _ => {
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
@@ -621,6 +684,12 @@ pub fn create_effect_with_params(
                 match key.as_str() {
                     "drive" => effect.set_drive(parse_f32(key, value)?),
                     "saturation" => effect.set_saturation(parse_f32(key, value)?),
+                    "output" => {
+                        let db = parse_f32(key, value)?;
+                        effect.set_output(10.0f32.powf(db / 20.0));
+                    }
+                    "hf_rolloff" | "hf" => effect.set_hf_rolloff(parse_f32(key, value)?),
+                    "bias" => effect.set_bias(parse_f32(key, value)?),
                     _ => {
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
@@ -636,6 +705,10 @@ pub fn create_effect_with_params(
             for (key, value) in params {
                 match key.as_str() {
                     "gain" => effect.set_gain_db(parse_f32(key, value)?),
+                    "output" => effect.set_output_db(parse_f32(key, value)?),
+                    "headroom" | "headroom_db" => {
+                        effect.set_headroom_db(parse_f32(key, value)?);
+                    }
                     _ => {
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
@@ -655,6 +728,9 @@ pub fn create_effect_with_params(
                     "damping" | "damp" => effect.set_damping(parse_f32(key, value)?),
                     "predelay" | "pre" => effect.set_predelay_ms(parse_f32(key, value)?),
                     "mix" => effect.set_mix(parse_f32(key, value)?),
+                    "stereo_width" | "width" => {
+                        effect.set_stereo_width(parse_f32(key, value)?);
+                    }
                     "type" | "preset" => effect.set_reverb_type(parse_reverb_type(value)?),
                     _ => {
                         return Err(EffectError::UnknownParameter {

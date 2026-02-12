@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### sonido-cli
+- Auto-generated output filename when OUTPUT argument is omitted — derives name from input stem + effect specification
+- `make dev-install` target for fast debug-build iteration (symlinks to `~/.local/bin`)
+
+#### sonido-effects
+- Compressor: exposed `knee` parameter (0-12 dB, default 6)
+- Delay: exposed `ping_pong` parameter (0=off, 1=on, default off)
+- MultiVibrato: exposed `mix` parameter (0-100%, default 100)
+- TapeSaturation: exposed `output` (-12 to 12 dB), `hf_rolloff` (1000-20000 Hz), `bias` (-0.2 to 0.2) parameters
+- CleanPreamp: exposed `output` (-20 to 20 dB), `headroom` (6-40 dB) parameters
+- Reverb: exposed `stereo_width` (0-100%), `reverb_type` (0=room, 1=hall) parameters
+
+### Fixed
+
+#### sonido-effects
+- Fixed stereo cross-contamination in LowPassFilter, ParametricEq, Wah, TapeSaturation, MultiVibrato — each channel now has independent filter state
+- Aligned `new()` defaults with ParameterInfo for Distortion (drive=12, level=-6, tone=4000), Compressor (threshold=-18), Delay (time=300, feedback=0.4), TapeSaturation (drive=6), Reverb (room_size=0.5)
+
+### Changed
+
+#### sonido-cli
+- Process command always outputs stereo WAV — mono input is duplicated to stereo before processing
+- `--mono` flag now means "force mono output" (was "preserve mono input")
+
 #### sonido-core
 - `DcBlocker` high-pass filter for removing DC offset from audio signals
 - `flush_denormal()` utility in `math.rs` for clearing denormalized floats
@@ -170,7 +194,6 @@ CLI-first configuration and preset management.
   - Configurable bins per octave (12=semitone, 24=quarter-tone)
 
 **Other CLI Additions:**
-- `tui` command for interactive terminal UI
 - `presets` command for preset management
 
 ---

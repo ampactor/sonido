@@ -29,6 +29,12 @@ cd sonido
 cargo install --path crates/sonido-cli
 ```
 
+For development (debug build, symlinked to `~/.local/bin`):
+
+```bash
+make dev-install
+```
+
 ## Quick Start Options
 
 ### GUI (Graphical Interface)
@@ -190,14 +196,18 @@ fn main() {
 
 ## Using the CLI
 
-Process a file through effects:
+Process a file through effects. Output filename is optional -- when omitted, it is
+auto-generated from the input stem and effect specification:
 
 ```bash
-# Simple distortion
+# Simple distortion (auto-generates input_distortion.wav)
+sonido process input.wav --effect distortion --param drive=15
+
+# Explicit output filename
 sonido process input.wav output.wav --effect distortion --param drive=15
 
 # Effect chain
-sonido process input.wav output.wav \
+sonido process input.wav \
     --chain "preamp:gain=6|distortion:drive=12|delay:time=300,feedback=0.4"
 ```
 

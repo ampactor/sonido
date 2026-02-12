@@ -177,7 +177,7 @@ impl EffectRegistry {
                 name: "Compressor",
                 description: "Dynamics compressor with soft knee",
                 category: EffectCategory::Dynamics,
-                param_count: 5,
+                param_count: 6,
             },
             |sr| Box::new(Compressor::new(sr)),
         );
@@ -225,7 +225,7 @@ impl EffectRegistry {
                 name: "Delay",
                 description: "Tape-style feedback delay",
                 category: EffectCategory::TimeBased,
-                param_count: 3,
+                param_count: 4,
             },
             |sr| Box::new(Delay::new(sr)),
         );
@@ -249,7 +249,7 @@ impl EffectRegistry {
                 name: "Multi Vibrato",
                 description: "10-unit tape wow/flutter simulation",
                 category: EffectCategory::Modulation,
-                param_count: 1,
+                param_count: 2,
             },
             |sr| Box::new(MultiVibrato::new(sr)),
         );
@@ -261,7 +261,7 @@ impl EffectRegistry {
                 name: "Tape Saturation",
                 description: "Analog tape warmth with HF rolloff",
                 category: EffectCategory::Distortion,
-                param_count: 2,
+                param_count: 5,
             },
             |sr| Box::new(TapeSaturation::new(sr)),
         );
@@ -273,7 +273,7 @@ impl EffectRegistry {
                 name: "Clean Preamp",
                 description: "High-headroom gain stage",
                 category: EffectCategory::Utility,
-                param_count: 1,
+                param_count: 3,
             },
             |sr| Box::new(CleanPreamp::new(sr)),
         );
@@ -285,7 +285,7 @@ impl EffectRegistry {
                 name: "Reverb",
                 description: "Freeverb-style algorithmic reverb",
                 category: EffectCategory::TimeBased,
-                param_count: 5,
+                param_count: 7,
             },
             |sr| Box::new(Reverb::new(sr)),
         );
@@ -522,7 +522,7 @@ mod tests {
         assert_eq!(reverb.id, "reverb");
         assert_eq!(reverb.name, "Reverb");
         assert_eq!(reverb.category, EffectCategory::TimeBased);
-        assert_eq!(reverb.param_count, 5);
+        assert_eq!(reverb.param_count, 7);
     }
 
     #[test]

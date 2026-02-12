@@ -63,14 +63,11 @@ pub fn run(args: EffectsArgs) -> anyhow::Result<()> {
             .collect();
 
         if params.is_empty() {
-            println!(
-                "  sonido process input.wav output.wav --effect {}",
-                effect.name
-            );
+            println!("  sonido process input.wav --effect {}", effect.name);
             println!("  sonido realtime --effect {}", effect.name);
         } else {
             println!(
-                "  sonido process input.wav output.wav --effect {} --param {}",
+                "  sonido process input.wav --effect {} --param {}",
                 effect.name,
                 params.join(" --param ")
             );
@@ -82,7 +79,7 @@ pub fn run(args: EffectsArgs) -> anyhow::Result<()> {
             println!();
             println!("  # Or using chain syntax:");
             println!(
-                "  sonido process input.wav output.wav --chain \"{}:{}\"",
+                "  sonido process input.wav --chain \"{}:{}\"",
                 effect.name,
                 params.join(",")
             );
@@ -105,12 +102,12 @@ pub fn run(args: EffectsArgs) -> anyhow::Result<()> {
             println!("Example Commands");
             println!("----------------");
             println!();
-            println!("  # Process a file with a single effect");
-            println!("  sonido process input.wav output.wav --effect distortion --param drive=15");
+            println!("  # Process a file with a single effect (output auto-named)");
+            println!("  sonido process input.wav --effect distortion --param drive=15");
             println!();
             println!("  # Process with an effect chain");
             println!(
-                "  sonido process input.wav output.wav --chain \"preamp:gain=6|distortion:drive=12|delay:time=300\""
+                "  sonido process input.wav --chain \"preamp:gain=6|distortion:drive=12|delay:time=300\""
             );
             println!();
             println!("  # Real-time processing");

@@ -17,6 +17,9 @@ use sonido_core::{
 /// |-------|------|-------|---------|
 /// | 0 | Drive | 0.0–24.0 dB | 6.0 |
 /// | 1 | Saturation | 0–100% | 50.0 |
+/// | 2 | Output | -12.0–12.0 dB | 0.0 |
+/// | 3 | HF Rolloff | 1000.0–20000.0 Hz | 12000.0 |
+/// | 4 | Bias | -0.2–0.2 | 0.0 |
 ///
 /// # Example
 ///
@@ -40,9 +43,13 @@ pub struct TapeSaturation {
     output_gain: SmoothedParam,
     /// Saturation amount (0.0 - 1.0) with smoothing
     saturation: SmoothedParam,
-    /// High frequency rolloff state (one-pole)
+    /// High frequency rolloff state (one-pole, left channel)
     hf_state: f32,
+    /// High frequency rolloff state (one-pole, right channel)
+    hf_state_r: f32,
     hf_coeff: f32,
+    /// High frequency rolloff frequency in Hz
+    hf_freq: f32,
     /// Bias (affects harmonic content)
     bias: f32,
 }
@@ -58,11 +65,13 @@ impl TapeSaturation {
     pub fn new(sample_rate: f32) -> Self {
         let mut ts = Self {
             sample_rate,
-            drive: SmoothedParam::with_config(1.0, sample_rate, 10.0),
+            drive: SmoothedParam::with_config(db_to_linear(6.0), sample_rate, 10.0),
             output_gain: SmoothedParam::with_config(1.0, sample_rate, 10.0),
             saturation: SmoothedParam::with_config(0.5, sample_rate, 10.0),
             hf_state: 0.0,
+            hf_state_r: 0.0,
             hf_coeff: 0.0,
+            hf_freq: 12000.0,
             bias: 0.0,
         };
         ts.set_hf_rolloff(12000.0);
@@ -99,9 +108,10 @@ impl TapeSaturation {
         self.saturation.target()
     }
 
-    /// Set high frequency rolloff point in Hz
+    /// Set high frequency rolloff point in Hz (1000-20000).
     pub fn set_hf_rolloff(&mut self, freq: f32) {
         let freq = freq.clamp(1000.0, 20000.0);
+        self.hf_freq = freq;
         self.hf_coeff = expf(-2.0 * PI * freq / self.sample_rate);
     }
 
@@ -152,27 +162,26 @@ impl Effect for TapeSaturation {
 
     #[inline]
     fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
-        // Dual-mono: process each channel independently
-        // Note: hf_state is shared, giving slight coloration between channels
         let drive = self.drive.advance();
         let output_gain = self.output_gain.advance();
         let saturation = self.saturation.advance();
 
-        // Process left
+        // Process left with its own filter state
         let sat_l = self.saturate(left, drive, saturation);
         self.hf_state = sat_l + self.hf_coeff * (self.hf_state - sat_l);
         let out_l = self.hf_state * output_gain;
 
-        // Process right
+        // Process right with separate filter state
         let sat_r = self.saturate(right, drive, saturation);
-        self.hf_state = sat_r + self.hf_coeff * (self.hf_state - sat_r);
-        let out_r = self.hf_state * output_gain;
+        self.hf_state_r = sat_r + self.hf_coeff * (self.hf_state_r - sat_r);
+        let out_r = self.hf_state_r * output_gain;
 
         (out_l, out_r)
     }
 
     fn reset(&mut self) {
         self.hf_state = 0.0;
+        self.hf_state_r = 0.0;
         self.drive.snap_to_target();
         self.output_gain.snap_to_target();
         self.saturation.snap_to_target();
@@ -195,7 +204,7 @@ impl Effect for TapeSaturation {
 
 impl ParameterInfo for TapeSaturation {
     fn param_count(&self) -> usize {
-        2
+        5
     }
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
@@ -218,6 +227,33 @@ impl ParameterInfo for TapeSaturation {
                 default: 50.0,
                 step: 1.0,
             }),
+            2 => Some(ParamDescriptor {
+                name: "Output",
+                short_name: "Output",
+                unit: ParamUnit::Decibels,
+                min: -12.0,
+                max: 12.0,
+                default: 0.0,
+                step: 0.5,
+            }),
+            3 => Some(ParamDescriptor {
+                name: "HF Rolloff",
+                short_name: "HFRoll",
+                unit: ParamUnit::Hertz,
+                min: 1000.0,
+                max: 20000.0,
+                default: 12000.0,
+                step: 100.0,
+            }),
+            4 => Some(ParamDescriptor {
+                name: "Bias",
+                short_name: "Bias",
+                unit: ParamUnit::None,
+                min: -0.2,
+                max: 0.2,
+                default: 0.0,
+                step: 0.01,
+            }),
             _ => None,
         }
     }
@@ -226,6 +262,9 @@ impl ParameterInfo for TapeSaturation {
         match index {
             0 => linear_to_db(self.drive.target()),
             1 => self.saturation.target() * 100.0,
+            2 => linear_to_db(self.output_gain.target()),
+            3 => self.hf_freq,
+            4 => self.bias,
             _ => 0.0,
         }
     }
@@ -234,6 +273,9 @@ impl ParameterInfo for TapeSaturation {
         match index {
             0 => self.set_drive(db_to_linear(value.clamp(0.0, 24.0))),
             1 => self.set_saturation(value / 100.0),
+            2 => self.set_output(db_to_linear(value.clamp(-12.0, 12.0))),
+            3 => self.set_hf_rolloff(value.clamp(1000.0, 20000.0)),
+            4 => self.set_bias(value),
             _ => {}
         }
     }

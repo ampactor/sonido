@@ -1,4 +1,4 @@
-.PHONY: build test bench clean check demo walkthrough verify doc install
+.PHONY: build test bench clean check demo walkthrough verify doc dev-install install
 
 # Build
 build:
@@ -40,6 +40,14 @@ walkthrough:
 # Verify existing demos work
 verify:
 	./scripts/walkthrough.sh --verify
+
+# Install CLI via debug build symlink (fast iteration)
+dev-install:
+	cargo build -p sonido-cli
+	@mkdir -p $(HOME)/.local/bin
+	@ln -sf $(CURDIR)/target/debug/sonido $(HOME)/.local/bin/sonido
+	@echo "Linked target/debug/sonido → ~/.local/bin/sonido"
+	@echo "Ensure ~/.local/bin is in your PATH"
 
 # Install CLI globally
 install:

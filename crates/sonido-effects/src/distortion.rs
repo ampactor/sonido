@@ -91,14 +91,14 @@ pub struct Distortion {
 impl Distortion {
     /// Create a new distortion effect.
     ///
-    /// Defaults: Drive 0dB, Level 0dB, Tone 8kHz, SoftClip
+    /// Defaults: Drive 12dB, Level -6dB, Tone 4kHz, SoftClip
     pub fn new(sample_rate: f32) -> Self {
         let mut dist = Self {
-            drive: SmoothedParam::with_config(1.0, sample_rate, 5.0),
-            level: SmoothedParam::with_config(1.0, sample_rate, 5.0),
+            drive: SmoothedParam::with_config(db_to_linear(12.0), sample_rate, 5.0),
+            level: SmoothedParam::with_config(db_to_linear(-6.0), sample_rate, 5.0),
             tone_coeff: SmoothedParam::with_config(0.0, sample_rate, 5.0),
             sample_rate,
-            tone_freq_hz: 8000.0,
+            tone_freq_hz: 4000.0,
             waveshape: WaveShape::default(),
             foldback_threshold: 0.8,
             tone_filter_state: 0.0,
