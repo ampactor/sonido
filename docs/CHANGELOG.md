@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Audio demos and test audio files
 - Walkthrough script and expanded demo coverage
 
+### Removed
+
+#### sonido-cli
+- `tui` command and ratatui/crossterm dependencies — replaced by CLI for scriptable workflows and GUI for interactive editing
+
 ### Changed
 
 #### Production Hardening

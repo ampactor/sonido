@@ -49,7 +49,7 @@ cargo run -p sonido-cli -- --help
 cargo run -p sonido-cli -- --version
 ```
 
-- [ ] Help shows all 10 commands: process, realtime, generate, analyze, compare, devices, effects, presets, tui, help
+- [ ] Help shows all 9 commands: process, realtime, generate, analyze, compare, devices, effects, presets, help
 
 ### 1.2 List Effects
 
@@ -401,83 +401,9 @@ cargo run -p sonido-cli -- realtime --effect reverb --mono
 
 ---
 
-## Phase 7: TUI
+## Phase 7: GUI
 
 ### 7.1 Launch
-
-```bash
-cargo run -p sonido-cli -- tui
-```
-
-- [ ] TUI renders in terminal without crash
-- [ ] Effect chain strip visible at top
-- [ ] Parameter panel visible below
-
-### 7.2 Navigation (Normal Mode)
-
-| Action | Key | Expected | Pass |
-|--------|-----|----------|------|
-| Cycle effects | `Tab` | Highlight moves to next effect | [ ] |
-| Move selection up | `Up` or `k` | Cursor moves up | [ ] |
-| Move selection down | `Down` or `j` | Cursor moves down | [ ] |
-| Enter edit mode | `Enter` | Switches to parameter editing | [ ] |
-| Toggle bypass | `b` or `Space` | Bypass indicator toggles | [ ] |
-| Reset parameter | `r` | Parameter returns to default | [ ] |
-| Coarse decrease | `Left` or `h` | Value decreases by large step | [ ] |
-| Coarse increase | `Right` or `l` | Value increases by large step | [ ] |
-| Fine decrease | `[` | Value decreases by 0.01 | [ ] |
-| Fine increase | `]` | Value increases by 0.01 | [ ] |
-| Large decrease | `{` | Value decreases by 1.0 | [ ] |
-| Large increase | `}` | Value increases by 1.0 | [ ] |
-| Quit | `q` | TUI exits cleanly | [ ] |
-
-### 7.3 Edit Mode
-
-| Action | Key | Expected | Pass |
-|--------|-----|----------|------|
-| Enter edit mode | `Enter` (on a param) | Text input cursor appears | [ ] |
-| Type value | Number keys | Digits appear in field | [ ] |
-| Backspace | `Backspace` | Deletes last digit | [ ] |
-| Confirm | `Enter` | Value applies, exits edit mode | [ ] |
-| Cancel | `Esc` | Reverts value, exits edit mode | [ ] |
-
-### 7.4 Effect Walkthrough
-
-Cycle through all 15 effects with `Tab` and verify each renders:
-
-| Effect | Renders | Params Visible | Adjustable | Pass |
-|--------|---------|---------------|------------|------|
-| Preamp | [ ] | [ ] | [ ] | [ ] |
-| Distortion | [ ] | [ ] | [ ] | [ ] |
-| Compressor | [ ] | [ ] | [ ] | [ ] |
-| Gate | [ ] | [ ] | [ ] | [ ] |
-| EQ | [ ] | [ ] | [ ] | [ ] |
-| Filter | [ ] | [ ] | [ ] | [ ] |
-| Wah | [ ] | [ ] | [ ] | [ ] |
-| Tremolo | [ ] | [ ] | [ ] | [ ] |
-| Chorus | [ ] | [ ] | [ ] | [ ] |
-| Flanger | [ ] | [ ] | [ ] | [ ] |
-| Phaser | [ ] | [ ] | [ ] | [ ] |
-| MultiVibrato | [ ] | [ ] | [ ] | [ ] |
-| Delay | [ ] | [ ] | [ ] | [ ] |
-| Tape | [ ] | [ ] | [ ] | [ ] |
-| Reverb | [ ] | [ ] | [ ] | [ ] |
-
-### 7.5 Preset Loading
-
-```bash
-cargo run -p sonido-cli -- tui --preset crunch
-```
-
-- [ ] TUI launches with preset loaded
-- [ ] Preset name visible in header
-- [ ] Parameters reflect preset values
-
----
-
-## Phase 8: GUI
-
-### 8.1 Launch
 
 ```bash
 cargo run -p sonido-gui
@@ -486,13 +412,13 @@ cargo run -p sonido-gui
 - [ ] Window opens without crash
 - [ ] No errors in terminal output
 
-### 8.2 Initial State
+### 7.2 Initial State
 
 - [ ] Audio status indicator visible (green = OK, red = error)
 - [ ] Input/output meters present
 - [ ] All 15 effect buttons visible in chain strip
 
-### 8.3 Effect Panel Walkthrough
+### 7.3 Effect Panel Walkthrough
 
 Click each effect button and test its panel:
 
@@ -514,7 +440,7 @@ Click each effect button and test its panel:
 | Tape | [ ] | [ ] | [ ] | [ ] | [ ] |
 | Reverb | [ ] | [ ] | [ ] | [ ] | [ ] |
 
-### 8.4 Knob Interaction
+### 7.4 Knob Interaction
 
 For any effect panel:
 
@@ -522,13 +448,13 @@ For any effect panel:
 - [ ] Double-click knob: resets to default value
 - [ ] Value display updates in real-time
 
-### 8.5 Bypass
+### 7.5 Bypass
 
 - [ ] Double-click effect button: toggles bypass
 - [ ] Bypass LED changes color (green = active, dim = bypassed)
 - [ ] Audio is dry when bypassed
 
-### 8.6 Effect-Specific Panel Verification
+### 7.6 Effect-Specific Panel Verification
 
 #### Compressor
 - [ ] Gain reduction meter displays (should now work — was a TODO, now fixed)
@@ -546,13 +472,13 @@ For any effect panel:
 #### EQ
 - [ ] Three bands (Low/Mid/High) each with Frequency, Gain, Q
 
-### 8.7 Metering
+### 7.7 Metering
 
 - [ ] Input meter responds to audio input
 - [ ] Output meter shows processed signal level
 - [ ] Meter ballistics look smooth (not jumpy)
 
-### 8.8 Preset Management
+### 7.8 Preset Management
 
 - [ ] Open preset selector
 - [ ] Select a factory preset — parameters update
@@ -560,7 +486,7 @@ For any effect panel:
 - [ ] Save preset — enter name, confirm save
 - [ ] Saved preset appears in list
 
-### 8.9 Performance
+### 7.9 Performance
 
 - [ ] Status bar shows sample rate, buffer size, latency
 - [ ] No audio glitches during parameter changes
@@ -575,9 +501,9 @@ cargo run -p sonido-gui -- --buffer-size 128
 
 ---
 
-## Phase 9: Regression Tests
+## Phase 8: Regression Tests
 
-### 9.1 Golden File Tests
+### 8.1 Golden File Tests
 
 ```bash
 cargo test -p sonido-effects --test regression
@@ -585,7 +511,7 @@ cargo test -p sonido-effects --test regression
 
 - [ ] All 16 regression tests pass
 
-### 9.2 Full Test Suite
+### 8.2 Full Test Suite
 
 ```bash
 cargo test --workspace
@@ -593,7 +519,7 @@ cargo test --workspace
 
 - [ ] All tests pass, zero failures
 
-### 9.3 no_std Compatibility
+### 8.3 no_std Compatibility
 
 ```bash
 cargo test --no-default-features -p sonido-core
@@ -605,7 +531,7 @@ cargo test --no-default-features -p sonido-platform
 
 - [ ] All 5 no_std crates pass
 
-### 9.4 Clippy and Formatting
+### 8.4 Clippy and Formatting
 
 ```bash
 cargo clippy --workspace --all-targets -- -D warnings
@@ -615,7 +541,7 @@ cargo fmt --all -- --check
 - [ ] Zero clippy warnings
 - [ ] Formatting clean
 
-### 9.5 Documentation Build
+### 8.5 Documentation Build
 
 ```bash
 cargo doc --workspace --no-deps
