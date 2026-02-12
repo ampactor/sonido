@@ -251,6 +251,38 @@ pub fn flush_denormal(x: f32) -> f32 {
     if x.abs() < 1e-20 { 0.0 } else { x }
 }
 
+/// Crossfade between dry and wet signals.
+///
+/// Equivalent to `dry * (1 - mix) + wet * mix` but uses one fewer multiply:
+/// `dry + (wet - dry) * mix`.
+///
+/// # Arguments
+///
+/// * `dry` - Unprocessed signal
+/// * `wet` - Processed signal
+/// * `mix` - Blend factor in \[0.0, 1.0\]: 0.0 = all dry, 1.0 = all wet
+#[inline]
+pub fn wet_dry_mix(dry: f32, wet: f32, mix: f32) -> f32 {
+    dry + (wet - dry) * mix
+}
+
+/// Stereo crossfade between dry and wet signals.
+///
+/// Applies [`wet_dry_mix`] independently to left and right channels.
+#[inline]
+pub fn wet_dry_mix_stereo(dry_l: f32, dry_r: f32, wet_l: f32, wet_r: f32, mix: f32) -> (f32, f32) {
+    (
+        wet_dry_mix(dry_l, wet_l, mix),
+        wet_dry_mix(dry_r, wet_r, mix),
+    )
+}
+
+/// Sum stereo to mono (equal-power average).
+#[inline]
+pub fn mono_sum(left: f32, right: f32) -> f32 {
+    (left + right) * 0.5
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -314,6 +346,36 @@ mod tests {
         assert_eq!(samples, 480.0);
         let back = samples_to_ms(samples, sample_rate);
         assert!((back - ms).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_wet_dry_mix() {
+        // All dry
+        assert_eq!(wet_dry_mix(1.0, 0.5, 0.0), 1.0);
+        // All wet
+        assert_eq!(wet_dry_mix(1.0, 0.5, 1.0), 0.5);
+        // 50/50
+        assert!((wet_dry_mix(0.0, 1.0, 0.5) - 0.5).abs() < 1e-6);
+        // Equivalent to dry*(1-mix)+wet*mix
+        let dry = 0.3;
+        let wet = 0.8;
+        let mix = 0.7;
+        let expected = dry * (1.0 - mix) + wet * mix;
+        assert!((wet_dry_mix(dry, wet, mix) - expected).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_wet_dry_mix_stereo() {
+        let (l, r) = wet_dry_mix_stereo(1.0, 0.5, 0.0, 1.0, 0.5);
+        assert!((l - 0.5).abs() < 1e-6);
+        assert!((r - 0.75).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_mono_sum() {
+        assert_eq!(mono_sum(1.0, 1.0), 1.0);
+        assert_eq!(mono_sum(1.0, -1.0), 0.0);
+        assert_eq!(mono_sum(0.5, 0.3), 0.4);
     }
 
     #[test]

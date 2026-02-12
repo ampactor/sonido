@@ -92,9 +92,11 @@ pub mod dc_blocker;
 pub mod delay;
 pub mod effect;
 pub mod envelope;
+pub mod gain;
 pub mod lfo;
 pub mod math;
 pub mod modulation;
+pub mod one_pole;
 pub mod oversample;
 pub mod param;
 pub mod param_info;
@@ -115,9 +117,10 @@ pub use envelope::EnvelopeFollower;
 pub use lfo::{Lfo, LfoWaveform};
 pub use math::{
     asymmetric_clip, db_to_linear, fast_tanh, flush_denormal, foldback, hard_clip, linear_to_db,
-    soft_clip,
+    mono_sum, soft_clip, wet_dry_mix, wet_dry_mix_stereo,
 };
 pub use modulation::{ModulationAmount, ModulationSource};
+pub use one_pole::OnePole;
 pub use oversample::{MAX_OVERSAMPLE_FACTOR, Oversampled};
 pub use param::{LinearSmoothedParam, SmoothedParam};
 pub use param_info::{ParamDescriptor, ParamUnit, ParameterInfo};

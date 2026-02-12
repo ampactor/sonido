@@ -220,6 +220,26 @@ pub trait ParameterInfo {
     /// ```
     fn get_param(&self, index: usize) -> f32;
 
+    /// Find a parameter index by name (case-insensitive).
+    ///
+    /// Matches against both [`ParamDescriptor::name`] and
+    /// [`ParamDescriptor::short_name`].
+    ///
+    /// # Returns
+    ///
+    /// `Some(index)` if found, `None` if no parameter matches.
+    fn find_param_by_name(&self, name: &str) -> Option<usize> {
+        for i in 0..self.param_count() {
+            if let Some(desc) = self.param_info(i)
+                && (desc.name.eq_ignore_ascii_case(name)
+                    || desc.short_name.eq_ignore_ascii_case(name))
+            {
+                return Some(i);
+            }
+        }
+        None
+    }
+
     /// Sets the value of the parameter at the given index.
     ///
     /// Implementations should clamp the value to the valid range specified
@@ -314,6 +334,106 @@ pub struct ParamDescriptor {
 }
 
 impl ParamDescriptor {
+    /// Standard mix parameter (0–100%, default 50%).
+    ///
+    /// Used by most effects with a wet/dry blend control.
+    pub fn mix() -> Self {
+        Self {
+            name: "Mix",
+            short_name: "Mix",
+            unit: ParamUnit::Percent,
+            min: 0.0,
+            max: 100.0,
+            default: 50.0,
+            step: 1.0,
+        }
+    }
+
+    /// Standard depth parameter (0–100%, default 50%).
+    ///
+    /// Used by modulation effects (chorus, flanger, phaser, vibrato).
+    pub fn depth() -> Self {
+        Self {
+            name: "Depth",
+            short_name: "Depth",
+            unit: ParamUnit::Percent,
+            min: 0.0,
+            max: 100.0,
+            default: 50.0,
+            step: 1.0,
+        }
+    }
+
+    /// Standard feedback parameter (0–95%, default 50%).
+    ///
+    /// Used by delay-based effects (delay, flanger, chorus).
+    /// Capped at 95% to prevent runaway oscillation.
+    pub fn feedback() -> Self {
+        Self {
+            name: "Feedback",
+            short_name: "Fdbk",
+            unit: ParamUnit::Percent,
+            min: 0.0,
+            max: 95.0,
+            default: 50.0,
+            step: 1.0,
+        }
+    }
+
+    /// Time parameter with custom name and range (milliseconds).
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Full parameter name (e.g., "Delay Time")
+    /// * `short_name` - Short name for hardware displays (e.g., "Time")
+    /// * `min` - Minimum time in ms
+    /// * `max` - Maximum time in ms
+    /// * `default` - Default time in ms
+    pub fn time_ms(
+        name: &'static str,
+        short_name: &'static str,
+        min: f32,
+        max: f32,
+        default: f32,
+    ) -> Self {
+        Self {
+            name,
+            short_name,
+            unit: ParamUnit::Milliseconds,
+            min,
+            max,
+            default,
+            step: 1.0,
+        }
+    }
+
+    /// Gain parameter with custom name and range (decibels).
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Full parameter name (e.g., "Makeup Gain")
+    /// * `short_name` - Short name for hardware displays (e.g., "Makeup")
+    /// * `min` - Minimum gain in dB
+    /// * `max` - Maximum gain in dB
+    /// * `default` - Default gain in dB
+    pub fn gain_db(
+        name: &'static str,
+        short_name: &'static str,
+        min: f32,
+        max: f32,
+        default: f32,
+    ) -> Self {
+        Self {
+            name,
+            short_name,
+            unit: ParamUnit::Decibels,
+            min,
+            max,
+            default,
+            step: 0.5,
+        }
+    }
+
     /// Clamps a value to this parameter's valid range.
     ///
     /// # Example
