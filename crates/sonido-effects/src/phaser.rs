@@ -368,15 +368,7 @@ impl ParameterInfo for Phaser {
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
         match index {
-            0 => Some(ParamDescriptor {
-                name: "Rate",
-                short_name: "Rate",
-                unit: ParamUnit::Hertz,
-                min: 0.05,
-                max: 5.0,
-                default: 0.3,
-                step: 0.05,
-            }),
+            0 => Some(ParamDescriptor::rate_hz(0.05, 5.0, 0.3)),
             1 => Some(ParamDescriptor::depth()),
             2 => Some(ParamDescriptor {
                 name: "Stages",

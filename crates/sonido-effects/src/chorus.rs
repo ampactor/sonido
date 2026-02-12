@@ -195,15 +195,7 @@ impl ParameterInfo for Chorus {
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
         match index {
-            0 => Some(ParamDescriptor {
-                name: "Rate",
-                short_name: "Rate",
-                unit: sonido_core::ParamUnit::Hertz,
-                min: 0.1,
-                max: 10.0,
-                default: 1.0,
-                step: 0.1,
-            }),
+            0 => Some(ParamDescriptor::rate_hz(0.1, 10.0, 1.0)),
             1 => Some(ParamDescriptor::depth()),
             2 => Some(ParamDescriptor::mix()),
             3 => Some(sonido_core::gain::output_param_descriptor()),
