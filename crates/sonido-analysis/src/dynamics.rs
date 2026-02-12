@@ -217,11 +217,17 @@ pub fn loudness_histogram(
 /// Returns a comprehensive dynamics analysis
 #[derive(Debug, Clone)]
 pub struct DynamicsAnalysis {
+    /// Overall RMS level in dB.
     pub rms_db: f32,
+    /// Peak level in dB.
     pub peak_db: f32,
+    /// Crest factor (peak-to-RMS ratio) in dB.
     pub crest_factor_db: f32,
+    /// Dynamic range (max RMS - min RMS) in dB.
     pub dynamic_range_db: f32,
+    /// Minimum windowed RMS level in dB (excluding silence).
     pub min_rms_db: f32,
+    /// Maximum windowed RMS level in dB.
     pub max_rms_db: f32,
 }
 

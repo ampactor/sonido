@@ -9,18 +9,26 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// Audio device information.
 #[derive(Debug, Clone)]
 pub struct AudioDevice {
+    /// Human-readable device name.
     pub name: String,
+    /// Whether the device supports audio input.
     pub is_input: bool,
+    /// Whether the device supports audio output.
     pub is_output: bool,
+    /// Default sample rate in Hz.
     pub default_sample_rate: u32,
 }
 
 /// Stream configuration.
 #[derive(Debug, Clone)]
 pub struct StreamConfig {
+    /// Sample rate in Hz.
     pub sample_rate: u32,
+    /// Buffer size in frames.
     pub buffer_size: u32,
+    /// Input device name (uses default if `None`).
     pub input_device: Option<String>,
+    /// Output device name (uses default if `None`).
     pub output_device: Option<String>,
 }
 

@@ -10,10 +10,12 @@ use std::sync::atomic::Ordering;
 pub struct FilterPanel;
 
 impl FilterPanel {
+    /// Create a new filter panel.
     pub fn new() -> Self {
         Self
     }
 
+    /// Render the filter effect controls.
     pub fn ui(&mut self, ui: &mut Ui, params: &Arc<SharedParams>) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {

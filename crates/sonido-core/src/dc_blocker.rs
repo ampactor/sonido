@@ -84,7 +84,7 @@ impl DcBlocker {
 
     /// Process a single sample through the DC blocker.
     ///
-    /// Implements: y[n] = x[n] - x[n-1] + R * y[n-1]
+    /// Implements: `y[n] = x[n] - x[n-1] + R * y[n-1]`
     ///
     /// # Arguments
     /// * `input` - Input sample

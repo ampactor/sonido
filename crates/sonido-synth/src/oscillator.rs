@@ -16,10 +16,14 @@ fn rem_euclid_f32(a: f32, b: f32) -> f32 {
 /// Oscillator waveform types
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum OscillatorWaveform {
+    /// Sine waveform — pure fundamental tone.
     #[default]
     Sine,
+    /// Triangle waveform — odd harmonics, softer than saw.
     Triangle,
+    /// Sawtooth waveform — all harmonics, bright timbre.
     Saw,
+    /// Square waveform (50% duty cycle) — odd harmonics, hollow timbre.
     Square,
     /// Pulse with variable duty cycle (0.0 to 1.0)
     Pulse(f32),

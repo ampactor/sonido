@@ -10,10 +10,12 @@ use std::sync::atomic::Ordering;
 pub struct DelayPanel;
 
 impl DelayPanel {
+    /// Create a new delay panel.
     pub fn new() -> Self {
         Self
     }
 
+    /// Render the delay effect controls.
     pub fn ui(&mut self, ui: &mut Ui, params: &Arc<SharedParams>) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {

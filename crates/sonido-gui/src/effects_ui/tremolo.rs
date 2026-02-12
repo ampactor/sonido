@@ -13,10 +13,12 @@ const WAVEFORMS: &[&str] = &["Sine", "Triangle", "Square", "S&H"];
 pub struct TremoloPanel;
 
 impl TremoloPanel {
+    /// Create a new tremolo panel.
     pub fn new() -> Self {
         Self
     }
 
+    /// Render the tremolo effect controls.
     pub fn ui(&mut self, ui: &mut Ui, params: &Arc<SharedParams>) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {

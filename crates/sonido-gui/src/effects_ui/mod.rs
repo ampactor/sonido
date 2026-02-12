@@ -57,20 +57,35 @@ pub trait EffectPanel {
 /// Effect type enumeration for UI purposes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EffectType {
+    /// Preamp / input gain stage.
     Preamp,
+    /// Distortion / overdrive.
     Distortion,
+    /// Dynamic range compressor.
     Compressor,
+    /// Noise gate.
     Gate,
+    /// 3-band parametric equalizer.
     ParametricEq,
+    /// Wah filter (auto or manual).
     Wah,
+    /// Chorus modulation effect.
     Chorus,
+    /// Flanger modulation effect.
     Flanger,
+    /// Phaser modulation effect.
     Phaser,
+    /// Tremolo amplitude modulation.
     Tremolo,
+    /// Delay / echo effect.
     Delay,
+    /// Low/high-pass filter.
     Filter,
+    /// Multi-voice vibrato.
     MultiVibrato,
+    /// Tape saturation emulation.
     Tape,
+    /// Reverb (room/hall).
     Reverb,
 }
 

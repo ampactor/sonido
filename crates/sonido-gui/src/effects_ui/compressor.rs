@@ -10,10 +10,12 @@ use std::sync::atomic::Ordering;
 pub struct CompressorPanel;
 
 impl CompressorPanel {
+    /// Create a new compressor panel.
     pub fn new() -> Self {
         Self
     }
 
+    /// Render the compressor effect controls.
     pub fn ui(&mut self, ui: &mut Ui, params: &Arc<SharedParams>) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {

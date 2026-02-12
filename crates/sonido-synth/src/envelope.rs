@@ -8,11 +8,16 @@ use libm::expf;
 /// ADSR envelope states
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum EnvelopeState {
+    /// Envelope is inactive — output is zero.
     #[default]
     Idle,
+    /// Attack phase — output ramps up toward peak level.
     Attack,
+    /// Decay phase — output falls from peak toward sustain level.
     Decay,
+    /// Sustain phase — output holds at sustain level while gate is held.
     Sustain,
+    /// Release phase — output decays to zero after gate release.
     Release,
 }
 

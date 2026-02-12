@@ -30,20 +30,34 @@ pub enum ValidationError {
 
     /// Unknown parameter name.
     #[error("unknown parameter '{param}' for effect '{effect}'")]
-    UnknownParameter { effect: String, param: String },
+    UnknownParameter {
+        /// Name of the effect.
+        effect: String,
+        /// Name of the unrecognized parameter.
+        param: String,
+    },
 
     /// Parameter value out of range.
     #[error("parameter '{param}' value {value} out of range [{min}, {max}]")]
     OutOfRange {
+        /// Name of the parameter.
         param: String,
+        /// The value that was out of range.
         value: f32,
+        /// Minimum allowed value.
         min: f32,
+        /// Maximum allowed value.
         max: f32,
     },
 
     /// Invalid parameter format.
     #[error("invalid format for parameter '{param}': {reason}")]
-    InvalidFormat { param: String, reason: String },
+    InvalidFormat {
+        /// Name of the parameter.
+        param: String,
+        /// Description of the format error.
+        reason: String,
+    },
 
     /// Multiple validation errors.
     #[error("multiple validation errors: {}", .0.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("; "))]

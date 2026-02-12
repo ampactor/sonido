@@ -13,10 +13,12 @@ const REVERB_TYPES: &[&str] = &["Room", "Hall"];
 pub struct ReverbPanel;
 
 impl ReverbPanel {
+    /// Create a new reverb panel.
     pub fn new() -> Self {
         Self
     }
 
+    /// Render the reverb effect controls.
     pub fn ui(&mut self, ui: &mut Ui, params: &Arc<SharedParams>) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
