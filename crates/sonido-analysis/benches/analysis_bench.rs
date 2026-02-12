@@ -1,6 +1,7 @@
 //! Criterion benchmarks for sonido-analysis components
 //!
 //! Run with: cargo bench -p sonido-analysis
+#![allow(missing_docs)]
 
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use sonido_analysis::{

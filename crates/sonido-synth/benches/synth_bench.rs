@@ -1,6 +1,7 @@
 //! Criterion benchmarks for sonido-synth components
 //!
 //! Run with: cargo bench -p sonido-synth
+#![allow(missing_docs)]
 
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use sonido_synth::{
