@@ -144,6 +144,12 @@ pub fn available_effects() -> Vec<EffectInfo> {
                     default: "0.5",
                     range: "0-1",
                 },
+                ParameterInfo {
+                    name: "output",
+                    description: "Output level in dB",
+                    default: "0.0",
+                    range: "-20-20",
+                },
             ],
         },
         EffectInfo {
@@ -174,6 +180,12 @@ pub fn available_effects() -> Vec<EffectInfo> {
                     default: "0",
                     range: "0-1",
                 },
+                ParameterInfo {
+                    name: "output",
+                    description: "Output level in dB",
+                    default: "0.0",
+                    range: "-20-20",
+                },
             ],
         },
         EffectInfo {
@@ -203,6 +215,12 @@ pub fn available_effects() -> Vec<EffectInfo> {
                     description: "Wet/dry mix (0-1)",
                     default: "0.5",
                     range: "0-1",
+                },
+                ParameterInfo {
+                    name: "output",
+                    description: "Output level in dB",
+                    default: "0.0",
+                    range: "-20-20",
                 },
             ],
         },
@@ -246,6 +264,12 @@ pub fn available_effects() -> Vec<EffectInfo> {
                     default: "0.25",
                     range: "0-0.5",
                 },
+                ParameterInfo {
+                    name: "output",
+                    description: "Output level in dB",
+                    default: "0.0",
+                    range: "-20-20",
+                },
             ],
         },
         EffectInfo {
@@ -264,6 +288,12 @@ pub fn available_effects() -> Vec<EffectInfo> {
                     default: "0.707",
                     range: "0.1-10",
                 },
+                ParameterInfo {
+                    name: "output",
+                    description: "Output level in dB",
+                    default: "0.0",
+                    range: "-20-20",
+                },
             ],
         },
         EffectInfo {
@@ -281,6 +311,12 @@ pub fn available_effects() -> Vec<EffectInfo> {
                     description: "Wet/dry mix (0-1)",
                     default: "1.0",
                     range: "0-1",
+                },
+                ParameterInfo {
+                    name: "output",
+                    description: "Output level in dB",
+                    default: "0.0",
+                    range: "-20-20",
                 },
             ],
         },
@@ -390,6 +426,12 @@ pub fn available_effects() -> Vec<EffectInfo> {
                     default: "room",
                     range: "room|hall",
                 },
+                ParameterInfo {
+                    name: "output",
+                    description: "Output level in dB",
+                    default: "0.0",
+                    range: "-20-20",
+                },
             ],
         },
         EffectInfo {
@@ -413,6 +455,12 @@ pub fn available_effects() -> Vec<EffectInfo> {
                     description: "Waveform type",
                     default: "sine",
                     range: "sine|triangle|square|samplehold",
+                },
+                ParameterInfo {
+                    name: "output",
+                    description: "Output level in dB",
+                    default: "0.0",
+                    range: "-20-20",
                 },
             ],
         },
@@ -444,6 +492,12 @@ pub fn available_effects() -> Vec<EffectInfo> {
                     default: "50.0",
                     range: "0-500",
                 },
+                ParameterInfo {
+                    name: "output",
+                    description: "Output level in dB",
+                    default: "0.0",
+                    range: "-20-20",
+                },
             ],
         },
         EffectInfo {
@@ -473,6 +527,12 @@ pub fn available_effects() -> Vec<EffectInfo> {
                     description: "Wah mode",
                     default: "auto",
                     range: "auto|manual",
+                },
+                ParameterInfo {
+                    name: "output",
+                    description: "Output level in dB",
+                    default: "0.0",
+                    range: "-20-20",
                 },
             ],
         },
@@ -534,6 +594,12 @@ pub fn available_effects() -> Vec<EffectInfo> {
                     default: "1.0",
                     range: "0.5-5",
                 },
+                ParameterInfo {
+                    name: "output",
+                    description: "Output level in dB",
+                    default: "0.0",
+                    range: "-20-20",
+                },
             ],
         },
     ]
@@ -594,6 +660,12 @@ pub fn create_effect_with_params(
                     "rate" => effect.set_rate(parse_f32(key, value)?),
                     "depth" => effect.set_depth(parse_f32(key, value)?),
                     "mix" => effect.set_mix(parse_f32(key, value)?),
+                    "output" => {
+                        use sonido_core::ParameterInfo as _;
+                        let db = parse_f32(key, value)?;
+                        let last = effect.param_count() - 1;
+                        effect.set_param(last, db);
+                    }
                     _ => {
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
@@ -614,6 +686,12 @@ pub fn create_effect_with_params(
                     "ping_pong" | "pingpong" => {
                         effect.set_ping_pong(parse_f32(key, value)? > 0.5);
                     }
+                    "output" => {
+                        use sonido_core::ParameterInfo as _;
+                        let db = parse_f32(key, value)?;
+                        let last = effect.param_count() - 1;
+                        effect.set_param(last, db);
+                    }
                     _ => {
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
@@ -632,6 +710,12 @@ pub fn create_effect_with_params(
                     "depth" => effect.set_depth(parse_f32(key, value)?),
                     "feedback" | "fdbk" => effect.set_feedback(parse_f32(key, value)?),
                     "mix" => effect.set_mix(parse_f32(key, value)?),
+                    "output" => {
+                        use sonido_core::ParameterInfo as _;
+                        let db = parse_f32(key, value)?;
+                        let last = effect.param_count() - 1;
+                        effect.set_param(last, db);
+                    }
                     _ => {
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
@@ -654,6 +738,12 @@ pub fn create_effect_with_params(
                     "stereo_spread" | "spread" => {
                         effect.set_stereo_spread(parse_f32(key, value)?);
                     }
+                    "output" => {
+                        use sonido_core::ParameterInfo as _;
+                        let db = parse_f32(key, value)?;
+                        let last = effect.param_count() - 1;
+                        effect.set_param(last, db);
+                    }
                     _ => {
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
@@ -670,6 +760,12 @@ pub fn create_effect_with_params(
                 match key.as_str() {
                     "cutoff" => effect.set_cutoff_hz(parse_f32(key, value)?),
                     "resonance" | "q" => effect.set_q(parse_f32(key, value)?),
+                    "output" => {
+                        use sonido_core::ParameterInfo as _;
+                        let db = parse_f32(key, value)?;
+                        let last = effect.param_count() - 1;
+                        effect.set_param(last, db);
+                    }
                     _ => {
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
@@ -686,6 +782,12 @@ pub fn create_effect_with_params(
                 match key.as_str() {
                     "depth" => effect.set_depth(parse_f32(key, value)?),
                     "mix" => effect.set_mix(parse_f32(key, value)?),
+                    "output" => {
+                        use sonido_core::ParameterInfo as _;
+                        let db = parse_f32(key, value)?;
+                        let last = effect.param_count() - 1;
+                        effect.set_param(last, db);
+                    }
                     _ => {
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
@@ -750,6 +852,12 @@ pub fn create_effect_with_params(
                         effect.set_stereo_width(parse_f32(key, value)?);
                     }
                     "type" | "preset" => effect.set_reverb_type(parse_reverb_type(value)?),
+                    "output" => {
+                        use sonido_core::ParameterInfo as _;
+                        let db = parse_f32(key, value)?;
+                        let last = effect.param_count() - 1;
+                        effect.set_param(last, db);
+                    }
                     _ => {
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
@@ -767,6 +875,12 @@ pub fn create_effect_with_params(
                     "rate" => effect.set_rate(parse_f32(key, value)?),
                     "depth" => effect.set_depth(parse_f32(key, value)?),
                     "waveform" | "wave" => effect.set_waveform(parse_tremolo_waveform(value)?),
+                    "output" => {
+                        use sonido_core::ParameterInfo as _;
+                        let db = parse_f32(key, value)?;
+                        let last = effect.param_count() - 1;
+                        effect.set_param(last, db);
+                    }
                     _ => {
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
@@ -785,6 +899,12 @@ pub fn create_effect_with_params(
                     "attack" | "atk" => effect.set_attack_ms(parse_f32(key, value)?),
                     "release" | "rel" => effect.set_release_ms(parse_f32(key, value)?),
                     "hold" => effect.set_hold_ms(parse_f32(key, value)?),
+                    "output" => {
+                        use sonido_core::ParameterInfo as _;
+                        let db = parse_f32(key, value)?;
+                        let last = effect.param_count() - 1;
+                        effect.set_param(last, db);
+                    }
                     _ => {
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
@@ -803,6 +923,12 @@ pub fn create_effect_with_params(
                     "resonance" | "reso" | "q" => effect.set_resonance(parse_f32(key, value)?),
                     "sensitivity" | "sens" => effect.set_sensitivity(parse_f32(key, value)?),
                     "mode" => effect.set_mode(parse_wah_mode(value)?),
+                    "output" => {
+                        use sonido_core::ParameterInfo as _;
+                        let db = parse_f32(key, value)?;
+                        let last = effect.param_count() - 1;
+                        effect.set_param(last, db);
+                    }
                     _ => {
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),
@@ -826,6 +952,12 @@ pub fn create_effect_with_params(
                     "high_freq" | "hf" => effect.set_high_freq(parse_f32(key, value)?),
                     "high_gain" | "hg" => effect.set_high_gain(parse_f32(key, value)?),
                     "high_q" | "hq" => effect.set_high_q(parse_f32(key, value)?),
+                    "output" => {
+                        use sonido_core::ParameterInfo as _;
+                        let db = parse_f32(key, value)?;
+                        let last = effect.param_count() - 1;
+                        effect.set_param(last, db);
+                    }
                     _ => {
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),

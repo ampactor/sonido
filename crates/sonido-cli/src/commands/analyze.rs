@@ -17,6 +17,16 @@ pub struct AnalyzeArgs {
     command: AnalyzeCommand,
 }
 
+/// Spectrum estimation method.
+#[derive(Clone, Copy, Default, clap::ValueEnum)]
+enum SpectrumMethod {
+    /// Single-frame FFT (default)
+    #[default]
+    Fft,
+    /// Welch's averaged periodogram
+    Welch,
+}
+
 #[derive(Subcommand)]
 enum AnalyzeCommand {
     /// Compute spectrum of an audio file
@@ -41,8 +51,12 @@ enum AnalyzeCommand {
         #[arg(long, default_value = "10")]
         peaks: usize,
 
-        /// Use Welch's method for noise reduction
-        #[arg(long)]
+        /// Spectrum estimation method
+        #[arg(long, default_value = "fft")]
+        method: SpectrumMethod,
+
+        /// Legacy alias for --method welch
+        #[arg(long, hide = true)]
         welch: bool,
 
         /// Overlap ratio for Welch's method (0.0-1.0)
@@ -94,6 +108,14 @@ enum AnalyzeCommand {
         /// Estimate and display RT60 reverberation time
         #[arg(long)]
         rt60: bool,
+
+        /// Output format (wav or csv)
+        #[arg(long, default_value = "wav")]
+        format: String,
+
+        /// Override FFT size for deconvolution (default: auto next power of 2)
+        #[arg(long)]
+        window_size: Option<usize>,
     },
 
     /// Analyze harmonic distortion (THD, THD+N)
@@ -113,6 +135,10 @@ enum AnalyzeCommand {
         /// Output JSON file (optional)
         #[arg(short, long)]
         output: Option<PathBuf>,
+
+        /// Number of harmonics to display (including fundamental)
+        #[arg(long, default_value = "6")]
+        harmonics: usize,
     },
 
     /// Generate time-frequency spectrogram
@@ -237,11 +263,11 @@ enum AnalyzeCommand {
         input: PathBuf,
 
         /// Output WAV file for phase (optional)
-        #[arg(long)]
+        #[arg(long, alias = "phase")]
         phase_output: Option<PathBuf>,
 
         /// Output WAV file for amplitude/envelope (optional)
-        #[arg(long)]
+        #[arg(long, alias = "envelope")]
         amp_output: Option<PathBuf>,
 
         /// Optional bandpass filter before Hilbert transform (as "low-high" Hz)
@@ -255,13 +281,13 @@ enum AnalyzeCommand {
         #[arg(value_name = "INPUT")]
         input: PathBuf,
 
-        /// First tone frequency in Hz
+        /// First tone frequency in Hz (auto-detected if not specified)
         #[arg(long)]
-        freq1: f32,
+        freq1: Option<f32>,
 
-        /// Second tone frequency in Hz
+        /// Second tone frequency in Hz (auto-detected if not specified)
         #[arg(long)]
-        freq2: f32,
+        freq2: Option<f32>,
 
         /// FFT size
         #[arg(long, default_value = "8192")]
@@ -302,6 +328,9 @@ enum AnalyzeCommand {
         #[arg(long, default_value = "10")]
         peaks: usize,
     },
+
+    /// Compare two audio files (alias for top-level compare command)
+    Compare(super::compare::CompareArgs),
 }
 
 pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
@@ -312,6 +341,7 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
             window,
             output,
             peaks,
+            method,
             welch,
             overlap,
         } => {
@@ -338,7 +368,7 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
                 }
             };
 
-            let (frequencies, db) = if welch {
+            let (frequencies, db) = if welch || matches!(method, SpectrumMethod::Welch) {
                 println!("  Using Welch's method (overlap: {:.0}%)", overlap * 100.0);
                 welch_psd(&samples, sample_rate, fft_size, overlap, window_fn)
             } else {
@@ -539,6 +569,8 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
             response,
             output,
             rt60,
+            format,
+            window_size,
         } => {
             println!("Extracting impulse response...");
             println!("  Sweep:    {}", sweep.display());
@@ -559,10 +591,12 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
 
             // Use deconvolution to extract IR
             // IR = IFFT(FFT(response) / FFT(sweep))
-            let fft_size = sweep_samples
-                .len()
-                .max(response_samples.len())
-                .next_power_of_two();
+            let fft_size = window_size.unwrap_or_else(|| {
+                sweep_samples
+                    .len()
+                    .max(response_samples.len())
+                    .next_power_of_two()
+            });
 
             let mut sweep_padded = sweep_samples.clone();
             let mut response_padded = response_samples.clone();
@@ -622,14 +656,23 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
                 }
             }
 
-            let spec = sonido_io::WavSpec {
-                channels: 1,
-                sample_rate: sweep_spec.sample_rate,
-                bits_per_sample: 32,
-            };
-
-            sonido_io::write_wav(&output, trimmed, spec)?;
-            println!("  Wrote IR to {}", output.display());
+            if format.eq_ignore_ascii_case("csv") {
+                let mut csv = String::new();
+                csv.push_str("sample_index,amplitude\n");
+                for (i, &s) in trimmed.iter().enumerate() {
+                    csv.push_str(&format!("{},{:.6}\n", i, s));
+                }
+                std::fs::write(&output, csv)?;
+                println!("  Wrote IR (CSV) to {}", output.display());
+            } else {
+                let spec = sonido_io::WavSpec {
+                    channels: 1,
+                    sample_rate: sweep_spec.sample_rate,
+                    bits_per_sample: 32,
+                };
+                sonido_io::write_wav(&output, trimmed, spec)?;
+                println!("  Wrote IR to {}", output.display());
+            }
         }
 
         AnalyzeCommand::Distortion {
@@ -637,6 +680,7 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
             fundamental,
             fft_size,
             output,
+            harmonics,
         } => {
             println!("Analyzing distortion of {}...", input.display());
 
@@ -650,7 +694,7 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
                 samples.len() as f32 / sample_rate
             );
 
-            let analyzer = ThdAnalyzer::new(sample_rate, fft_size);
+            let analyzer = ThdAnalyzer::new(sample_rate, fft_size).with_max_harmonics(harmonics);
 
             let result = if let Some(fund_hz) = fundamental {
                 println!("  Fundamental: {:.1} Hz (specified)", fund_hz);
@@ -684,7 +728,13 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
             println!("  Noise floor: {:.6} (linear RMS)", result.noise_floor);
 
             println!("\n  Harmonics:");
-            for (i, &amp) in result.harmonics.iter().enumerate().skip(1).take(5) {
+            for (i, &amp) in result
+                .harmonics
+                .iter()
+                .enumerate()
+                .skip(1)
+                .take(harmonics.saturating_sub(1))
+            {
                 if amp > 0.0 {
                     let freq = result.fundamental_freq * (i + 1) as f32;
                     let db = 20.0 * amp.log10();
@@ -1180,25 +1230,38 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
                 samples.len() as f32 / sample_rate
             );
 
-            // Validate frequencies
-            let nyquist = sample_rate / 2.0;
-            if freq1 >= nyquist || freq2 >= nyquist {
-                anyhow::bail!("Frequencies must be below Nyquist ({:.0} Hz)", nyquist);
-            }
-            if freq1 == freq2 {
-                anyhow::bail!("Two-tone test requires different frequencies");
-            }
+            let analyzer = ImdAnalyzer::new(sample_rate, fft_size);
 
-            let (f1, f2) = if freq1 < freq2 {
-                (freq1, freq2)
-            } else {
-                (freq2, freq1)
+            let result = match (freq1, freq2) {
+                (Some(f1), Some(f2)) => {
+                    let nyquist = sample_rate / 2.0;
+                    if f1 >= nyquist || f2 >= nyquist {
+                        anyhow::bail!("Frequencies must be below Nyquist ({:.0} Hz)", nyquist);
+                    }
+                    if f1 == f2 {
+                        anyhow::bail!("Two-tone test requires different frequencies");
+                    }
+                    let (f1, f2) = if f1 < f2 { (f1, f2) } else { (f2, f1) };
+                    println!("\n  Test tones: {:.1} Hz and {:.1} Hz", f1, f2);
+                    analyzer.analyze(&samples, f1, f2)
+                }
+                (None, None) => {
+                    println!("  Frequencies: auto-detecting...");
+                    match analyzer.analyze_auto(&samples) {
+                        Some(r) => r,
+                        None => {
+                            anyhow::bail!("Could not auto-detect two dominant tones in the signal")
+                        }
+                    }
+                }
+                _ => {
+                    anyhow::bail!(
+                        "Specify both --freq1 and --freq2, or omit both for auto-detection"
+                    );
+                }
             };
 
-            println!("\n  Test tones: {:.1} Hz and {:.1} Hz", f1, f2);
-
-            let analyzer = ImdAnalyzer::new(sample_rate, fft_size);
-            let result = analyzer.analyze(&samples, f1, f2);
+            let (f1, f2) = (result.freq1, result.freq2);
 
             // Convert to dB
             let amp1_db = if result.amp1 > 0.0 {
@@ -1407,6 +1470,10 @@ pub fn run(args: AnalyzeArgs) -> anyhow::Result<()> {
                 std::fs::write(&output_path, csv)?;
                 println!("\nWrote CQT to {}", output_path.display());
             }
+        }
+
+        AnalyzeCommand::Compare(args) => {
+            super::compare::run(args)?;
         }
     }
 

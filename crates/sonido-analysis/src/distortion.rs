@@ -349,6 +349,36 @@ impl ImdAnalyzer {
         }
     }
 
+    /// Analyze IMD with automatic tone detection.
+    ///
+    /// Finds the two strongest spectral peaks and measures IMD products
+    /// between them. Returns `None` if fewer than two peaks are found.
+    pub fn analyze_auto(&self, signal: &[f32]) -> Option<ImdResult> {
+        let fft = Fft::new(self.fft_size);
+
+        let mut windowed = signal.to_vec();
+        windowed.resize(self.fft_size, 0.0);
+        self.window.apply(&mut windowed);
+
+        let spectrum = fft.forward(&windowed);
+        let magnitudes: Vec<f32> = spectrum.iter().map(|c| c.norm()).collect();
+
+        // find_peaks returns Vec<(freq_hz, magnitude_db)> sorted by magnitude descending
+        let peaks = find_peaks(&magnitudes, self.sample_rate, -60.0, 20.0);
+
+        if peaks.len() < 2 {
+            return None;
+        }
+
+        let (f1, f2) = if peaks[0].0 < peaks[1].0 {
+            (peaks[0].0, peaks[1].0)
+        } else {
+            (peaks[1].0, peaks[0].0)
+        };
+
+        Some(self.analyze(signal, f1, f2))
+    }
+
     fn measure_at_freq(&self, magnitudes: &[f32], freq: f32, bin_width: f32) -> f32 {
         if freq <= 0.0 || freq >= self.sample_rate / 2.0 {
             return 0.0;
@@ -479,5 +509,26 @@ mod tests {
         // Should have up to 5 harmonics (fundamental + 4)
         assert!(result.harmonics.len() <= 5);
         assert!(!result.harmonics.is_empty());
+    }
+
+    #[test]
+    fn test_imd_auto_detect() {
+        let sample_rate = 48000.0;
+        let analyzer = ImdAnalyzer::new(sample_rate, 8192);
+
+        // Generate two-tone signal
+        let signal = analyzer.generate_two_tone(1000.0, 1100.0, 0.5, 0.25);
+
+        let result = analyzer.analyze_auto(&signal);
+        assert!(result.is_some(), "Should detect two tones");
+
+        let result = result.unwrap();
+        // Detected frequencies should be close to the originals
+        assert!(
+            (result.freq1 - 1000.0).abs() < 10.0 || (result.freq2 - 1000.0).abs() < 10.0,
+            "Should detect 1000 Hz tone, got {} and {}",
+            result.freq1,
+            result.freq2
+        );
     }
 }
