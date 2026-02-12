@@ -371,6 +371,132 @@ fn test_parametric_eq_regression() {
         .expect("ParametricEq regression test failed");
 }
 
+// Default-parameter regression tests
+//
+// These verify that each effect's output at factory defaults remains stable.
+// Unlike the tests above (which set specific param values), these use only
+// `::new(SAMPLE_RATE)` with no overrides.
+
+#[test]
+fn test_distortion_defaults_regression() {
+    let effect = Distortion::new(SAMPLE_RATE);
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("distortion_defaults", effect, &input)
+        .expect("Distortion defaults regression test failed");
+}
+
+#[test]
+fn test_compressor_defaults_regression() {
+    let effect = Compressor::new(SAMPLE_RATE);
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("compressor_defaults", effect, &input)
+        .expect("Compressor defaults regression test failed");
+}
+
+#[test]
+fn test_chorus_defaults_regression() {
+    let effect = Chorus::new(SAMPLE_RATE);
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("chorus_defaults", effect, &input)
+        .expect("Chorus defaults regression test failed");
+}
+
+#[test]
+fn test_delay_defaults_regression() {
+    let effect = Delay::new(SAMPLE_RATE);
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("delay_defaults", effect, &input)
+        .expect("Delay defaults regression test failed");
+}
+
+#[test]
+fn test_reverb_defaults_regression() {
+    let effect = Reverb::new(SAMPLE_RATE);
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("reverb_defaults", effect, &input)
+        .expect("Reverb defaults regression test failed");
+}
+
+#[test]
+fn test_lowpass_defaults_regression() {
+    let effect = LowPassFilter::new(SAMPLE_RATE);
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("lowpass_defaults", effect, &input)
+        .expect("LowPass defaults regression test failed");
+}
+
+#[test]
+fn test_phaser_defaults_regression() {
+    let effect = Phaser::new(SAMPLE_RATE);
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("phaser_defaults", effect, &input)
+        .expect("Phaser defaults regression test failed");
+}
+
+#[test]
+fn test_flanger_defaults_regression() {
+    let effect = Flanger::new(SAMPLE_RATE);
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("flanger_defaults", effect, &input)
+        .expect("Flanger defaults regression test failed");
+}
+
+#[test]
+fn test_tremolo_defaults_regression() {
+    let effect = Tremolo::new(SAMPLE_RATE);
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("tremolo_defaults", effect, &input)
+        .expect("Tremolo defaults regression test failed");
+}
+
+#[test]
+fn test_tape_saturation_defaults_regression() {
+    let effect = TapeSaturation::new(SAMPLE_RATE);
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("tape_saturation_defaults", effect, &input)
+        .expect("TapeSaturation defaults regression test failed");
+}
+
+#[test]
+fn test_clean_preamp_defaults_regression() {
+    let effect = CleanPreamp::new(SAMPLE_RATE);
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("clean_preamp_defaults", effect, &input)
+        .expect("CleanPreamp defaults regression test failed");
+}
+
+#[test]
+fn test_multi_vibrato_defaults_regression() {
+    let effect = MultiVibrato::new(SAMPLE_RATE);
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("multi_vibrato_defaults", effect, &input)
+        .expect("MultiVibrato defaults regression test failed");
+}
+
+#[test]
+fn test_gate_defaults_regression() {
+    let effect = Gate::new(SAMPLE_RATE);
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("gate_defaults", effect, &input)
+        .expect("Gate defaults regression test failed");
+}
+
+#[test]
+fn test_wah_defaults_regression() {
+    let effect = Wah::new(SAMPLE_RATE);
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("wah_defaults", effect, &input)
+        .expect("Wah defaults regression test failed");
+}
+
+#[test]
+fn test_parametric_eq_defaults_regression() {
+    let effect = ParametricEq::new(SAMPLE_RATE);
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("parametric_eq_defaults", effect, &input)
+        .expect("ParametricEq defaults regression test failed");
+}
+
 /// Run all regression tests and provide summary
 #[test]
 fn test_regression_summary() {
