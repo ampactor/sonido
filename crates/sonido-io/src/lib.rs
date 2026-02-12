@@ -33,7 +33,10 @@ pub use stream::{
     AudioDevice, AudioStream, StreamConfig, default_device, find_device_by_index,
     find_device_fuzzy, list_devices,
 };
-pub use wav::{StereoSamples, WavSpec, read_wav, read_wav_stereo, write_wav, write_wav_stereo};
+pub use wav::{
+    StereoSamples, WavFormat, WavInfo, WavSpec, read_wav, read_wav_info, read_wav_stereo,
+    write_wav, write_wav_stereo,
+};
 
 /// Error types for audio I/O operations.
 #[derive(Debug, thiserror::Error)]

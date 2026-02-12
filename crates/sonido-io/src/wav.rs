@@ -4,6 +4,59 @@ use crate::Result;
 use hound::{SampleFormat, WavReader, WavWriter};
 use std::path::Path;
 
+/// WAV audio encoding format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WavFormat {
+    /// Linear PCM (integer samples).
+    Pcm,
+    /// IEEE 754 floating-point samples.
+    IeeeFloat,
+}
+
+/// WAV file metadata extracted without loading sample data.
+#[derive(Debug, Clone)]
+pub struct WavInfo {
+    /// Number of audio channels (1 = mono, 2 = stereo).
+    pub channels: u16,
+    /// Sample rate in Hz.
+    pub sample_rate: u32,
+    /// Bit depth per sample.
+    pub bits_per_sample: u16,
+    /// Total number of sample frames (samples per channel).
+    pub num_frames: u64,
+    /// Duration in seconds.
+    pub duration_secs: f64,
+    /// Audio encoding format.
+    pub format: WavFormat,
+}
+
+/// Read WAV metadata without loading sample data.
+///
+/// Opens the file, reads the header, and returns a [`WavInfo`] struct
+/// with format details and duration. This is much faster than [`read_wav`]
+/// for files where you only need metadata.
+pub fn read_wav_info<P: AsRef<Path>>(path: P) -> Result<WavInfo> {
+    let reader = WavReader::open(path)?;
+    let spec = reader.spec();
+    let total_samples = reader.len() as u64; // total across all channels
+    let num_frames = total_samples / spec.channels as u64;
+    let duration_secs = num_frames as f64 / spec.sample_rate as f64;
+
+    let format = match spec.sample_format {
+        SampleFormat::Float => WavFormat::IeeeFloat,
+        SampleFormat::Int => WavFormat::Pcm,
+    };
+
+    Ok(WavInfo {
+        channels: spec.channels,
+        sample_rate: spec.sample_rate,
+        bits_per_sample: spec.bits_per_sample,
+        num_frames,
+        duration_secs,
+        format,
+    })
+}
+
 /// WAV file specification.
 #[derive(Debug, Clone, Copy)]
 pub struct WavSpec {
