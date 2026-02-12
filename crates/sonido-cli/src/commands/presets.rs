@@ -57,7 +57,7 @@ enum PresetsCommand {
         /// Preset name to delete
         name: String,
 
-        /// Don't ask for confirmation
+        /// Required — confirms deletion
         #[arg(long)]
         force: bool,
     },
