@@ -21,6 +21,7 @@ Architecture Decision Records (ADRs) for the Sonido DSP framework. Each record c
 - [ADR-015: ModulationSource Trait Unification](#adr-015-modulationsource-trait-unification)
 - [ADR-016: Denormal Protection via flush_denormal()](#adr-016-denormal-protection-via-flush_denormal)
 - [ADR-017: Shared DSP Vocabulary and Gain Staging](#adr-017-shared-dsp-vocabulary-and-gain-staging)
+- [ADR-018: Feedback-Adaptive Reverb Gain Compensation](#adr-018-feedback-adaptive-reverb-gain-compensation)
 
 ---
 
@@ -617,3 +618,50 @@ Fix gain staging bugs at the root:
 - Default-parameter golden regression tests (15 new) lock down factory defaults
 - Adding a new effect requires less copy-paste and automatically gets the output level contract
 - Param index stability is preserved — output is always the last index
+
+---
+
+## ADR-018: Feedback-Adaptive Reverb Gain Compensation
+
+**Status:** Accepted
+**Source:** `crates/sonido-effects/src/reverb.rs` (`update_comb_params`, `process`, `process_stereo`)
+
+### Context
+
+CLI measurement revealed the Freeverb reverb peaks at +11.8 dB for hall settings (room_size=0.8, decay=0.8) with 0 dBFS input, violating the DSP Quality Standard's -1 dBFS peak ceiling (Rule 1).
+
+**Root cause:** The static `comb_sum *= 0.125` compensates for the 8 parallel combs (1/8) but not for feedback-dependent energy accumulation. At hall feedback (~0.977), each comb's peak gain is ~43x, giving `0.125 * 43 = 5.4` (+14.7 dB theoretical). Allpass diffusers add transient amplification, yielding +11.8 dB measured.
+
+STK FreeVerb uses `fixedGain = 0.015` (-36 dB input attenuation) + `scaleWet = 3.0`, but STK's feedback range is narrow (0.7-0.98). Sonido's range is 0.28-0.98; a fixed attenuation would make low-feedback settings inaudible.
+
+### Decision
+
+Feedback-adaptive quadratic compensation applied to the comb output sum:
+
+```
+x = clamp((feedback - 0.7) * 3.33, 0, 1)
+compensation = 1 - x^2 * 0.88
+comb_sum *= 0.125 * compensation
+```
+
+Computed in `update_comb_params()` alongside the existing feedback/damping calculation, cached as `self.comb_compensation`.
+
+### Rationale
+
+- **Applied to output, not input**: Preserves natural excitation and decay envelope shape. Attenuating the input would change the character of the reverb tail.
+- **Quadratic curve**: C1-continuous (no derivative discontinuity), safe for real-time parameter automation without audible stepping.
+- **Transparent below fb=0.7**: Room and small-room presets are completely unaffected. The compensation only engages where comb summation gain actually becomes problematic.
+- **Constant 0.88 targets measured overshoot**: At fb=0.977 (hall), compensation = 0.255 (-11.9 dB), countering the measured +11.8 dB.
+
+### Alternatives Considered
+
+- **Fixed input attenuation (STK approach)**: Would require ~-18 dB at input, making low-feedback settings too quiet. Rejected because Sonido's wider feedback range demands adaptive compensation.
+- **Per-comb normalization by `1/(1-feedback)`**: Mathematically exact for steady-state but causes audible pumping during parameter sweeps and over-compensates transient peaks.
+- **Limiter on wet output**: Addresses symptoms, not cause. Would clip the reverb tail rather than shape it, degrading quality at high feedback.
+
+### Consequences
+
+- Hall reverb peaks within -1 dBFS ceiling (down from +11.8 dB)
+- Default reverb (fb=0.805) is ~1 dB quieter — acceptable tradeoff
+- Flanger (+1.4 dB), phaser (+0.7 dB), delay (+0.5 dB) are NOT compensated — all within the ±1 dB bypass parity tolerance and their LFO/timing characteristics prevent sustained resonance
+- Golden files for reverb regenerated; all other effects unchanged

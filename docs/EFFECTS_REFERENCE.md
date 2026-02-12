@@ -307,6 +307,8 @@ feedback = scaled_room + decay * (0.98 - scaled_room)
 ```
 This mapping ensures the feedback stays below 1.0 (stable) while providing a wide range of decay times. The damping parameter controls a one-pole lowpass filter inside each comb, simulating the frequency-dependent absorption of real room surfaces -- higher damping means more high-frequency absorption per reflection, producing a darker reverb tail.
 
+**Gain compensation:** At high feedback settings (room_size > 0.6, decay > 0.6), a feedback-adaptive compensation curve reduces the comb output to prevent peak ceiling violation. This is transparent at default/room settings and engages progressively for hall-like configurations. See DSP_FUNDAMENTALS.md for the formula.
+
 **Stereo width** (`reverb.rs:396-402`): A mid/side matrix controls stereo width. At width=0, both channels receive the average (mono). At width=1, channels are fully independent.
 
 | Parameter | Description | Default | Range |
