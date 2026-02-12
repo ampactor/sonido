@@ -46,15 +46,29 @@ sonido-gui
 
 See [GUI.md](GUI.md) for detailed GUI documentation.
 
-### Demo Script
+### Walkthrough (recommended)
 
-Generate test audio and hear effects in action:
+Run the full guided tour -- builds, generates signals, processes all 15 effects,
+runs analysis, and prints listening guidance:
 
 ```bash
-make demo
+./scripts/walkthrough.sh           # Full walkthrough with narration
+./scripts/walkthrough.sh --verify  # Verify existing demos work
+./scripts/walkthrough.sh --clean   # Remove generated files
+
+# Or via make:
+make walkthrough
+make verify
 ```
 
-This generates a sweep signal and processes it through various effect chains.
+### Generate Demos
+
+Generate all demo WAV files (5 source signals + 18 effect demos):
+
+```bash
+./scripts/generate_demos.sh
+# Or: make demo
+```
 
 ### Example Code
 

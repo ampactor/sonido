@@ -1,4 +1,4 @@
-.PHONY: build test bench clean check demo doc install
+.PHONY: build test bench clean check demo walkthrough verify doc install
 
 # Build
 build:
@@ -29,9 +29,17 @@ fmt:
 doc:
 	cargo doc --no-deps --all-features
 
-# Run demo script
+# Generate demo WAV files (5 signals + 18 effect demos)
 demo:
-	./scripts/demo.sh
+	./scripts/generate_demos.sh
+
+# Full guided walkthrough (build, effects, analysis, presets)
+walkthrough:
+	./scripts/walkthrough.sh
+
+# Verify existing demos work
+verify:
+	./scripts/walkthrough.sh --verify
 
 # Install CLI globally
 install:
