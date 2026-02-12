@@ -48,6 +48,7 @@ When you modify a source file, you **must** update every documentation target li
 | `crates/sonido-effects/src/phaser.rs` | `docs/EFFECTS_REFERENCE.md` (Phaser) | Allpass stage count, sweep range |
 | `crates/sonido-effects/src/flanger.rs` | `docs/EFFECTS_REFERENCE.md` (Flanger) | Feedback polarity, delay range |
 | `crates/sonido-effects/src/*.rs` (any new effect) | `docs/EFFECTS_REFERENCE.md`, `README.md` (features + count), this file (Key Files) | Full effect entry with parameters, DSP theory, example |
+| `crates/sonido-effects/src/*.rs`, `crates/sonido-core/src/gain.rs` | `docs/DSP_QUALITY_STANDARD.md` | Quality rules, compliance table, measurement protocol |
 | `crates/sonido-synth/src/oscillator.rs` | `docs/SYNTHESIS.md`, `docs/DSP_FUNDAMENTALS.md` (PolyBLEP), `docs/DESIGN_DECISIONS.md` ADR-014 | Waveforms, poly_blep correction, anti-aliasing |
 | `crates/sonido-synth/src/envelope.rs` | `docs/SYNTHESIS.md` | ADSR stages, curve shapes, gate behavior |
 | `crates/sonido-synth/src/voice.rs` | `docs/SYNTHESIS.md` | Voice allocation, stealing policy |
@@ -316,6 +317,7 @@ make dev-install                    # Symlink debug build to ~/.local/bin
 | CLI analyze commands | crates/sonido-cli/src/commands/analyze.rs |
 | DSP Theory Reference | docs/DSP_FUNDAMENTALS.md |
 | Architecture Decisions | docs/DESIGN_DECISIONS.md |
+| DSP Quality Standard | docs/DSP_QUALITY_STANDARD.md |
 
 ## Conventions
 

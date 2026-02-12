@@ -21,6 +21,12 @@ sonido process in.wav --effect filter --param cutoff=2000
 sonido process in.wav --effect lowpass --param cutoff=2000  # Same effect
 ```
 
+## Output Level Convention
+
+All effects expose an `output` parameter as their last ParameterInfo index (range: -20 to +20 dB, default 0.0 dB). Two exceptions use domain-specific names: distortion exposes `level` (-20 to 0 dB, default -6.0 dB) and compressor exposes `makeup` (0 to 24 dB, default 0.0 dB). Both serve the same gain-staging purpose. See `docs/DSP_QUALITY_STANDARD.md` for the full quality rules and compliance table.
+
+---
+
 ## distortion
 
 Waveshaping distortion with multiple modes.
