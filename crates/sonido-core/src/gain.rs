@@ -146,16 +146,14 @@ mod tests {
 
     #[test]
     fn feedback_compensation_monotonic() {
-        let values: Vec<f32> = (0..100)
-            .map(|i| feedback_wet_compensation(i as f32 / 100.0))
-            .collect();
-        for w in values.windows(2) {
+        let mut prev = feedback_wet_compensation(0.0);
+        for i in 1..100 {
+            let curr = feedback_wet_compensation(i as f32 / 100.0);
             assert!(
-                w[0] >= w[1],
-                "Must be monotonically decreasing: {} < {}",
-                w[0],
-                w[1]
+                prev >= curr,
+                "Must be monotonically decreasing: {prev} < {curr}"
             );
+            prev = curr;
         }
     }
 
