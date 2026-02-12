@@ -32,6 +32,7 @@ pub enum WahMode {
 /// | 1 | Resonance | 1.0–10.0 | 5.0 |
 /// | 2 | Sensitivity | 0–100% | 50.0 |
 /// | 3 | Mode | 0–1 (Auto, Manual) | 0 |
+/// | 4 | Output | -20.0–20.0 dB | 0.0 |
 ///
 /// # Example
 ///
@@ -62,6 +63,8 @@ pub struct Wah {
     sensitivity: SmoothedParam,
     /// Current mode (auto or manual)
     mode: WahMode,
+    /// Output level
+    output_level: SmoothedParam,
     /// Sample rate
     sample_rate: f32,
     /// Minimum frequency for sweep
@@ -97,9 +100,10 @@ impl Wah {
             filter,
             filter_r,
             envelope,
-            frequency: SmoothedParam::with_config(800.0, sample_rate, 5.0),
-            resonance: SmoothedParam::with_config(5.0, sample_rate, 10.0),
-            sensitivity: SmoothedParam::with_config(0.5, sample_rate, 10.0),
+            frequency: SmoothedParam::fast(800.0, sample_rate),
+            resonance: SmoothedParam::standard(5.0, sample_rate),
+            sensitivity: SmoothedParam::standard(0.5, sample_rate),
+            output_level: sonido_core::gain::output_level_param(sample_rate),
             mode: WahMode::Auto,
             sample_rate,
             min_freq: 200.0,
@@ -193,12 +197,14 @@ impl Effect for Wah {
         self.filter.set_resonance(resonance);
 
         // Process through bandpass filter
-        // Mix the filtered signal with a bit of dry for body
         let filtered = self.filter.process(input);
 
-        // The bandpass output is the wah sound
-        // Add some dry signal back for fullness (common in real wah pedals)
-        filtered * 0.8 + input * 0.2
+        // SVF bandpass peak gain = Q at center frequency. Normalize for unity gain.
+        let normalized = filtered / resonance;
+
+        // Mix filtered signal with dry for body (common in real wah pedals)
+        let out = normalized * 0.8 + input * 0.2;
+        out * self.output_level.advance()
     }
 
     #[inline]
@@ -229,12 +235,13 @@ impl Effect for Wah {
         self.filter_r.set_resonance(resonance);
 
         let filtered_l = self.filter.process(left);
-        let out_l = filtered_l * 0.8 + left * 0.2;
+        let out_l = (filtered_l / resonance) * 0.8 + left * 0.2;
 
         let filtered_r = self.filter_r.process(right);
-        let out_r = filtered_r * 0.8 + right * 0.2;
+        let out_r = (filtered_r / resonance) * 0.8 + right * 0.2;
 
-        (out_l, out_r)
+        let output_gain = self.output_level.advance();
+        (out_l * output_gain, out_r * output_gain)
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
@@ -245,6 +252,7 @@ impl Effect for Wah {
         self.frequency.set_sample_rate(sample_rate);
         self.resonance.set_sample_rate(sample_rate);
         self.sensitivity.set_sample_rate(sample_rate);
+        self.output_level.set_sample_rate(sample_rate);
     }
 
     fn reset(&mut self) {
@@ -254,12 +262,13 @@ impl Effect for Wah {
         self.frequency.snap_to_target();
         self.resonance.snap_to_target();
         self.sensitivity.snap_to_target();
+        self.output_level.snap_to_target();
     }
 }
 
 impl ParameterInfo for Wah {
     fn param_count(&self) -> usize {
-        4
+        5
     }
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
@@ -300,6 +309,7 @@ impl ParameterInfo for Wah {
                 default: 0.0,
                 step: 1.0,
             }),
+            4 => Some(sonido_core::gain::output_param_descriptor()),
             _ => None,
         }
     }
@@ -313,6 +323,7 @@ impl ParameterInfo for Wah {
                 WahMode::Auto => 0.0,
                 WahMode::Manual => 1.0,
             },
+            4 => sonido_core::gain::output_level_db(&self.output_level),
             _ => 0.0,
         }
     }
@@ -323,6 +334,7 @@ impl ParameterInfo for Wah {
             1 => self.set_resonance(value),
             2 => self.set_sensitivity(value / 100.0),
             3 => self.set_mode_index(value as usize),
+            4 => sonido_core::gain::set_output_level_db(&mut self.output_level, value),
             _ => {}
         }
     }
@@ -433,7 +445,7 @@ mod tests {
     fn test_wah_parameter_info() {
         let wah = Wah::new(48000.0);
 
-        assert_eq!(wah.param_count(), 4);
+        assert_eq!(wah.param_count(), 5);
 
         let freq_info = wah.param_info(0).unwrap();
         assert_eq!(freq_info.name, "Frequency");

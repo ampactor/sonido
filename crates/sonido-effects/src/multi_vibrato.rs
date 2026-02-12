@@ -5,7 +5,7 @@
 
 use sonido_core::{
     Effect, FixedDelayLine, Lfo, LfoWaveform, ParamDescriptor, ParamUnit, ParameterInfo,
-    SmoothedParam,
+    SmoothedParam, wet_dry_mix, wet_dry_mix_stereo,
 };
 
 /// Number of vibrato units in MultiVibrato
@@ -67,6 +67,7 @@ impl VibratoUnit {
 /// |-------|------|-------|---------|
 /// | 0 | Depth | 0–200% | 100.0 |
 /// | 1 | Mix | 0–100% | 100.0 |
+/// | 2 | Output | -20.0–20.0 dB | 0.0 |
 ///
 /// # Example
 ///
@@ -89,6 +90,8 @@ pub struct MultiVibrato {
     mix: f32,
     /// Master depth control (scales all vibrato depths) with smoothing
     depth_scale: SmoothedParam,
+    /// Output level (linear gain)
+    output_level: SmoothedParam,
 }
 
 impl Default for MultiVibrato {
@@ -124,7 +127,8 @@ impl MultiVibrato {
             vibratos_r,
             sample_rate,
             mix: 1.0,
-            depth_scale: SmoothedParam::with_config(1.0, sample_rate, 10.0),
+            depth_scale: SmoothedParam::standard(1.0, sample_rate),
+            output_level: sonido_core::gain::output_level_param(sample_rate),
         }
     }
 
@@ -153,6 +157,7 @@ impl Effect for MultiVibrato {
     #[inline]
     fn process(&mut self, input: f32) -> f32 {
         let depth_scale = self.depth_scale.advance();
+        let output_gain = self.output_level.advance();
 
         // Process through all vibratos and average
         let mut wet = 0.0f32;
@@ -161,13 +166,13 @@ impl Effect for MultiVibrato {
         }
         wet /= NUM_VIBRATOS as f32;
 
-        // Mix dry and wet
-        input * (1.0 - self.mix) + wet * self.mix
+        wet_dry_mix(input, wet, self.mix) * output_gain
     }
 
     #[inline]
     fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
         let depth_scale = self.depth_scale.advance();
+        let output_gain = self.output_level.advance();
 
         let mut wet_l = 0.0f32;
         for vib in &mut self.vibratos {
@@ -181,10 +186,9 @@ impl Effect for MultiVibrato {
         }
         wet_r /= NUM_VIBRATOS as f32;
 
-        let out_l = left * (1.0 - self.mix) + wet_l * self.mix;
-        let out_r = right * (1.0 - self.mix) + wet_r * self.mix;
+        let (out_l, out_r) = wet_dry_mix_stereo(left, right, wet_l, wet_r, self.mix);
 
-        (out_l, out_r)
+        (out_l * output_gain, out_r * output_gain)
     }
 
     fn reset(&mut self) {
@@ -195,6 +199,7 @@ impl Effect for MultiVibrato {
             vib.reset();
         }
         self.depth_scale.snap_to_target();
+        self.output_level.snap_to_target();
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
@@ -206,6 +211,7 @@ impl Effect for MultiVibrato {
             vib.set_sample_rate(sample_rate);
         }
         self.depth_scale.set_sample_rate(sample_rate);
+        self.output_level.set_sample_rate(sample_rate);
     }
 
     fn latency_samples(&self) -> usize {
@@ -216,7 +222,7 @@ impl Effect for MultiVibrato {
 
 impl ParameterInfo for MultiVibrato {
     fn param_count(&self) -> usize {
-        2
+        3
     }
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
@@ -239,6 +245,7 @@ impl ParameterInfo for MultiVibrato {
                 default: 100.0,
                 step: 1.0,
             }),
+            2 => Some(sonido_core::gain::output_param_descriptor()),
             _ => None,
         }
     }
@@ -247,6 +254,7 @@ impl ParameterInfo for MultiVibrato {
         match index {
             0 => self.depth_scale.target() * 100.0,
             1 => self.mix * 100.0,
+            2 => sonido_core::gain::output_level_db(&self.output_level),
             _ => 0.0,
         }
     }
@@ -255,6 +263,7 @@ impl ParameterInfo for MultiVibrato {
         match index {
             0 => self.set_depth(value / 100.0),
             1 => self.set_mix(value / 100.0),
+            2 => sonido_core::gain::set_output_level_db(&mut self.output_level, value),
             _ => {}
         }
     }

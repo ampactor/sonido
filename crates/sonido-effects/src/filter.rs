@@ -1,7 +1,8 @@
 //! Biquad-based filter effects.
 
 use sonido_core::{
-    Biquad, Effect, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, lowpass_coefficients,
+    Biquad, Effect, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, gain,
+    lowpass_coefficients,
 };
 
 /// Low-pass filter effect with smoothed parameter control.
@@ -12,6 +13,7 @@ use sonido_core::{
 /// |-------|------|-------|---------|
 /// | 0 | Cutoff | 20.0–20000.0 Hz | 1000.0 |
 /// | 1 | Resonance | 0.1–20.0 | 0.707 |
+/// | 2 | Output | −20.0–20.0 dB | 0.0 |
 ///
 /// # Example
 ///
@@ -32,6 +34,7 @@ pub struct LowPassFilter {
     biquad_r: Biquad,
     cutoff: SmoothedParam,
     q: SmoothedParam,
+    output_level: SmoothedParam,
     sample_rate: f32,
     needs_update: bool,
 }
@@ -42,8 +45,9 @@ impl LowPassFilter {
         let mut filter = Self {
             biquad: Biquad::new(),
             biquad_r: Biquad::new(),
-            cutoff: SmoothedParam::with_config(1000.0, sample_rate, 20.0),
-            q: SmoothedParam::with_config(0.707, sample_rate, 20.0),
+            cutoff: SmoothedParam::slow(1000.0, sample_rate),
+            q: SmoothedParam::slow(0.707, sample_rate),
+            output_level: gain::output_level_param(sample_rate),
             sample_rate,
             needs_update: true,
         };
@@ -81,25 +85,27 @@ impl Effect for LowPassFilter {
     fn process(&mut self, input: f32) -> f32 {
         self.cutoff.advance();
         self.q.advance();
+        let output_gain = self.output_level.advance();
 
         if self.needs_update || !self.cutoff.is_settled() || !self.q.is_settled() {
             self.update_coefficients();
         }
 
-        self.biquad.process(input)
+        self.biquad.process(input) * output_gain
     }
 
     #[inline]
     fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
         self.cutoff.advance();
         self.q.advance();
+        let output_gain = self.output_level.advance();
 
         if self.needs_update || !self.cutoff.is_settled() || !self.q.is_settled() {
             self.update_coefficients();
         }
 
-        let out_l = self.biquad.process(left);
-        let out_r = self.biquad_r.process(right);
+        let out_l = self.biquad.process(left) * output_gain;
+        let out_r = self.biquad_r.process(right) * output_gain;
 
         (out_l, out_r)
     }
@@ -108,6 +114,7 @@ impl Effect for LowPassFilter {
         self.sample_rate = sample_rate;
         self.cutoff.set_sample_rate(sample_rate);
         self.q.set_sample_rate(sample_rate);
+        self.output_level.set_sample_rate(sample_rate);
         self.needs_update = true;
         self.update_coefficients();
     }
@@ -117,6 +124,7 @@ impl Effect for LowPassFilter {
         self.biquad_r.clear();
         self.cutoff.snap_to_target();
         self.q.snap_to_target();
+        self.output_level.snap_to_target();
         self.needs_update = true;
         self.update_coefficients();
     }
@@ -124,7 +132,7 @@ impl Effect for LowPassFilter {
 
 impl ParameterInfo for LowPassFilter {
     fn param_count(&self) -> usize {
-        2
+        3
     }
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
@@ -147,6 +155,7 @@ impl ParameterInfo for LowPassFilter {
                 default: 0.707,
                 step: 0.01,
             }),
+            2 => Some(gain::output_param_descriptor()),
             _ => None,
         }
     }
@@ -155,6 +164,7 @@ impl ParameterInfo for LowPassFilter {
         match index {
             0 => self.cutoff.target(),
             1 => self.q.target(),
+            2 => gain::output_level_db(&self.output_level),
             _ => 0.0,
         }
     }
@@ -163,6 +173,7 @@ impl ParameterInfo for LowPassFilter {
         match index {
             0 => self.set_cutoff_hz(value),
             1 => self.set_q(value),
+            2 => gain::set_output_level_db(&mut self.output_level, value),
             _ => {}
         }
     }

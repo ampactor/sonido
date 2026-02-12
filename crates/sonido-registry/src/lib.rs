@@ -189,7 +189,7 @@ impl EffectRegistry {
                 name: "Chorus",
                 description: "Dual-voice modulated delay chorus",
                 category: EffectCategory::Modulation,
-                param_count: 3,
+                param_count: 4,
             },
             |sr| Box::new(Chorus::new(sr)),
         );
@@ -201,7 +201,7 @@ impl EffectRegistry {
                 name: "Flanger",
                 description: "Classic flanger with modulated short delay",
                 category: EffectCategory::Modulation,
-                param_count: 4,
+                param_count: 5,
             },
             |sr| Box::new(Flanger::new(sr)),
         );
@@ -213,7 +213,7 @@ impl EffectRegistry {
                 name: "Phaser",
                 description: "Multi-stage allpass phaser with LFO",
                 category: EffectCategory::Modulation,
-                param_count: 5,
+                param_count: 6,
             },
             |sr| Box::new(Phaser::new(sr)),
         );
@@ -225,7 +225,7 @@ impl EffectRegistry {
                 name: "Delay",
                 description: "Tape-style feedback delay",
                 category: EffectCategory::TimeBased,
-                param_count: 4,
+                param_count: 5,
             },
             |sr| Box::new(Delay::new(sr)),
         );
@@ -237,7 +237,7 @@ impl EffectRegistry {
                 name: "Low Pass Filter",
                 description: "Resonant biquad lowpass filter",
                 category: EffectCategory::Filter,
-                param_count: 2,
+                param_count: 3,
             },
             |sr| Box::new(LowPassFilter::new(sr)),
         );
@@ -249,7 +249,7 @@ impl EffectRegistry {
                 name: "Multi Vibrato",
                 description: "10-unit tape wow/flutter simulation",
                 category: EffectCategory::Modulation,
-                param_count: 2,
+                param_count: 3,
             },
             |sr| Box::new(MultiVibrato::new(sr)),
         );
@@ -285,7 +285,7 @@ impl EffectRegistry {
                 name: "Reverb",
                 description: "Freeverb-style algorithmic reverb",
                 category: EffectCategory::TimeBased,
-                param_count: 7,
+                param_count: 8,
             },
             |sr| Box::new(Reverb::new(sr)),
         );
@@ -297,7 +297,7 @@ impl EffectRegistry {
                 name: "Tremolo",
                 description: "Amplitude modulation with multiple waveforms",
                 category: EffectCategory::Modulation,
-                param_count: 3,
+                param_count: 4,
             },
             |sr| Box::new(Tremolo::new(sr)),
         );
@@ -309,7 +309,7 @@ impl EffectRegistry {
                 name: "Noise Gate",
                 description: "Noise gate with threshold and hold",
                 category: EffectCategory::Dynamics,
-                param_count: 4,
+                param_count: 5,
             },
             |sr| Box::new(Gate::new(sr)),
         );
@@ -321,7 +321,7 @@ impl EffectRegistry {
                 name: "Wah",
                 description: "Auto-wah and manual wah with envelope follower",
                 category: EffectCategory::Filter,
-                param_count: 4,
+                param_count: 5,
             },
             |sr| Box::new(Wah::new(sr)),
         );
@@ -333,7 +333,7 @@ impl EffectRegistry {
                 name: "Parametric EQ",
                 description: "3-band parametric equalizer with frequency, gain, and Q",
                 category: EffectCategory::Filter,
-                param_count: 9,
+                param_count: 10,
             },
             |sr| Box::new(ParametricEq::new(sr)),
         );
@@ -522,7 +522,7 @@ mod tests {
         assert_eq!(reverb.id, "reverb");
         assert_eq!(reverb.name, "Reverb");
         assert_eq!(reverb.category, EffectCategory::TimeBased);
-        assert_eq!(reverb.param_count, 7);
+        assert_eq!(reverb.param_count, 8);
     }
 
     #[test]

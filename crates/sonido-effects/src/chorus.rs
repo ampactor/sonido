@@ -2,7 +2,8 @@
 
 use libm::ceilf;
 use sonido_core::{
-    Effect, InterpolatedDelay, Lfo, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam,
+    Effect, InterpolatedDelay, Lfo, ParamDescriptor, ParameterInfo, SmoothedParam, wet_dry_mix,
+    wet_dry_mix_stereo,
 };
 
 /// Chorus effect with dual voices.
@@ -14,6 +15,7 @@ use sonido_core::{
 /// | 0 | Rate | 0.1–10.0 Hz | 1.0 |
 /// | 1 | Depth | 0–100% | 50.0 |
 /// | 2 | Mix | 0–100% | 50.0 |
+/// | 3 | Output | -20.0–20.0 dB | 0.0 |
 ///
 /// # Example
 ///
@@ -40,6 +42,7 @@ pub struct Chorus {
     rate: SmoothedParam,
     depth: SmoothedParam,
     mix: SmoothedParam,
+    output_level: SmoothedParam,
     sample_rate: f32,
 }
 
@@ -65,9 +68,10 @@ impl Chorus {
             lfo2,
             base_delay_samples,
             max_mod_samples,
-            rate: SmoothedParam::with_config(1.0, sample_rate, 10.0),
-            depth: SmoothedParam::with_config(0.5, sample_rate, 10.0),
-            mix: SmoothedParam::with_config(0.5, sample_rate, 10.0),
+            rate: SmoothedParam::standard(1.0, sample_rate),
+            depth: SmoothedParam::standard(0.5, sample_rate),
+            mix: SmoothedParam::standard(0.5, sample_rate),
+            output_level: sonido_core::gain::output_level_param(sample_rate),
             sample_rate,
         }
     }
@@ -94,6 +98,7 @@ impl Effect for Chorus {
         let rate = self.rate.advance();
         let depth = self.depth.advance();
         let mix = self.mix.advance();
+        let output_gain = self.output_level.advance();
 
         self.lfo1.set_frequency(rate);
         self.lfo2.set_frequency(rate);
@@ -111,7 +116,7 @@ impl Effect for Chorus {
         self.delay2.write(input);
 
         let wet = (wet1 + wet2) * 0.5;
-        input * (1.0 - mix) + wet * mix
+        wet_dry_mix(input, wet, mix) * output_gain
     }
 
     #[inline]
@@ -120,6 +125,7 @@ impl Effect for Chorus {
         let rate = self.rate.advance();
         let depth = self.depth.advance();
         let mix = self.mix.advance();
+        let output_gain = self.output_level.advance();
 
         self.lfo1.set_frequency(rate);
         self.lfo2.set_frequency(rate);
@@ -144,10 +150,9 @@ impl Effect for Chorus {
         let wet_l = wet1 * 0.8 + wet2 * 0.2;
         let wet_r = wet2 * 0.8 + wet1 * 0.2;
 
-        let out_l = left * (1.0 - mix) + wet_l * mix;
-        let out_r = right * (1.0 - mix) + wet_r * mix;
+        let (out_l, out_r) = wet_dry_mix_stereo(left, right, wet_l, wet_r, mix);
 
-        (out_l, out_r)
+        (out_l * output_gain, out_r * output_gain)
     }
 
     fn is_true_stereo(&self) -> bool {
@@ -168,6 +173,7 @@ impl Effect for Chorus {
         self.rate.set_sample_rate(sample_rate);
         self.depth.set_sample_rate(sample_rate);
         self.mix.set_sample_rate(sample_rate);
+        self.output_level.set_sample_rate(sample_rate);
     }
 
     fn reset(&mut self) {
@@ -175,12 +181,16 @@ impl Effect for Chorus {
         self.delay2.clear();
         self.lfo1.reset();
         self.lfo2.reset();
+        self.rate.snap_to_target();
+        self.depth.snap_to_target();
+        self.mix.snap_to_target();
+        self.output_level.snap_to_target();
     }
 }
 
 impl ParameterInfo for Chorus {
     fn param_count(&self) -> usize {
-        3
+        4
     }
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
@@ -188,30 +198,15 @@ impl ParameterInfo for Chorus {
             0 => Some(ParamDescriptor {
                 name: "Rate",
                 short_name: "Rate",
-                unit: ParamUnit::Hertz,
+                unit: sonido_core::ParamUnit::Hertz,
                 min: 0.1,
                 max: 10.0,
                 default: 1.0,
                 step: 0.1,
             }),
-            1 => Some(ParamDescriptor {
-                name: "Depth",
-                short_name: "Depth",
-                unit: ParamUnit::Percent,
-                min: 0.0,
-                max: 100.0,
-                default: 50.0,
-                step: 1.0,
-            }),
-            2 => Some(ParamDescriptor {
-                name: "Mix",
-                short_name: "Mix",
-                unit: ParamUnit::Percent,
-                min: 0.0,
-                max: 100.0,
-                default: 50.0,
-                step: 1.0,
-            }),
+            1 => Some(ParamDescriptor::depth()),
+            2 => Some(ParamDescriptor::mix()),
+            3 => Some(sonido_core::gain::output_param_descriptor()),
             _ => None,
         }
     }
@@ -221,6 +216,7 @@ impl ParameterInfo for Chorus {
             0 => self.rate.target(),
             1 => self.depth.target() * 100.0,
             2 => self.mix.target() * 100.0,
+            3 => sonido_core::gain::output_level_db(&self.output_level),
             _ => 0.0,
         }
     }
@@ -230,6 +226,7 @@ impl ParameterInfo for Chorus {
             0 => self.set_rate(value),
             1 => self.set_depth(value / 100.0),
             2 => self.set_mix(value / 100.0),
+            3 => sonido_core::gain::set_output_level_db(&mut self.output_level, value),
             _ => {}
         }
     }
@@ -308,5 +305,11 @@ mod tests {
         // (due to different voice panning)
         assert!(l_sum.is_finite());
         assert!(r_sum.is_finite());
+    }
+
+    #[test]
+    fn test_chorus_param_count() {
+        let chorus = Chorus::new(44100.0);
+        assert_eq!(chorus.param_count(), 4);
     }
 }

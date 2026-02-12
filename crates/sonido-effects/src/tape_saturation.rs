@@ -3,10 +3,10 @@
 //! J37/Kramer MPX inspired tape warmth with soft saturation,
 //! even harmonic enhancement, and high frequency rolloff.
 
-use core::f32::consts::PI;
-use libm::{expf, logf};
+use libm::expf;
 use sonido_core::{
-    Effect, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, db_to_linear, linear_to_db,
+    Effect, OnePole, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, db_to_linear,
+    linear_to_db,
 };
 
 /// Tape saturation effect
@@ -17,7 +17,7 @@ use sonido_core::{
 /// |-------|------|-------|---------|
 /// | 0 | Drive | 0.0–24.0 dB | 6.0 |
 /// | 1 | Saturation | 0–100% | 50.0 |
-/// | 2 | Output | -12.0–12.0 dB | 0.0 |
+/// | 2 | Output | -12.0–12.0 dB | -6.0 |
 /// | 3 | HF Rolloff | 1000.0–20000.0 Hz | 12000.0 |
 /// | 4 | Bias | -0.2–0.2 | 0.0 |
 ///
@@ -43,12 +43,11 @@ pub struct TapeSaturation {
     output_gain: SmoothedParam,
     /// Saturation amount (0.0 - 1.0) with smoothing
     saturation: SmoothedParam,
-    /// High frequency rolloff state (one-pole, left channel)
-    hf_state: f32,
-    /// High frequency rolloff state (one-pole, right channel)
-    hf_state_r: f32,
-    hf_coeff: f32,
-    /// High frequency rolloff frequency in Hz
+    /// High frequency rolloff filter (left channel)
+    hf_filter: OnePole,
+    /// High frequency rolloff filter (right channel)
+    hf_filter_r: OnePole,
+    /// HF rolloff frequency in Hz (shadow for get_param readback)
     hf_freq: f32,
     /// Bias (affects harmonic content)
     bias: f32,
@@ -63,19 +62,16 @@ impl Default for TapeSaturation {
 impl TapeSaturation {
     /// Create new tape saturation
     pub fn new(sample_rate: f32) -> Self {
-        let mut ts = Self {
+        Self {
             sample_rate,
-            drive: SmoothedParam::with_config(db_to_linear(6.0), sample_rate, 10.0),
-            output_gain: SmoothedParam::with_config(1.0, sample_rate, 10.0),
-            saturation: SmoothedParam::with_config(0.5, sample_rate, 10.0),
-            hf_state: 0.0,
-            hf_state_r: 0.0,
-            hf_coeff: 0.0,
+            drive: SmoothedParam::standard(db_to_linear(6.0), sample_rate),
+            output_gain: SmoothedParam::standard(db_to_linear(-6.0), sample_rate),
+            saturation: SmoothedParam::standard(0.5, sample_rate),
+            hf_filter: OnePole::new(sample_rate, 12000.0),
+            hf_filter_r: OnePole::new(sample_rate, 12000.0),
             hf_freq: 12000.0,
             bias: 0.0,
-        };
-        ts.set_hf_rolloff(12000.0);
-        ts
+        }
     }
 
     /// Set input drive (1.0 = unity, higher = more saturation)
@@ -112,7 +108,8 @@ impl TapeSaturation {
     pub fn set_hf_rolloff(&mut self, freq: f32) {
         let freq = freq.clamp(1000.0, 20000.0);
         self.hf_freq = freq;
-        self.hf_coeff = expf(-2.0 * PI * freq / self.sample_rate);
+        self.hf_filter.set_frequency(freq);
+        self.hf_filter_r.set_frequency(freq);
     }
 
     /// Set tape bias (affects harmonic character)
@@ -153,11 +150,8 @@ impl Effect for TapeSaturation {
         // Apply saturation
         let saturated = self.saturate(input, drive, saturation);
 
-        // High frequency rolloff (one-pole lowpass)
-        self.hf_state = saturated + self.hf_coeff * (self.hf_state - saturated);
-
-        // Output
-        self.hf_state * output_gain
+        // High frequency rolloff
+        self.hf_filter.process(saturated) * output_gain
     }
 
     #[inline]
@@ -168,34 +162,27 @@ impl Effect for TapeSaturation {
 
         // Process left with its own filter state
         let sat_l = self.saturate(left, drive, saturation);
-        self.hf_state = sat_l + self.hf_coeff * (self.hf_state - sat_l);
-        let out_l = self.hf_state * output_gain;
+        let out_l = self.hf_filter.process(sat_l) * output_gain;
 
         // Process right with separate filter state
         let sat_r = self.saturate(right, drive, saturation);
-        self.hf_state_r = sat_r + self.hf_coeff * (self.hf_state_r - sat_r);
-        let out_r = self.hf_state_r * output_gain;
+        let out_r = self.hf_filter_r.process(sat_r) * output_gain;
 
         (out_l, out_r)
     }
 
     fn reset(&mut self) {
-        self.hf_state = 0.0;
-        self.hf_state_r = 0.0;
+        self.hf_filter.reset();
+        self.hf_filter_r.reset();
         self.drive.snap_to_target();
         self.output_gain.snap_to_target();
         self.saturation.snap_to_target();
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
-        // Preserve HF rolloff frequency
-        let old_freq = if self.hf_coeff > 0.0 && self.hf_coeff < 1.0 {
-            -self.sample_rate * logf(self.hf_coeff) / (2.0 * PI)
-        } else {
-            12000.0
-        };
         self.sample_rate = sample_rate;
-        self.set_hf_rolloff(old_freq);
+        self.hf_filter.set_sample_rate(sample_rate);
+        self.hf_filter_r.set_sample_rate(sample_rate);
         self.drive.set_sample_rate(sample_rate);
         self.output_gain.set_sample_rate(sample_rate);
         self.saturation.set_sample_rate(sample_rate);
@@ -233,7 +220,7 @@ impl ParameterInfo for TapeSaturation {
                 unit: ParamUnit::Decibels,
                 min: -12.0,
                 max: 12.0,
-                default: 0.0,
+                default: -6.0,
                 step: 0.5,
             }),
             3 => Some(ParamDescriptor {
@@ -333,7 +320,13 @@ mod tests {
         }
 
         tape.reset();
-        assert_eq!(tape.hf_state, 0.0);
+
+        // After reset, processing zero should produce zero (filter state cleared)
+        let output = tape.process(0.0);
+        assert!(
+            output.abs() < 1e-6,
+            "After reset, zero input should produce near-zero output, got {output}"
+        );
     }
 
     #[test]

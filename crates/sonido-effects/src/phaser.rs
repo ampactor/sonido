@@ -9,6 +9,7 @@ use core::f32::consts::PI;
 use libm::tanf;
 use sonido_core::{
     Effect, Lfo, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, flush_denormal,
+    wet_dry_mix,
 };
 
 /// Maximum number of allpass stages.
@@ -25,6 +26,7 @@ const MAX_STAGES: usize = 12;
 /// | 2 | Stages | 2–12 | 6 |
 /// | 3 | Feedback | 0–95% | 50.0 |
 /// | 4 | Mix | 0–100% | 50.0 |
+/// | 5 | Output | -20.0–20.0 dB | 0.0 |
 ///
 /// # Algorithm
 ///
@@ -67,6 +69,8 @@ pub struct Phaser {
     feedback: SmoothedParam,
     /// Wet/dry mix parameter
     mix: SmoothedParam,
+    /// Output level (linear gain)
+    output_level: SmoothedParam,
     /// Stereo spread (LFO phase offset 0-0.5, where 0.5 = 180 degrees)
     stereo_spread: f32,
     /// Number of active stages (2-12)
@@ -150,10 +154,11 @@ impl Phaser {
             allpass_r: [FirstOrderAllpass::new(); MAX_STAGES],
             lfo: Lfo::new(sample_rate, 0.3),
             lfo_r,
-            rate: SmoothedParam::with_config(0.3, sample_rate, 10.0),
-            depth: SmoothedParam::with_config(0.5, sample_rate, 10.0),
-            feedback: SmoothedParam::with_config(0.5, sample_rate, 10.0),
-            mix: SmoothedParam::with_config(0.5, sample_rate, 10.0),
+            rate: SmoothedParam::standard(0.3, sample_rate),
+            depth: SmoothedParam::standard(0.5, sample_rate),
+            feedback: SmoothedParam::standard(0.5, sample_rate),
+            mix: SmoothedParam::standard(0.5, sample_rate),
+            output_level: sonido_core::gain::output_level_param(sample_rate),
             stereo_spread: 0.25, // 90 degree default spread
             stages: 6,
             sample_rate,
@@ -232,6 +237,7 @@ impl Effect for Phaser {
         let depth = self.depth.advance();
         let feedback = self.feedback.advance();
         let mix = self.mix.advance();
+        let output_gain = self.output_level.advance();
 
         // Update LFO frequency
         self.lfo.set_frequency(rate);
@@ -264,8 +270,7 @@ impl Effect for Phaser {
         // Store for next iteration
         self.feedback_sample = flush_denormal(wet);
 
-        // Mix dry and wet signals
-        input * (1.0 - mix) + wet * mix
+        wet_dry_mix(input, wet, mix) * output_gain
     }
 
     #[inline]
@@ -275,6 +280,7 @@ impl Effect for Phaser {
         let depth = self.depth.advance();
         let feedback = self.feedback.advance();
         let mix = self.mix.advance();
+        let output_gain = self.output_level.advance();
 
         // Update LFO frequencies
         self.lfo.set_frequency(rate);
@@ -314,8 +320,8 @@ impl Effect for Phaser {
         }
         self.feedback_sample_r = flush_denormal(wet_r);
 
-        let out_l = left * (1.0 - mix) + wet_l * mix;
-        let out_r = right * (1.0 - mix) + wet_r * mix;
+        let out_l = wet_dry_mix(left, wet_l, mix) * output_gain;
+        let out_r = wet_dry_mix(right, wet_r, mix) * output_gain;
 
         (out_l, out_r)
     }
@@ -333,6 +339,7 @@ impl Effect for Phaser {
         self.depth.set_sample_rate(sample_rate);
         self.feedback.set_sample_rate(sample_rate);
         self.mix.set_sample_rate(sample_rate);
+        self.output_level.set_sample_rate(sample_rate);
     }
 
     fn reset(&mut self) {
@@ -346,12 +353,17 @@ impl Effect for Phaser {
         self.lfo_r.set_phase(self.stereo_spread);
         self.feedback_sample = 0.0;
         self.feedback_sample_r = 0.0;
+        self.rate.snap_to_target();
+        self.depth.snap_to_target();
+        self.feedback.snap_to_target();
+        self.mix.snap_to_target();
+        self.output_level.snap_to_target();
     }
 }
 
 impl ParameterInfo for Phaser {
     fn param_count(&self) -> usize {
-        5
+        6
     }
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
@@ -365,15 +377,7 @@ impl ParameterInfo for Phaser {
                 default: 0.3,
                 step: 0.05,
             }),
-            1 => Some(ParamDescriptor {
-                name: "Depth",
-                short_name: "Depth",
-                unit: ParamUnit::Percent,
-                min: 0.0,
-                max: 100.0,
-                default: 50.0,
-                step: 1.0,
-            }),
+            1 => Some(ParamDescriptor::depth()),
             2 => Some(ParamDescriptor {
                 name: "Stages",
                 short_name: "Stg",
@@ -383,24 +387,9 @@ impl ParameterInfo for Phaser {
                 default: 6.0,
                 step: 2.0,
             }),
-            3 => Some(ParamDescriptor {
-                name: "Feedback",
-                short_name: "Fdbk",
-                unit: ParamUnit::Percent,
-                min: 0.0,
-                max: 95.0,
-                default: 50.0,
-                step: 1.0,
-            }),
-            4 => Some(ParamDescriptor {
-                name: "Mix",
-                short_name: "Mix",
-                unit: ParamUnit::Percent,
-                min: 0.0,
-                max: 100.0,
-                default: 50.0,
-                step: 1.0,
-            }),
+            3 => Some(ParamDescriptor::feedback()),
+            4 => Some(ParamDescriptor::mix()),
+            5 => Some(sonido_core::gain::output_param_descriptor()),
             _ => None,
         }
     }
@@ -412,6 +401,7 @@ impl ParameterInfo for Phaser {
             2 => self.stages as f32,
             3 => self.feedback.target() * 100.0,
             4 => self.mix.target() * 100.0,
+            5 => sonido_core::gain::output_level_db(&self.output_level),
             _ => 0.0,
         }
     }
@@ -423,6 +413,7 @@ impl ParameterInfo for Phaser {
             2 => self.set_stages(value as usize),
             3 => self.set_feedback(value / 100.0),
             4 => self.set_mix(value / 100.0),
+            5 => sonido_core::gain::set_output_level_db(&mut self.output_level, value),
             _ => {}
         }
     }
@@ -498,7 +489,7 @@ mod tests {
     fn test_phaser_parameter_info() {
         let phaser = Phaser::new(44100.0);
 
-        assert_eq!(phaser.param_count(), 5);
+        assert_eq!(phaser.param_count(), 6);
 
         let rate_info = phaser.param_info(0).unwrap();
         assert_eq!(rate_info.name, "Rate");

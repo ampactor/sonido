@@ -6,7 +6,7 @@
 use libm::{ceilf, roundf};
 use sonido_core::{
     AllpassFilter, CombFilter, Effect, InterpolatedDelay, ParamDescriptor, ParamUnit,
-    ParameterInfo, SmoothedParam,
+    ParameterInfo, SmoothedParam, wet_dry_mix, wet_dry_mix_stereo,
 };
 
 /// Freeverb comb filter delay times (at 44.1kHz reference).
@@ -71,6 +71,7 @@ impl ReverbType {
 /// | 4 | Mix | 0–100% | 50.0 |
 /// | 5 | Stereo Width | 0–100% | 100.0 |
 /// | 6 | Reverb Type | 0–1 (Room, Hall) | 0 |
+/// | 7 | Output | -20.0–20.0 dB | 0.0 |
 ///
 /// # Example
 ///
@@ -105,6 +106,9 @@ pub struct Reverb {
     decay: SmoothedParam,
     damping: SmoothedParam,
     mix: SmoothedParam,
+
+    /// Output level (linear gain)
+    output_level: SmoothedParam,
 
     /// Stereo width (0 = mono, 1 = full stereo)
     stereo_width: f32,
@@ -166,11 +170,12 @@ impl Reverb {
             allpasses_r,
             predelay_line,
             predelay_line_r,
-            predelay_samples: SmoothedParam::with_config(predelay_samps, sample_rate, 50.0),
-            room_size: SmoothedParam::with_config(room, sample_rate, 20.0),
-            decay: SmoothedParam::with_config(decay, sample_rate, 20.0),
-            damping: SmoothedParam::with_config(damp, sample_rate, 20.0),
-            mix: SmoothedParam::with_config(0.5, sample_rate, 10.0),
+            predelay_samples: SmoothedParam::interpolated(predelay_samps, sample_rate),
+            room_size: SmoothedParam::slow(room, sample_rate),
+            decay: SmoothedParam::slow(decay, sample_rate),
+            damping: SmoothedParam::slow(damp, sample_rate),
+            mix: SmoothedParam::standard(0.5, sample_rate),
+            output_level: sonido_core::gain::output_level_param(sample_rate),
             stereo_width: 1.0,
             sample_rate,
             reverb_type: ReverbType::Room,
@@ -316,6 +321,7 @@ impl Effect for Reverb {
         self.damping.advance();
         let predelay = self.predelay_samples.advance();
         let mix = self.mix.advance();
+        let output_gain = self.output_level.advance();
 
         // Update comb filter coefficients if needed
         self.update_comb_params();
@@ -341,9 +347,7 @@ impl Effect for Reverb {
             diffused = allpass.process(diffused);
         }
 
-        // Wet/dry mix
-        let wet = diffused;
-        input * (1.0 - mix) + wet * mix
+        wet_dry_mix(input, diffused, mix) * output_gain
     }
 
     fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
@@ -353,6 +357,7 @@ impl Effect for Reverb {
         self.damping.advance();
         let predelay = self.predelay_samples.advance();
         let mix = self.mix.advance();
+        let output_gain = self.output_level.advance();
 
         self.update_comb_params();
 
@@ -403,10 +408,9 @@ impl Effect for Reverb {
         let wet_l = mid + side * self.stereo_width;
         let wet_r = mid - side * self.stereo_width;
 
-        let out_l = left * (1.0 - mix) + wet_l * mix;
-        let out_r = right * (1.0 - mix) + wet_r * mix;
+        let (out_l, out_r) = wet_dry_mix_stereo(left, right, wet_l, wet_r, mix);
 
-        (out_l, out_r)
+        (out_l * output_gain, out_r * output_gain)
     }
 
     fn is_true_stereo(&self) -> bool {
@@ -458,6 +462,7 @@ impl Effect for Reverb {
         self.damping.set_sample_rate(sample_rate);
         self.predelay_samples.set_sample_rate(sample_rate);
         self.mix.set_sample_rate(sample_rate);
+        self.output_level.set_sample_rate(sample_rate);
 
         // Force parameter update
         self.cached_room = -1.0;
@@ -485,6 +490,7 @@ impl Effect for Reverb {
         self.damping.snap_to_target();
         self.predelay_samples.snap_to_target();
         self.mix.snap_to_target();
+        self.output_level.snap_to_target();
 
         self.cached_room = -1.0;
         self.update_comb_params();
@@ -498,7 +504,7 @@ impl Effect for Reverb {
 
 impl ParameterInfo for Reverb {
     fn param_count(&self) -> usize {
-        7
+        8
     }
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
@@ -539,15 +545,7 @@ impl ParameterInfo for Reverb {
                 default: 10.0,
                 step: 1.0,
             }),
-            4 => Some(ParamDescriptor {
-                name: "Mix",
-                short_name: "Mix",
-                unit: ParamUnit::Percent,
-                min: 0.0,
-                max: 100.0,
-                default: 50.0,
-                step: 1.0,
-            }),
+            4 => Some(ParamDescriptor::mix()),
             5 => Some(ParamDescriptor {
                 name: "Stereo Width",
                 short_name: "Width",
@@ -566,6 +564,7 @@ impl ParameterInfo for Reverb {
                 default: 0.0,
                 step: 1.0,
             }),
+            7 => Some(sonido_core::gain::output_param_descriptor()),
             _ => None,
         }
     }
@@ -582,6 +581,7 @@ impl ParameterInfo for Reverb {
                 ReverbType::Room => 0.0,
                 ReverbType::Hall => 1.0,
             },
+            7 => sonido_core::gain::output_level_db(&self.output_level),
             _ => 0.0,
         }
     }
@@ -598,6 +598,7 @@ impl ParameterInfo for Reverb {
                 0 => self.set_reverb_type(ReverbType::Room),
                 _ => self.set_reverb_type(ReverbType::Hall),
             },
+            7 => sonido_core::gain::set_output_level_db(&mut self.output_level, value),
             _ => {}
         }
     }
