@@ -178,7 +178,7 @@ These params were added in the CLI UX overhaul. Each must be accepted without er
 | 11 | `sonido process test_audio/sine_440.wav --effect phaser --param stereo_spread=80` | Phaser stereo spread | [ ] |
 | 12 | `sonido process test_audio/sine_440.wav --effect tremolo --param waveform=square` | Tremolo square waveform | [ ] |
 | 13 | `sonido process test_audio/sine_440.wav --effect tremolo --param waveform=triangle` | Tremolo triangle waveform | [ ] |
-| 14 | `sonido process test_audio/sine_440.wav --effect wah --param mode=manual --param position=50` | Wah manual mode | [ ] |
+| 14 | `sonido process test_audio/sine_440.wav --effect wah --param mode=manual --param frequency=800` | Wah manual mode | [ ] |
 | 15 | `sonido process test_audio/noise.wav --effect filter --param resonance=90` | Filter high-Q resonance | [ ] |
 | 16 | `sonido process test_audio/sine_440.wav --effect eq --param low_gain=6 --param mid_gain=-3 --param high_gain=3` | EQ multi-band | [ ] |
 
@@ -339,7 +339,7 @@ sonido presets delete test_preset --force
 
 ```bash
 sonido presets save my_preset --chain "chorus:rate=1.5|delay:time=300"
-sonido presets copy my_preset my_preset_backup
+sonido presets copy my_preset --name my_preset_backup
 sonido presets show my_preset_backup
 sonido presets delete my_preset --force
 sonido presets delete my_preset_backup --force
@@ -427,7 +427,7 @@ sonido generate adsr /tmp/pad_env.wav --attack 500 --decay 200 --sustain 0.8 --r
 ### 4.5 Pulse Width
 
 ```bash
-sonido synth -o /tmp/pulse.wav --waveform pulse --pulse-width 0.25 --freq 440 --duration 1.0
+sonido generate osc /tmp/pulse.wav --waveform square --pulse-width 0.25 --freq 440 --duration 1.0
 ```
 
 - [ ] Output is a pulse wave with 25% duty cycle (narrower than square)
@@ -436,8 +436,8 @@ sonido synth -o /tmp/pulse.wav --waveform pulse --pulse-width 0.25 --freq 440 --
 ### 4.6 Chord with Filter
 
 ```bash
-sonido synth -o /tmp/chord_raw.wav --notes C4,E4,G4 --waveform saw --duration 2.0
-sonido process /tmp/chord_raw.wav -o /tmp/chord_filtered.wav --effect filter --param cutoff=2000
+sonido generate chord /tmp/chord_raw.wav --notes "60,64,67" --waveform saw --duration 2.0
+sonido process /tmp/chord_raw.wav /tmp/chord_filtered.wav --effect filter --param cutoff=2000
 ```
 
 - [ ] Raw chord has bright saw harmonics
@@ -507,12 +507,12 @@ sonido analyze ir /tmp/sweep_dry.wav /tmp/sweep_wet.wav -o /tmp/ir.wav --rt60
 ```bash
 sonido analyze cqt test_audio/sine_440.wav --peaks 5
 sonido analyze cqt test_audio/sine_440.wav --chromagram
-sonido analyze cqt test_audio/sine_440.wav -o /tmp/cqt.png
+sonido analyze cqt test_audio/sine_440.wav -o /tmp/cqt.csv
 ```
 
 - [ ] Peaks include A4 (440Hz)
 - [ ] Chromagram shows energy at note A
-- [ ] CQT image output generated
+- [ ] CQT CSV output generated
 
 ### 5.6 Bandpass and Hilbert
 
@@ -525,8 +525,8 @@ sonido analyze hilbert test_audio/sine_440.wav --phase
 
 - [ ] Bandpassed output contains only 100-500Hz content
 - [ ] Hilbert envelope output exists
-- [ ] `--envelope` prints amplitude envelope data
-- [ ] `--phase` prints instantaneous phase data
+- [ ] `--envelope` works as alias for `--amp-output` (prints amplitude envelope data)
+- [ ] `--phase` works as alias for `--phase-output` (prints instantaneous phase data)
 
 ### 5.7 PAC and Comodulogram
 
@@ -548,16 +548,16 @@ sonido analyze compare test_audio/sine_440.wav test_audio/sine_440_reverb.wav
 ```
 
 - [ ] Reports spectral differences between dry and wet signals
-- [ ] `analyze compare` produces comparison metrics
+- [ ] `analyze compare` works as alias for `compare` and produces comparison metrics
 
 ### 5.9 Spectrogram
 
 ```bash
-sonido analyze spectrogram test_audio/sine_440.wav -o /tmp/spec.png
+sonido analyze spectrogram test_audio/sine_440.wav -o /tmp/spec.csv
 ```
 
-- [ ] Spectrogram image generated at `/tmp/spec.png`
-- [ ] 440Hz horizontal line visible in output
+- [ ] Spectrogram CSV generated at `/tmp/spec.csv`
+- [ ] 440Hz bin shows consistent energy across time frames
 
 ### 5.10 Transfer Function Extras
 
@@ -565,11 +565,11 @@ sonido analyze spectrogram test_audio/sine_440.wav -o /tmp/spec.png
 sonido generate sweep /tmp/tf_dry.wav --duration 3.0
 sonido process /tmp/tf_dry.wav /tmp/tf_wet.wav --effect filter --param cutoff=1000
 sonido analyze ir /tmp/tf_dry.wav /tmp/tf_wet.wav -o /tmp/tf.wav --format csv
-sonido analyze ir /tmp/tf_dry.wav /tmp/tf_wet.wav -o /tmp/tf2.wav --window-size 4096
+sonido analyze ir /tmp/tf_dry.wav /tmp/tf_wet.wav -o /tmp/tf2.wav --format csv --window-size 4096
 ```
 
-- [ ] CSV format output generated
-- [ ] Different window sizes produce valid results
+- [ ] `--format csv` produces CSV output
+- [ ] `--window-size 4096` produces valid results with different FFT resolution
 
 ### 5.11 IMD Analysis
 
@@ -577,6 +577,7 @@ sonido analyze ir /tmp/tf_dry.wav /tmp/tf_wet.wav -o /tmp/tf2.wav --window-size 
 sonido analyze imd test_audio/sine_440.wav
 ```
 
+- [ ] Auto-detects test frequencies when `--freq1` and `--freq2` are omitted
 - [ ] Intermodulation distortion analysis completes
 - [ ] Reports IMD percentage
 
