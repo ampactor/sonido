@@ -23,6 +23,7 @@ Architecture Decision Records (ADRs) for the Sonido DSP framework. Each record c
 - [ADR-017: Shared DSP Vocabulary and Gain Staging](#adr-017-shared-dsp-vocabulary-and-gain-staging)
 - [ADR-018: Feedback-Adaptive Reverb Gain Compensation](#adr-018-feedback-adaptive-reverb-gain-compensation) *(superseded by ADR-019)*
 - [ADR-019: Generalized Feedback Compensation](#adr-019-generalized-feedback-compensation)
+- [ADR-020: Fast Math Approximations for Embedded DSP](#adr-020-fast-math-approximations-for-embedded-dsp)
 
 ---
 
@@ -678,3 +679,42 @@ Topology-aware compensation:
 - Reverb unchanged at -1.6 dBFS (topology-specific `sqrt` preserved)
 - At high feedback, wet signal is quieter but decay tail is longer — this IS the character of high feedback. The `output` param provides makeup gain.
 - Golden files regenerated for delay, flanger, phaser, reverb
+
+---
+
+## ADR-020: Fast Math Approximations for Embedded DSP
+
+**Status:** Accepted
+**Source:** `crates/sonido-core/src/fast_math.rs`
+
+### Context
+
+Cortex-M7 targets (Daisy Seed, Hothouse) lack hardware transcendental instruction support. Standard `libm` implementations of `logf`, `expf`, `sinf`, and `tanf` consume 100-200 cycles each — significant when called per-sample in DSP loops running at 48 kHz with tight deadline budgets.
+
+Profiling identified transcendental calls as the dominant cost in: LFO tick, compressor envelope detection, parametric EQ coefficient updates, and phaser allpass tuning.
+
+### Decision
+
+1. Implement purpose-built approximations in `sonido-core::fast_math` with documented error bounds
+2. Use IEEE 754 bit manipulation (log2/exp2), Bhaskara parabolic (sin), and Padé rational (tan) techniques
+3. Keep approximations in a dedicated module — callers opt in explicitly via `fast_log2()` etc.
+4. Maintain the standard `libm` functions as the default; fast_math is for embedded hot paths only
+
+### Rationale
+
+- **Explicit opt-in** prevents accidental precision loss — callers choose fast_* when they've verified error tolerance
+- **Dedicated module** keeps approximation code isolated and auditable
+- **Error bounds < audible threshold** for all documented use cases (< 0.05 dB for gain, < 0.001 for LFO)
+- **10-15x speedup** on Cortex-M7 justifies the precision trade-off for embedded targets
+
+### Alternatives Considered
+
+- **CMSIS-DSP library**: ARM-specific, not `no_std`-compatible without allocator, larger dependency
+- **Inline assembly**: Not portable across ARM variants, maintenance burden
+- **Lookup tables with interpolation**: Higher memory footprint, cache pressure on M7's small D-cache
+
+### Consequences
+
+- Effects using fast_math have slightly different output than libm versions (within documented error bounds)
+- Golden file regression tests use libm — fast_math output verified via dedicated unit tests with tolerance assertions
+- New effects targeting embedded should prefer fast_math for transcendental calls in per-sample loops

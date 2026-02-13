@@ -763,6 +763,47 @@ The coefficient `exp(-2*pi*freq/sample_rate)` gives the standard one-pole respon
 
 ---
 
+## Fast Math Approximations
+
+Sonido provides fast mathematical approximations for targets without
+hardware transcendental support (Cortex-M7, etc.). These trade full
+IEEE 754 precision for predictable cycle counts.
+
+### Function Summary
+
+| Function | Replaces | Use Case | Max Error |
+|----------|----------|----------|-----------|
+| `fast_log2(x)` | `libm::logf` / log2 | dB conversion, dynamics | < 0.2% relative |
+| `fast_exp2(x)` | `libm::expf` / exp2 | dB conversion, dynamics | < 0.2% relative |
+| `fast_db_to_linear(db)` | `db_to_linear()` | Gain, level metering | < 0.05 dB |
+| `fast_linear_to_db(lin)` | `linear_to_db()` | Gain, level metering | < 0.05 dB |
+| `fast_sin_turns(turns)` | `libm::sinf` | LFO modulation | < 0.001 absolute |
+| `fast_tan(x)` | `libm::tanf` | Filter coefficients | < 0.1% (f < sr/4) |
+
+### Implementation Techniques
+
+- **`fast_log2` / `fast_exp2`**: IEEE 754 float bit decomposition (Remez minimax polynomial). ~10-15 Cortex-M7 cycles vs ~150-200 for libm equivalents.
+- **`fast_sin_turns`**: Bhaskara I parabolic approximation. Input in turns (0.0-1.0 = full cycle). ~16 cycles vs ~100+ for sinf.
+- **`fast_tan`**: Padé [2/1] rational approximation. Accurate for filter coefficient computation below sr/4. ~12 cycles.
+- **`fast_db_to_linear` / `fast_linear_to_db`**: Composed from fast_exp2/fast_log2 with dB scaling.
+
+### When to Use
+
+Use fast_math functions in **hot DSP loops on embedded targets** (Cortex-M7) where transcendental calls dominate cycle budget. The error margins are inaudible for all documented use cases (LFO modulation, dynamics, filter coefficients). For offline processing or non-embedded targets, prefer the standard `libm` functions.
+
+Currently used by: LFO, Compressor, Gate, ParametricEq, Phaser (see ADR-020).
+
+### References
+
+- ARM Cortex-M7 Technical Reference Manual (FPU instruction timings)
+- Remez exchange algorithm (minimax polynomial fitting)
+- Bhaskara I's sine approximation (7th century, parabolic form)
+- Padé approximants for rational function approximation
+
+**Implementation:** `crates/sonido-core/src/fast_math.rs`
+
+---
+
 ## Denormal Protection
 
 **Source:** `crates/sonido-core/src/math.rs` (`flush_denormal`), `crates/sonido-core/src/dc_blocker.rs`
