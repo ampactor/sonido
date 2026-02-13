@@ -15,8 +15,14 @@ use sonido_gui_core::ParamBridge;
 use sonido_registry::EffectRegistry;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+// Platform-specific imports
+#[cfg(not(target_arch = "wasm32"))]
 use std::thread;
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 /// Default effect chain order — matches the slot indices used by `AtomicParamBridge`.
 const DEFAULT_CHAIN: &[&str] = &[
@@ -37,7 +43,8 @@ const DEFAULT_CHAIN: &[&str] = &[
     "reverb",       // 14
 ];
 
-/// Audio processing thread state.
+/// Audio processing thread state (native only).
+#[cfg(not(target_arch = "wasm32"))]
 struct AudioThread {
     handle: Option<thread::JoinHandle<()>>,
     running: Arc<AtomicBool>,
@@ -47,7 +54,10 @@ struct AudioThread {
 pub struct SonidoApp {
     // Audio
     audio_bridge: AudioBridge,
+    #[cfg(not(target_arch = "wasm32"))]
     audio_thread: Option<AudioThread>,
+    #[cfg(target_arch = "wasm32")]
+    _audio_streams: Vec<cpal::Stream>,
     metering: MeteringData,
 
     /// Registry-driven parameter bridge (GUI ↔ audio thread).
@@ -68,9 +78,12 @@ pub struct SonidoApp {
     cpu_usage: f32,
     audio_error: Option<String>,
 
-    // Preset dialog
+    // Preset dialog (native only — no filesystem on wasm)
+    #[cfg(not(target_arch = "wasm32"))]
     show_save_dialog: bool,
+    #[cfg(not(target_arch = "wasm32"))]
     new_preset_name: String,
+    #[cfg(not(target_arch = "wasm32"))]
     new_preset_description: String,
 }
 
@@ -93,7 +106,10 @@ impl SonidoApp {
 
         let mut app = Self {
             audio_bridge,
+            #[cfg(not(target_arch = "wasm32"))]
             audio_thread: None,
+            #[cfg(target_arch = "wasm32")]
+            _audio_streams: Vec::new(),
             metering: MeteringData::default(),
             bridge,
             registry,
@@ -105,8 +121,11 @@ impl SonidoApp {
             buffer_size: 512,
             cpu_usage: 0.0,
             audio_error: None,
+            #[cfg(not(target_arch = "wasm32"))]
             show_save_dialog: false,
+            #[cfg(not(target_arch = "wasm32"))]
             new_preset_name: String::new(),
+            #[cfg(not(target_arch = "wasm32"))]
             new_preset_description: "User".to_string(),
         };
 
@@ -126,7 +145,8 @@ impl SonidoApp {
         app
     }
 
-    /// Start the audio processing thread.
+    /// Start the audio processing thread (native: spawns thread, wasm: creates streams directly).
+    #[cfg(not(target_arch = "wasm32"))]
     fn start_audio(&mut self) -> Result<(), String> {
         let bridge = Arc::clone(&self.bridge);
         let input_gain = self.audio_bridge.input_gain();
@@ -168,7 +188,39 @@ impl SonidoApp {
         Ok(())
     }
 
+    /// Start audio streams directly (wasm — no threads, cpal uses Web Audio callbacks).
+    #[cfg(target_arch = "wasm32")]
+    fn start_audio(&mut self) -> Result<(), String> {
+        let bridge = Arc::clone(&self.bridge);
+        let input_gain = self.audio_bridge.input_gain();
+        let master_volume = self.audio_bridge.master_volume();
+        let running = self.audio_bridge.running();
+        let metering_tx = self.audio_bridge.metering_sender();
+        let effect_order = self.chain_view.effect_order().clone();
+        let command_rx = self.audio_bridge.command_receiver();
+        let transport_rx = self.audio_bridge.transport_receiver();
+
+        running.store(true, Ordering::SeqCst);
+
+        let streams = build_audio_streams(
+            bridge,
+            input_gain,
+            master_volume,
+            running,
+            metering_tx,
+            effect_order,
+            command_rx,
+            transport_rx,
+            self.sample_rate,
+            self.buffer_size,
+        )?;
+
+        self._audio_streams = streams;
+        Ok(())
+    }
+
     /// Stop the audio processing thread.
+    #[cfg(not(target_arch = "wasm32"))]
     fn stop_audio(&mut self) {
         if let Some(ref audio) = self.audio_thread {
             audio.running.store(false, Ordering::SeqCst);
@@ -178,6 +230,13 @@ impl SonidoApp {
         {
             let _ = handle.join();
         }
+    }
+
+    /// Stop audio streams (wasm — drop stream handles).
+    #[cfg(target_arch = "wasm32")]
+    fn stop_audio(&mut self) {
+        self.audio_bridge.running().store(false, Ordering::SeqCst);
+        self._audio_streams.clear();
     }
 
     /// Render the header/toolbar.
@@ -233,6 +292,8 @@ impl SonidoApp {
             ui.add_space(8.0);
             self.file_player.render_source_toggle(ui);
 
+            // Save button (native only — no filesystem on wasm)
+            #[cfg(not(target_arch = "wasm32"))]
             if ui.button("Save").clicked() {
                 self.show_save_dialog = true;
                 self.new_preset_name = self
@@ -392,7 +453,8 @@ impl SonidoApp {
         });
     }
 
-    /// Render save preset dialog.
+    /// Render save preset dialog (native only — no filesystem on wasm).
+    #[cfg(not(target_arch = "wasm32"))]
     fn render_save_dialog(&mut self, ctx: &Context) {
         if !self.show_save_dialog {
             return;
@@ -528,7 +590,8 @@ impl eframe::App for SonidoApp {
             });
         });
 
-        // Dialogs
+        // Dialogs (save dialog is native-only)
+        #[cfg(not(target_arch = "wasm32"))]
         self.render_save_dialog(ctx);
     }
 
@@ -591,15 +654,13 @@ impl FilePlayback {
     }
 }
 
-/// Run the audio processing thread.
+/// Build and start cpal audio streams.
 ///
-/// Processes audio in stereo through the effect chain, respecting the user-defined
-/// effect order. Uses [`ChainManager`] for registry-driven effect creation and
-/// dispatch. Drains [`ChainCommand`]s from the GUI before each buffer to handle
-/// dynamic add/remove. Handles file playback via [`TransportCommand`]s.
-/// Measures CPU usage and reports metering data to the GUI.
+/// Creates an output stream (always) and an input stream (if a mic is available).
+/// Returns the stream handles — caller must keep them alive for audio to continue.
+/// Input is optional so the app works without mic permission (e.g., wasm, headless).
 #[allow(clippy::too_many_arguments)]
-fn run_audio_thread(
+fn build_audio_streams(
     bridge: Arc<AtomicParamBridge>,
     input_gain: Arc<crate::audio_bridge::AtomicParam>,
     master_volume: Arc<crate::audio_bridge::AtomicParam>,
@@ -610,35 +671,25 @@ fn run_audio_thread(
     transport_rx: Receiver<crate::file_player::TransportCommand>,
     sample_rate: f32,
     buffer_size: usize,
-) -> Result<(), String> {
+) -> Result<Vec<cpal::Stream>, String> {
     use crate::file_player::TransportCommand;
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
     let host = cpal::default_host();
-    let input_device = host
-        .default_input_device()
-        .ok_or("No input device available")?;
     let output_device = host
         .default_output_device()
         .ok_or("No output device available")?;
 
-    // Use stereo config; fall back to device default channel count
+    // Input device is optional (mic permission may be denied on wasm)
+    let input_device = host.default_input_device();
+
     let output_channels = output_device
         .default_output_config()
         .map(|c| c.channels())
         .unwrap_or(2);
-    let input_channels = input_device
-        .default_input_config()
-        .map(|c| c.channels())
-        .unwrap_or(1);
 
     let output_config = cpal::StreamConfig {
         channels: output_channels,
-        sample_rate: cpal::SampleRate(sample_rate as u32),
-        buffer_size: cpal::BufferSize::Fixed(buffer_size as u32),
-    };
-    let input_config = cpal::StreamConfig {
-        channels: input_channels,
         sample_rate: cpal::SampleRate(sample_rate as u32),
         buffer_size: cpal::BufferSize::Fixed(buffer_size as u32),
     };
@@ -650,32 +701,59 @@ fn run_audio_thread(
     // Stereo audio buffer (interleaved L, R pairs)
     let (tx, rx) = crossbeam_channel::bounded::<f32>(16384);
 
-    // Pre-fill with silence (stereo frames)
-    for _ in 0..(1024 * input_channels as usize) {
-        let _ = tx.try_send(0.0);
-    }
+    let mut streams: Vec<cpal::Stream> = Vec::with_capacity(2);
 
-    let running_input = Arc::clone(&running);
+    // Input stream (if mic available)
+    let in_ch = if let Some(ref input_dev) = input_device {
+        let input_channels = input_dev
+            .default_input_config()
+            .map(|c| c.channels())
+            .unwrap_or(1);
 
-    // Input stream — forward all samples (mono or stereo)
-    let input_stream = input_device
-        .build_input_stream(
-            &input_config,
-            move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                if !running_input.load(Ordering::Relaxed) {
-                    return;
-                }
-                for &sample in data {
-                    let _ = tx.try_send(sample);
-                }
-            },
-            |err| log::error!("Input stream error: {}", err),
-            None,
-        )
-        .map_err(|e| format!("Failed to build input stream: {}", e))?;
+        let input_config = cpal::StreamConfig {
+            channels: input_channels,
+            sample_rate: cpal::SampleRate(sample_rate as u32),
+            buffer_size: cpal::BufferSize::Fixed(buffer_size as u32),
+        };
+
+        // Pre-fill with silence
+        for _ in 0..(1024 * input_channels as usize) {
+            let _ = tx.try_send(0.0);
+        }
+
+        let running_input = Arc::clone(&running);
+        let input_stream = input_dev
+            .build_input_stream(
+                &input_config,
+                move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                    if !running_input.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    for &sample in data {
+                        let _ = tx.try_send(sample);
+                    }
+                },
+                |err| log::error!("Input stream error: {}", err),
+                None,
+            )
+            .map_err(|e| format!("Failed to build input stream: {}", e))?;
+
+        input_stream
+            .play()
+            .map_err(|e| format!("Failed to play input stream: {}", e))?;
+        streams.push(input_stream);
+
+        input_channels as usize
+    } else {
+        log::warn!("No input device available — mic input disabled");
+        // Pre-fill silence so output callback doesn't block
+        for _ in 0..2048 {
+            let _ = tx.try_send(0.0);
+        }
+        1 // default: mono input channel count for deinterleave logic
+    };
 
     let running_output = Arc::clone(&running);
-    let in_ch = input_channels as usize;
     let out_ch = output_channels as usize;
     let buffer_time_secs = buffer_size as f64 / sample_rate as f64;
 
@@ -851,14 +929,45 @@ fn run_audio_thread(
         )
         .map_err(|e| format!("Failed to build output stream: {}", e))?;
 
-    input_stream
-        .play()
-        .map_err(|e| format!("Failed to play input stream: {}", e))?;
     output_stream
         .play()
         .map_err(|e| format!("Failed to play output stream: {}", e))?;
+    streams.push(output_stream);
 
-    // Keep thread alive while running
+    Ok(streams)
+}
+
+/// Run the audio processing thread (native only).
+///
+/// Creates cpal streams, starts them, and sleeps until the `running` flag is cleared.
+#[cfg(not(target_arch = "wasm32"))]
+#[allow(clippy::too_many_arguments)]
+fn run_audio_thread(
+    bridge: Arc<AtomicParamBridge>,
+    input_gain: Arc<crate::audio_bridge::AtomicParam>,
+    master_volume: Arc<crate::audio_bridge::AtomicParam>,
+    running: Arc<AtomicBool>,
+    metering_tx: Sender<MeteringData>,
+    effect_order: EffectOrder,
+    command_rx: Receiver<ChainCommand>,
+    transport_rx: Receiver<crate::file_player::TransportCommand>,
+    sample_rate: f32,
+    buffer_size: usize,
+) -> Result<(), String> {
+    let _streams = build_audio_streams(
+        bridge,
+        input_gain,
+        master_volume,
+        running.clone(),
+        metering_tx,
+        effect_order,
+        command_rx,
+        transport_rx,
+        sample_rate,
+        buffer_size,
+    )?;
+
+    // Keep thread alive while running — streams are dropped when this returns
     while running.load(Ordering::Relaxed) {
         thread::sleep(std::time::Duration::from_millis(100));
     }

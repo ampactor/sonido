@@ -5,10 +5,9 @@
 //! Parameter mapping is fully generic — iterating bridge slots and descriptors
 //! instead of hand-mapping individual fields.
 
-use sonido_config::{
-    EffectConfig, Preset, factory_presets,
-    paths::{ensure_user_presets_dir, list_user_presets, user_presets_dir},
-};
+#[cfg(not(target_arch = "wasm32"))]
+use sonido_config::paths::{ensure_user_presets_dir, list_user_presets, user_presets_dir};
+use sonido_config::{EffectConfig, Preset, factory_presets};
 use sonido_gui_core::ParamBridge;
 use std::path::PathBuf;
 
@@ -237,7 +236,8 @@ impl PresetManager {
         }
     }
 
-    /// Load user presets from the user presets directory.
+    /// Load user presets from the user presets directory (native only).
+    #[cfg(not(target_arch = "wasm32"))]
     fn load_user_presets(&mut self) {
         for path in list_user_presets() {
             match Preset::load(&path) {
@@ -250,6 +250,10 @@ impl PresetManager {
             }
         }
     }
+
+    /// No user presets on wasm (no filesystem).
+    #[cfg(target_arch = "wasm32")]
+    fn load_user_presets(&mut self) {}
 
     /// Get all presets.
     pub fn presets(&self) -> &[PresetEntry] {
@@ -288,6 +292,8 @@ impl PresetManager {
     /// Save the current parameters as a new preset.
     ///
     /// The preset is saved to the user presets directory as a TOML file.
+    /// Not available on wasm (no filesystem).
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn save_as(
         &mut self,
         name: &str,
@@ -316,6 +322,8 @@ impl PresetManager {
     /// Overwrite the current user preset with updated parameters.
     ///
     /// Only works for user presets, not factory presets.
+    /// Not available on wasm (no filesystem).
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn save_current(&mut self, bridge: &dyn ParamBridge) -> Result<(), String> {
         let entry = self
             .presets
@@ -351,6 +359,8 @@ impl PresetManager {
     /// Delete a user preset.
     ///
     /// Only works for user presets, not factory presets.
+    /// Not available on wasm (no filesystem).
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn delete(&mut self, index: usize) -> Result<(), String> {
         if index >= self.presets.len() {
             return Err("Invalid preset index".to_string());
@@ -403,7 +413,8 @@ impl PresetManager {
         self.modified = false;
     }
 
-    /// Get the user presets directory path.
+    /// Get the user presets directory path (native only).
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn presets_dir() -> PathBuf {
         user_presets_dir()
     }
