@@ -41,6 +41,7 @@ When you modify a source file, you **must** update every documentation target li
 | `crates/sonido-core/src/delay.rs` | `docs/DSP_FUNDAMENTALS.md` (Delay Lines), `docs/DESIGN_DECISIONS.md` ADR-013 | Interpolation methods, buffer sizing |
 | `crates/sonido-core/src/oversample.rs` | `docs/DSP_FUNDAMENTALS.md` (Oversampling), `docs/DESIGN_DECISIONS.md` ADR-003 | Const generic design, filter coefficients |
 | `crates/sonido-core/src/lfo.rs` | `docs/DSP_FUNDAMENTALS.md` (Modulation Effects) | Waveform shapes, phase accumulator |
+| `crates/sonido-core/src/fast_math.rs` | `docs/DSP_FUNDAMENTALS.md` (Fast Math Approximations), `docs/DESIGN_DECISIONS.md` ADR-020 | Function signatures, error bounds, use cases, cycle counts |
 | `crates/sonido-effects/src/reverb.rs` | `docs/EFFECTS_REFERENCE.md` (Reverb), `docs/DSP_FUNDAMENTALS.md` (Freeverb), `docs/DESIGN_DECISIONS.md` ADR-009 | Comb tunings, stereo spread, parameters |
 | `crates/sonido-effects/src/distortion.rs` | `docs/EFFECTS_REFERENCE.md` (Distortion), `docs/DSP_FUNDAMENTALS.md` (Waveshaping) | Clipping modes, waveshaper transfer functions |
 | `crates/sonido-effects/src/compressor.rs` | `docs/EFFECTS_REFERENCE.md` (Compressor), `docs/DSP_FUNDAMENTALS.md` (Dynamics) | Attack/release, knee, ratio, makeup gain |
@@ -302,10 +303,23 @@ cd crates/sonido-gui && trunk serve                        # Dev server at :8080
 | Gain staging helpers | crates/sonido-core/src/gain.rs |
 | OnePole filter | crates/sonido-core/src/one_pole.rs |
 | Math (mix, dB, waveshape) | crates/sonido-core/src/math.rs |
+| Fast math approximations | crates/sonido-core/src/fast_math.rs |
+| Biquad filter | crates/sonido-core/src/biquad.rs |
+| State variable filter | crates/sonido-core/src/svf.rs |
+| Envelope follower | crates/sonido-core/src/envelope.rs |
+| Oversampling | crates/sonido-core/src/oversample.rs |
 | ModulationSource trait | crates/sonido-core/src/modulation.rs |
 | TempoManager/NoteDivision | crates/sonido-core/src/tempo.rs |
 | Effect Registry | crates/sonido-registry/src/lib.rs |
 | Reverb | crates/sonido-effects/src/reverb.rs |
+| Wah | crates/sonido-effects/src/wah.rs |
+| Filter | crates/sonido-effects/src/filter.rs |
+| Tremolo | crates/sonido-effects/src/tremolo.rs |
+| Preamp | crates/sonido-effects/src/preamp.rs |
+| Gate | crates/sonido-effects/src/gate.rs |
+| Parametric EQ | crates/sonido-effects/src/parametric_eq.rs |
+| Tape Saturation | crates/sonido-effects/src/tape_saturation.rs |
+| MultiVibrato | crates/sonido-effects/src/multi_vibrato.rs |
 | CombFilter/AllpassFilter | crates/sonido-core/src/comb.rs, allpass.rs |
 | DcBlocker | crates/sonido-core/src/dc_blocker.rs |
 | flush_denormal | crates/sonido-core/src/math.rs |
@@ -322,8 +336,16 @@ cd crates/sonido-gui && trunk serve                        # Dev server at :8080
 | GUI theme | crates/sonido-gui-core/src/theme.rs |
 | ChainManager | crates/sonido-gui/src/chain_manager.rs |
 | GUI app | crates/sonido-gui/src/app.rs |
+| Chain view | crates/sonido-gui/src/chain_view.rs |
+| AtomicParamBridge | crates/sonido-gui/src/atomic_param_bridge.rs |
+| Preset manager | crates/sonido-gui/src/preset_manager.rs |
+| Audio bridge | crates/sonido-gui/src/audio_bridge.rs |
+| File player | crates/sonido-gui/src/file_player.rs |
+| Effect UIs | crates/sonido-gui/src/effects_ui/ |
 | CLI commands | crates/sonido-cli/src/main.rs |
 | CLI analyze commands | crates/sonido-cli/src/commands/analyze.rs |
+| Audio engine | crates/sonido-io/src/engine.rs |
+| Audio stream | crates/sonido-io/src/stream.rs |
 | DSP Theory Reference | docs/DSP_FUNDAMENTALS.md |
 | Architecture Decisions | docs/DESIGN_DECISIONS.md |
 | DSP Quality Standard | docs/DSP_QUALITY_STANDARD.md |
