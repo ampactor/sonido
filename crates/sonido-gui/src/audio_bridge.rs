@@ -121,8 +121,8 @@ impl AudioBridge {
         let (command_tx, command_rx) = unbounded();
         let (transport_tx, transport_rx) = unbounded();
         Self {
-            input_gain: Arc::new(AtomicParam::new(1.0, 0.0, 4.0)),
-            master_volume: Arc::new(AtomicParam::new(1.0, 0.0, 4.0)),
+            input_gain: Arc::new(AtomicParam::new(0.0, -20.0, 20.0)),
+            master_volume: Arc::new(AtomicParam::new(0.0, -40.0, 6.0)),
             running: Arc::new(AtomicBool::new(false)),
             metering_tx,
             metering_rx,
@@ -433,20 +433,20 @@ mod tests {
         let bridge = AudioBridge::new();
 
         let input = bridge.input_gain();
-        assert_eq!(input.get(), 1.0);
-        assert_eq!(input.min(), 0.0);
-        assert_eq!(input.max(), 4.0);
+        assert_eq!(input.get(), 0.0);
+        assert_eq!(input.min(), -20.0);
+        assert_eq!(input.max(), 20.0);
 
         let master = bridge.master_volume();
-        assert_eq!(master.get(), 1.0);
-        assert_eq!(master.min(), 0.0);
-        assert_eq!(master.max(), 4.0);
+        assert_eq!(master.get(), 0.0);
+        assert_eq!(master.min(), -40.0);
+        assert_eq!(master.max(), 6.0);
 
         // Verify Arc identity — same underlying allocation
-        input.set(2.0);
-        assert_eq!(bridge.input_gain().get(), 2.0);
+        input.set(6.0);
+        assert_eq!(bridge.input_gain().get(), 6.0);
 
-        master.set(0.5);
-        assert_eq!(bridge.master_volume().get(), 0.5);
+        master.set(-10.0);
+        assert_eq!(bridge.master_volume().get(), -10.0);
     }
 }

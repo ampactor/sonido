@@ -690,7 +690,7 @@ fn build_audio_streams(
 
     let output_config = cpal::StreamConfig {
         channels: output_channels,
-        sample_rate: cpal::SampleRate(sample_rate as u32),
+        sample_rate: sample_rate as u32,
         buffer_size: cpal::BufferSize::Fixed(buffer_size as u32),
     };
 
@@ -712,7 +712,7 @@ fn build_audio_streams(
 
         let input_config = cpal::StreamConfig {
             channels: input_channels,
-            sample_rate: cpal::SampleRate(sample_rate as u32),
+            sample_rate: sample_rate as u32,
             buffer_size: cpal::BufferSize::Fixed(buffer_size as u32),
         };
 
