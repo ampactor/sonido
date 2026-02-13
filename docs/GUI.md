@@ -4,7 +4,7 @@ Sonido GUI is a professional real-time DSP effect processor built on the Sonido 
 
 ## Installation
 
-### From Source
+### Native (from source)
 
 ```bash
 # Build and run
@@ -14,6 +14,49 @@ cargo run -p sonido-gui
 cargo install --path crates/sonido-gui
 sonido-gui
 ```
+
+### Web (wasm)
+
+Requires [Trunk](https://trunkrs.dev/) (`cargo install trunk`).
+
+```bash
+# Compile check (fast gate for cfg issues, no runtime)
+cargo check --target wasm32-unknown-unknown -p sonido-gui
+
+# Dev server with hot reload
+cd crates/sonido-gui
+trunk serve
+# Opens at http://127.0.0.1:8080
+```
+
+On first load, click anywhere to resume the browser's `AudioContext` (autoplay policy).
+Hard-refresh with Ctrl+Shift+R after rebuilds to bypass cache.
+
+### Full Verification Flow
+
+From a clean state (after `cargo clean`):
+
+```bash
+# 1. Native build + tests
+cargo build --workspace
+cargo test --workspace
+
+# 2. Wasm compile check
+cargo check --target wasm32-unknown-unknown -p sonido-gui
+
+# 3. Wasm dev server (from crates/sonido-gui/)
+cd crates/sonido-gui
+trunk serve
+
+# 4. Browser: http://127.0.0.1:8080 (Ctrl+Shift+R to hard-refresh)
+#    - Three columns visible: INPUT | EFFECT CHAIN | OUTPUT
+#    - Click effect in chain → parameter panel renders below
+#    - Resize window → center column flexes, I/O columns stay fixed
+#    - Click anywhere to resume audio (browser autoplay policy)
+```
+
+Step 2 catches missing `#[cfg]` gates and std-only API usage that native compilation misses.
+Step 4 is the actual runtime test — there is no headless wasm test runner.
 
 ## Command-Line Options
 
