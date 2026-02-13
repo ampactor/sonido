@@ -2,7 +2,9 @@
 
 use clap::Args;
 use sonido_analysis::compare::{mse, rmse, snr_db};
+use sonido_analysis::dynamics;
 use sonido_analysis::{Fft, Window, spectral_correlation, spectral_difference};
+use sonido_core::linear_to_db;
 use sonido_io::read_wav;
 use std::path::PathBuf;
 
@@ -69,10 +71,10 @@ pub fn run(args: CompareArgs) -> anyhow::Result<()> {
     let snr_val = snr_db(ref_samples, impl_samples);
 
     // Level analysis
-    let ref_rms = rms(ref_samples);
-    let impl_rms = rms(impl_samples);
-    let ref_peak = peak(ref_samples);
-    let impl_peak = peak(impl_samples);
+    let ref_rms = dynamics::rms(ref_samples);
+    let impl_rms = dynamics::rms(impl_samples);
+    let ref_peak = dynamics::peak(ref_samples);
+    let impl_peak = dynamics::peak(impl_samples);
 
     println!("Time Domain Metrics");
     println!("-------------------");
@@ -153,8 +155,8 @@ pub fn run(args: CompareArgs) -> anyhow::Result<()> {
             let impl_band: f32 = impl_spectrum[start_bin..end_bin].iter().sum::<f32>()
                 / (end_bin - start_bin) as f32;
 
-            let ref_db = mag_to_db(ref_band);
-            let impl_db = mag_to_db(impl_band);
+            let ref_db = linear_to_db(ref_band);
+            let impl_db = linear_to_db(impl_band);
             let diff = impl_db - ref_db;
 
             println!(
@@ -268,32 +270,4 @@ fn compute_average_spectrum(samples: &[f32], fft_size: usize) -> Vec<f32> {
     }
 
     avg_spectrum
-}
-
-fn rms(samples: &[f32]) -> f32 {
-    if samples.is_empty() {
-        return 0.0;
-    }
-    let sum: f32 = samples.iter().map(|s| s * s).sum();
-    (sum / samples.len() as f32).sqrt()
-}
-
-fn peak(samples: &[f32]) -> f32 {
-    samples.iter().map(|s| s.abs()).fold(0.0, f32::max)
-}
-
-fn linear_to_db(linear: f32) -> f32 {
-    if linear <= 0.0 {
-        -120.0
-    } else {
-        20.0 * linear.log10()
-    }
-}
-
-fn mag_to_db(mag: f32) -> f32 {
-    if mag <= 0.0 {
-        -120.0
-    } else {
-        20.0 * mag.log10()
-    }
 }

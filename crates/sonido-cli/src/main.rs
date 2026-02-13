@@ -39,6 +39,9 @@ enum Commands {
     /// Display WAV file information
     Info(commands::info::InfoArgs),
 
+    /// Play an audio file through effects
+    Play(commands::play::PlayArgs),
+
     /// Manage effect presets (list, show, save, delete)
     Presets(commands::presets::PresetsArgs),
 }
@@ -55,6 +58,7 @@ fn main() -> anyhow::Result<()> {
         Commands::Devices(args) => commands::devices::run(args),
         Commands::Effects(args) => commands::effects::run(args),
         Commands::Info(args) => commands::info::run(args),
+        Commands::Play(args) => commands::play::run(args),
         Commands::Presets(args) => commands::presets::run(args),
     }
 }
