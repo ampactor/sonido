@@ -546,4 +546,44 @@ mod tests {
             );
         }
     }
+
+    /// Roundtrip test: create every registered effect, process an impulse followed
+    /// by 1023 silence samples, verify all outputs are finite. Catches registration
+    /// mismatches, uninitialized state, and NaN/inf propagation.
+    #[test]
+    fn all_registered_effects_process_finite_output() {
+        let registry = EffectRegistry::new();
+        for descriptor in registry.all_effects() {
+            let id = descriptor.id;
+            let mut effect = registry
+                .create(id, 48000.0)
+                .unwrap_or_else(|| panic!("Failed to create {id}"));
+
+            // Impulse
+            let out = effect.process(1.0);
+            assert!(out.is_finite(), "{id}: non-finite output on impulse");
+
+            // Silence tail — exposes feedback blowup and denormal issues
+            for i in 0..1023 {
+                let out = effect.process(0.0);
+                assert!(
+                    out.is_finite(),
+                    "{id}: non-finite output on silence sample {i}"
+                );
+            }
+
+            // Also verify stereo path
+            let (l, r) = effect.process_stereo(1.0, 1.0);
+            assert!(l.is_finite(), "{id}: non-finite left on stereo impulse");
+            assert!(r.is_finite(), "{id}: non-finite right on stereo impulse");
+
+            for i in 0..1023 {
+                let (l, r) = effect.process_stereo(0.0, 0.0);
+                assert!(
+                    l.is_finite() && r.is_finite(),
+                    "{id}: non-finite stereo output on silence sample {i}"
+                );
+            }
+        }
+    }
 }

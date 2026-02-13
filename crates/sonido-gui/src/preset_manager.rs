@@ -426,7 +426,7 @@ mod tests {
         (0..bridge.param_count(slot)).find(|&i| {
             bridge
                 .param_descriptor(slot, i)
-                .map_or(false, |d| d.name == name)
+                .is_some_and(|d| d.name == name)
         })
     }
 

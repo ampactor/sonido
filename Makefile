@@ -1,4 +1,5 @@
-.PHONY: build test bench clean check demo walkthrough verify doc dev-install install
+.PHONY: build test bench clean check fmt doc demo walkthrough verify-demos
+.PHONY: quick-check verify test-nostd dev-install install ci
 
 # Build
 build:
@@ -38,8 +39,33 @@ walkthrough:
 	./scripts/walkthrough.sh
 
 # Verify existing demos work
-verify:
+verify-demos:
 	./scripts/walkthrough.sh --verify
+
+# Fast daily check (~15s) — format + lint + key crate tests
+quick-check:
+	cargo fmt --check
+	cargo clippy --workspace --all-targets -- -D warnings
+	cargo test -p sonido-core -p sonido-effects -p sonido-registry -p sonido-gui --lib
+
+# Full pre-commit verification (~90s)
+verify:
+	cargo fmt --check
+	cargo clippy --workspace --all-targets -- -D warnings
+	cargo test --workspace
+	cargo test --no-default-features -p sonido-core -p sonido-effects \
+		-p sonido-synth -p sonido-registry -p sonido-platform
+	cargo test --test regression -p sonido-effects
+	cargo test --test extreme_params -p sonido-effects
+	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+
+# Test no_std compatibility (all no_std crates)
+test-nostd:
+	cargo test --no-default-features -p sonido-core
+	cargo test --no-default-features -p sonido-effects
+	cargo test --no-default-features -p sonido-synth
+	cargo test --no-default-features -p sonido-registry
+	cargo test --no-default-features -p sonido-platform
 
 # Install CLI via debug build symlink (fast iteration)
 dev-install:
@@ -52,11 +78,6 @@ dev-install:
 # Install CLI globally
 install:
 	cargo install --path crates/sonido-cli
-
-# Test no_std compatibility
-test-nostd:
-	cargo test --no-default-features -p sonido-core
-	cargo test --no-default-features -p sonido-effects
 
 # Full CI check
 ci: check test test-nostd doc
