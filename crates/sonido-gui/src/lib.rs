@@ -4,6 +4,7 @@
 //! designed for musicians and audio engineers.
 
 pub mod app;
+pub mod atomic_param_bridge;
 pub mod audio_bridge;
 pub mod chain_manager;
 pub mod chain_view;
@@ -13,7 +14,7 @@ pub mod theme;
 pub mod widgets;
 
 pub use app::SonidoApp;
-pub use audio_bridge::{AtomicParam, SharedParams};
+pub use audio_bridge::AtomicParam;
 pub use preset_manager::{PresetEntry, PresetManager, PresetSource};
 pub use sonido_config::Preset;
 pub use theme::Theme;

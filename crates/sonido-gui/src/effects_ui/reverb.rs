@@ -1,12 +1,10 @@
 //! Reverb effect UI panel.
 
-use crate::audio_bridge::SharedParams;
 use crate::widgets::{BypassToggle, Knob};
 use egui::Ui;
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use sonido_gui_core::ParamBridge;
 
-/// Reverb types matching sonido_effects::ReverbType.
+/// Reverb types matching `sonido_effects::ReverbType`.
 const REVERB_TYPES: &[&str] = &["Room", "Hall"];
 
 /// UI panel for the reverb effect.
@@ -19,26 +17,29 @@ impl ReverbPanel {
     }
 
     /// Render the reverb effect controls.
-    pub fn ui(&mut self, ui: &mut Ui, params: &Arc<SharedParams>) {
+    ///
+    /// Param indices: 0 = room_size (%), 1 = decay (%), 2 = damping (%),
+    /// 3 = predelay (ms), 4 = mix (%), 5 = stereo_width (%), 6 = type (enum).
+    pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: usize) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
-                let mut active = !params.bypass.reverb.load(Ordering::Relaxed);
+                let mut active = !bridge.is_bypassed(slot);
                 if ui.add(BypassToggle::new(&mut active, "Active")).changed() {
-                    params.bypass.reverb.store(!active, Ordering::Relaxed);
+                    bridge.set_bypassed(slot, !active);
                 }
 
                 ui.add_space(20.0);
 
-                // Reverb type selector
+                // Reverb type selector (param 6)
                 ui.label("Type:");
-                let current = params.reverb_type.load(Ordering::Relaxed) as usize;
+                let current = bridge.get(slot, 6) as u32 as usize;
                 let selected = REVERB_TYPES.get(current).unwrap_or(&"Room");
                 egui::ComboBox::from_id_salt("reverb_type")
                     .selected_text(*selected)
                     .show_ui(ui, |ui| {
                         for (i, name) in REVERB_TYPES.iter().enumerate() {
                             if ui.selectable_label(i == current, *name).clicked() {
-                                params.reverb_type.store(i as u32, Ordering::Relaxed);
+                                bridge.set(slot, 6, i as f32);
                             }
                         }
                     });
@@ -48,44 +49,56 @@ impl ReverbPanel {
 
             // First row: Room Size, Decay, Damping
             ui.horizontal(|ui| {
-                let mut room_size = params.reverb_room_size.get();
+                let desc = bridge.param_descriptor(slot, 0);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((0.0, 100.0, 50.0), |d| (d.min, d.max, d.default));
+                let mut room_size = bridge.get(slot, 0);
                 if ui
                     .add(
-                        Knob::new(&mut room_size, 0.0, 1.0, "SIZE")
-                            .default(0.5)
-                            .format_percent(),
+                        Knob::new(&mut room_size, min, max, "SIZE")
+                            .default(default)
+                            .format(|v| format!("{v:.0}%")),
                     )
                     .changed()
                 {
-                    params.reverb_room_size.set(room_size);
+                    bridge.set(slot, 0, room_size);
                 }
 
                 ui.add_space(16.0);
 
-                let mut decay = params.reverb_decay.get();
+                let desc = bridge.param_descriptor(slot, 1);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((0.0, 100.0, 50.0), |d| (d.min, d.max, d.default));
+                let mut decay = bridge.get(slot, 1);
                 if ui
                     .add(
-                        Knob::new(&mut decay, 0.0, 1.0, "DECAY")
-                            .default(0.5)
-                            .format_percent(),
+                        Knob::new(&mut decay, min, max, "DECAY")
+                            .default(default)
+                            .format(|v| format!("{v:.0}%")),
                     )
                     .changed()
                 {
-                    params.reverb_decay.set(decay);
+                    bridge.set(slot, 1, decay);
                 }
 
                 ui.add_space(16.0);
 
-                let mut damping = params.reverb_damping.get();
+                let desc = bridge.param_descriptor(slot, 2);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((0.0, 100.0, 50.0), |d| (d.min, d.max, d.default));
+                let mut damping = bridge.get(slot, 2);
                 if ui
                     .add(
-                        Knob::new(&mut damping, 0.0, 1.0, "DAMP")
-                            .default(0.5)
-                            .format_percent(),
+                        Knob::new(&mut damping, min, max, "DAMP")
+                            .default(default)
+                            .format(|v| format!("{v:.0}%")),
                     )
                     .changed()
                 {
-                    params.reverb_damping.set(damping);
+                    bridge.set(slot, 2, damping);
                 }
             });
 
@@ -93,30 +106,38 @@ impl ReverbPanel {
 
             // Second row: Predelay, Mix
             ui.horizontal(|ui| {
-                let mut predelay = params.reverb_predelay.get();
+                let desc = bridge.param_descriptor(slot, 3);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((0.0, 100.0, 10.0), |d| (d.min, d.max, d.default));
+                let mut predelay = bridge.get(slot, 3);
                 if ui
                     .add(
-                        Knob::new(&mut predelay, 0.0, 100.0, "PREDLY")
-                            .default(10.0)
+                        Knob::new(&mut predelay, min, max, "PREDLY")
+                            .default(default)
                             .format_ms(),
                     )
                     .changed()
                 {
-                    params.reverb_predelay.set(predelay);
+                    bridge.set(slot, 3, predelay);
                 }
 
                 ui.add_space(16.0);
 
-                let mut mix = params.reverb_mix.get();
+                let desc = bridge.param_descriptor(slot, 4);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((0.0, 100.0, 30.0), |d| (d.min, d.max, d.default));
+                let mut mix = bridge.get(slot, 4);
                 if ui
                     .add(
-                        Knob::new(&mut mix, 0.0, 1.0, "MIX")
-                            .default(0.3)
-                            .format_percent(),
+                        Knob::new(&mut mix, min, max, "MIX")
+                            .default(default)
+                            .format(|v| format!("{v:.0}%")),
                     )
                     .changed()
                 {
-                    params.reverb_mix.set(mix);
+                    bridge.set(slot, 4, mix);
                 }
             });
         });

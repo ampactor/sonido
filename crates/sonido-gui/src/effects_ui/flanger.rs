@@ -1,10 +1,8 @@
 //! Flanger effect UI panel.
 
-use crate::audio_bridge::SharedParams;
 use crate::widgets::{BypassToggle, Knob};
 use egui::Ui;
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use sonido_gui_core::ParamBridge;
 
 /// UI panel for the flanger effect.
 pub struct FlangerPanel;
@@ -16,74 +14,92 @@ impl FlangerPanel {
     }
 
     /// Render the flanger effect controls.
-    pub fn ui(&mut self, ui: &mut Ui, params: &Arc<SharedParams>) {
+    ///
+    /// Param indices: 0 = rate (Hz), 1 = depth (%), 2 = feedback (%), 3 = mix (%).
+    pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: usize) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
-                let mut active = !params.bypass.flanger.load(Ordering::Relaxed);
+                let mut active = !bridge.is_bypassed(slot);
                 if ui.add(BypassToggle::new(&mut active, "Active")).changed() {
-                    params.bypass.flanger.store(!active, Ordering::Relaxed);
+                    bridge.set_bypassed(slot, !active);
                 }
             });
 
             ui.add_space(12.0);
 
             ui.horizontal(|ui| {
-                // Rate knob (0.05-5 Hz)
-                let mut rate = params.flanger_rate.get();
+                // Rate (param 0)
+                let desc = bridge.param_descriptor(slot, 0);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((0.05, 5.0, 0.5), |d| (d.min, d.max, d.default));
+                let mut rate = bridge.get(slot, 0);
                 if ui
                     .add(
-                        Knob::new(&mut rate, 0.05, 5.0, "RATE")
-                            .default(0.5)
+                        Knob::new(&mut rate, min, max, "RATE")
+                            .default(default)
                             .format_hz(),
                     )
                     .changed()
                 {
-                    params.flanger_rate.set(rate);
+                    bridge.set(slot, 0, rate);
                 }
 
                 ui.add_space(16.0);
 
-                // Depth knob (0-1)
-                let mut depth = params.flanger_depth.get();
+                // Depth (param 1) — percent (0–100)
+                let desc = bridge.param_descriptor(slot, 1);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((0.0, 100.0, 50.0), |d| (d.min, d.max, d.default));
+                let mut depth = bridge.get(slot, 1);
                 if ui
                     .add(
-                        Knob::new(&mut depth, 0.0, 1.0, "DEPTH")
-                            .default(0.5)
-                            .format_percent(),
+                        Knob::new(&mut depth, min, max, "DEPTH")
+                            .default(default)
+                            .format(|v| format!("{v:.0}%")),
                     )
                     .changed()
                 {
-                    params.flanger_depth.set(depth);
+                    bridge.set(slot, 1, depth);
                 }
 
                 ui.add_space(16.0);
 
-                // Feedback knob (0-0.95)
-                let mut feedback = params.flanger_feedback.get();
+                // Feedback (param 2) — percent (0–95)
+                let desc = bridge.param_descriptor(slot, 2);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((0.0, 95.0, 50.0), |d| (d.min, d.max, d.default));
+                let mut feedback = bridge.get(slot, 2);
                 if ui
                     .add(
-                        Knob::new(&mut feedback, 0.0, 0.95, "FDBK")
-                            .default(0.5)
-                            .format_percent(),
+                        Knob::new(&mut feedback, min, max, "FDBK")
+                            .default(default)
+                            .format(|v| format!("{v:.0}%")),
                     )
                     .changed()
                 {
-                    params.flanger_feedback.set(feedback);
+                    bridge.set(slot, 2, feedback);
                 }
 
                 ui.add_space(16.0);
 
-                // Mix knob (0-1)
-                let mut mix = params.flanger_mix.get();
+                // Mix (param 3) — percent (0–100)
+                let desc = bridge.param_descriptor(slot, 3);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((0.0, 100.0, 50.0), |d| (d.min, d.max, d.default));
+                let mut mix = bridge.get(slot, 3);
                 if ui
                     .add(
-                        Knob::new(&mut mix, 0.0, 1.0, "MIX")
-                            .default(0.5)
-                            .format_percent(),
+                        Knob::new(&mut mix, min, max, "MIX")
+                            .default(default)
+                            .format(|v| format!("{v:.0}%")),
                     )
                     .changed()
                 {
-                    params.flanger_mix.set(mix);
+                    bridge.set(slot, 3, mix);
                 }
             });
         });

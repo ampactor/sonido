@@ -1,10 +1,8 @@
 //! Compressor effect UI panel.
 
-use crate::audio_bridge::SharedParams;
 use crate::widgets::{BypassToggle, Knob};
 use egui::Ui;
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use sonido_gui_core::ParamBridge;
 
 /// UI panel for the compressor effect.
 pub struct CompressorPanel;
@@ -16,57 +14,72 @@ impl CompressorPanel {
     }
 
     /// Render the compressor effect controls.
-    pub fn ui(&mut self, ui: &mut Ui, params: &Arc<SharedParams>) {
+    ///
+    /// Param indices: 0 = threshold (dB), 1 = ratio, 2 = attack (ms),
+    /// 3 = release (ms), 4 = makeup (dB).
+    pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: usize) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
-                let mut active = !params.bypass.compressor.load(Ordering::Relaxed);
+                let mut active = !bridge.is_bypassed(slot);
                 if ui.add(BypassToggle::new(&mut active, "Active")).changed() {
-                    params.bypass.compressor.store(!active, Ordering::Relaxed);
+                    bridge.set_bypassed(slot, !active);
                 }
             });
 
             ui.add_space(12.0);
 
-            // First row: Threshold, Ratio
+            // First row: Threshold, Ratio, Makeup
             ui.horizontal(|ui| {
-                let mut threshold = params.comp_threshold.get();
+                let desc = bridge.param_descriptor(slot, 0);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((-40.0, 0.0, -20.0), |d| (d.min, d.max, d.default));
+                let mut threshold = bridge.get(slot, 0);
                 if ui
                     .add(
-                        Knob::new(&mut threshold, -40.0, 0.0, "THRESH")
-                            .default(-20.0)
+                        Knob::new(&mut threshold, min, max, "THRESH")
+                            .default(default)
                             .format_db(),
                     )
                     .changed()
                 {
-                    params.comp_threshold.set(threshold);
+                    bridge.set(slot, 0, threshold);
                 }
 
                 ui.add_space(16.0);
 
-                let mut ratio = params.comp_ratio.get();
+                let desc = bridge.param_descriptor(slot, 1);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((1.0, 20.0, 4.0), |d| (d.min, d.max, d.default));
+                let mut ratio = bridge.get(slot, 1);
                 if ui
                     .add(
-                        Knob::new(&mut ratio, 1.0, 20.0, "RATIO")
-                            .default(4.0)
+                        Knob::new(&mut ratio, min, max, "RATIO")
+                            .default(default)
                             .format_ratio(),
                     )
                     .changed()
                 {
-                    params.comp_ratio.set(ratio);
+                    bridge.set(slot, 1, ratio);
                 }
 
                 ui.add_space(16.0);
 
-                let mut makeup = params.comp_makeup.get();
+                let desc = bridge.param_descriptor(slot, 4);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((0.0, 20.0, 0.0), |d| (d.min, d.max, d.default));
+                let mut makeup = bridge.get(slot, 4);
                 if ui
                     .add(
-                        Knob::new(&mut makeup, 0.0, 20.0, "MAKEUP")
-                            .default(0.0)
+                        Knob::new(&mut makeup, min, max, "MAKEUP")
+                            .default(default)
                             .format_db(),
                     )
                     .changed()
                 {
-                    params.comp_makeup.set(makeup);
+                    bridge.set(slot, 4, makeup);
                 }
             });
 
@@ -74,30 +87,38 @@ impl CompressorPanel {
 
             // Second row: Attack, Release
             ui.horizontal(|ui| {
-                let mut attack = params.comp_attack.get();
+                let desc = bridge.param_descriptor(slot, 2);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((0.1, 100.0, 10.0), |d| (d.min, d.max, d.default));
+                let mut attack = bridge.get(slot, 2);
                 if ui
                     .add(
-                        Knob::new(&mut attack, 0.1, 100.0, "ATTACK")
-                            .default(10.0)
+                        Knob::new(&mut attack, min, max, "ATTACK")
+                            .default(default)
                             .format_ms(),
                     )
                     .changed()
                 {
-                    params.comp_attack.set(attack);
+                    bridge.set(slot, 2, attack);
                 }
 
                 ui.add_space(16.0);
 
-                let mut release = params.comp_release.get();
+                let desc = bridge.param_descriptor(slot, 3);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((10.0, 1000.0, 100.0), |d| (d.min, d.max, d.default));
+                let mut release = bridge.get(slot, 3);
                 if ui
                     .add(
-                        Knob::new(&mut release, 10.0, 1000.0, "RELEASE")
-                            .default(100.0)
+                        Knob::new(&mut release, min, max, "RELEASE")
+                            .default(default)
                             .format_ms(),
                     )
                     .changed()
                 {
-                    params.comp_release.set(release);
+                    bridge.set(slot, 3, release);
                 }
             });
         });

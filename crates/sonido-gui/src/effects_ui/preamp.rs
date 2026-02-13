@@ -1,10 +1,8 @@
 //! Preamp effect UI panel.
 
-use crate::audio_bridge::SharedParams;
 use crate::widgets::{BypassToggle, Knob};
 use egui::Ui;
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use sonido_gui_core::ParamBridge;
 
 /// UI panel for the clean preamp effect.
 pub struct PreampPanel;
@@ -16,28 +14,34 @@ impl PreampPanel {
     }
 
     /// Render the preamp controls.
-    pub fn ui(&mut self, ui: &mut Ui, params: &Arc<SharedParams>) {
+    ///
+    /// Param indices: 0 = gain (dB).
+    pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: usize) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
-                let mut active = !params.bypass.preamp.load(Ordering::Relaxed);
+                let mut active = !bridge.is_bypassed(slot);
                 if ui.add(BypassToggle::new(&mut active, "Active")).changed() {
-                    params.bypass.preamp.store(!active, Ordering::Relaxed);
+                    bridge.set_bypassed(slot, !active);
                 }
             });
 
             ui.add_space(12.0);
 
             ui.horizontal(|ui| {
-                let mut gain = params.preamp_gain.get();
+                let desc = bridge.param_descriptor(slot, 0);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((-20.0, 20.0, 0.0), |d| (d.min, d.max, d.default));
+                let mut gain = bridge.get(slot, 0);
                 if ui
                     .add(
-                        Knob::new(&mut gain, -20.0, 20.0, "GAIN")
-                            .default(0.0)
+                        Knob::new(&mut gain, min, max, "GAIN")
+                            .default(default)
                             .format_db(),
                     )
                     .changed()
                 {
-                    params.preamp_gain.set(gain);
+                    bridge.set(slot, 0, gain);
                 }
             });
         });

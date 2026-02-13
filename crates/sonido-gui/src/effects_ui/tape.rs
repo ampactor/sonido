@@ -1,10 +1,8 @@
 //! Tape saturation effect UI panel.
 
-use crate::audio_bridge::SharedParams;
 use crate::widgets::{BypassToggle, Knob};
 use egui::Ui;
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use sonido_gui_core::ParamBridge;
 
 /// UI panel for the tape saturation effect.
 pub struct TapePanel;
@@ -16,44 +14,54 @@ impl TapePanel {
     }
 
     /// Render the tape saturation controls.
-    pub fn ui(&mut self, ui: &mut Ui, params: &Arc<SharedParams>) {
+    ///
+    /// Param indices: 0 = drive (dB), 1 = saturation (%).
+    pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: usize) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
-                let mut active = !params.bypass.tape.load(Ordering::Relaxed);
+                let mut active = !bridge.is_bypassed(slot);
                 if ui.add(BypassToggle::new(&mut active, "Active")).changed() {
-                    params.bypass.tape.store(!active, Ordering::Relaxed);
+                    bridge.set_bypassed(slot, !active);
                 }
             });
 
             ui.add_space(12.0);
 
             ui.horizontal(|ui| {
-                // Drive knob
-                let mut drive = params.tape_drive.get();
+                // Drive (param 0)
+                let desc = bridge.param_descriptor(slot, 0);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((0.0, 24.0, 6.0), |d| (d.min, d.max, d.default));
+                let mut drive = bridge.get(slot, 0);
                 if ui
                     .add(
-                        Knob::new(&mut drive, 0.0, 24.0, "DRIVE")
-                            .default(6.0)
+                        Knob::new(&mut drive, min, max, "DRIVE")
+                            .default(default)
                             .format_db(),
                     )
                     .changed()
                 {
-                    params.tape_drive.set(drive);
+                    bridge.set(slot, 0, drive);
                 }
 
                 ui.add_space(16.0);
 
-                // Saturation knob
-                let mut saturation = params.tape_saturation.get();
+                // Saturation (param 1) — percent (0–100)
+                let desc = bridge.param_descriptor(slot, 1);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((0.0, 100.0, 50.0), |d| (d.min, d.max, d.default));
+                let mut saturation = bridge.get(slot, 1);
                 if ui
                     .add(
-                        Knob::new(&mut saturation, 0.0, 1.0, "SAT")
-                            .default(0.5)
-                            .format_percent(),
+                        Knob::new(&mut saturation, min, max, "SAT")
+                            .default(default)
+                            .format(|v| format!("{v:.0}%")),
                     )
                     .changed()
                 {
-                    params.tape_saturation.set(saturation);
+                    bridge.set(slot, 1, saturation);
                 }
             });
         });

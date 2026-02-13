@@ -1,10 +1,8 @@
 //! Wah effect UI panel.
 
-use crate::audio_bridge::SharedParams;
 use crate::widgets::{BypassToggle, Knob};
 use egui::Ui;
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use sonido_gui_core::ParamBridge;
 
 /// Wah mode names.
 const WAH_MODES: &[&str] = &["Auto", "Manual"];
@@ -19,26 +17,28 @@ impl WahPanel {
     }
 
     /// Render the wah effect controls.
-    pub fn ui(&mut self, ui: &mut Ui, params: &Arc<SharedParams>) {
+    ///
+    /// Param indices: 0 = frequency (Hz), 1 = resonance, 2 = sensitivity (%), 3 = mode (enum).
+    pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: usize) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
-                let mut active = !params.bypass.wah.load(Ordering::Relaxed);
+                let mut active = !bridge.is_bypassed(slot);
                 if ui.add(BypassToggle::new(&mut active, "Active")).changed() {
-                    params.bypass.wah.store(!active, Ordering::Relaxed);
+                    bridge.set_bypassed(slot, !active);
                 }
 
                 ui.add_space(20.0);
 
-                // Mode selector
+                // Mode selector (param 3)
                 ui.label("Mode:");
-                let current = params.wah_mode.load(Ordering::Relaxed) as usize;
+                let current = bridge.get(slot, 3) as u32 as usize;
                 let selected = WAH_MODES.get(current).unwrap_or(&"Auto");
                 egui::ComboBox::from_id_salt("wah_mode")
                     .selected_text(*selected)
                     .show_ui(ui, |ui| {
                         for (i, name) in WAH_MODES.iter().enumerate() {
                             if ui.selectable_label(i == current, *name).clicked() {
-                                params.wah_mode.store(i as u32, Ordering::Relaxed);
+                                bridge.set(slot, 3, i as f32);
                             }
                         }
                     });
@@ -47,47 +47,59 @@ impl WahPanel {
             ui.add_space(12.0);
 
             ui.horizontal(|ui| {
-                // Frequency knob (200-2000 Hz)
-                let mut freq = params.wah_frequency.get();
+                // Frequency (param 0)
+                let desc = bridge.param_descriptor(slot, 0);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((200.0, 2000.0, 800.0), |d| (d.min, d.max, d.default));
+                let mut freq = bridge.get(slot, 0);
                 if ui
                     .add(
-                        Knob::new(&mut freq, 200.0, 2000.0, "FREQ")
-                            .default(800.0)
+                        Knob::new(&mut freq, min, max, "FREQ")
+                            .default(default)
                             .format_hz(),
                     )
                     .changed()
                 {
-                    params.wah_frequency.set(freq);
+                    bridge.set(slot, 0, freq);
                 }
 
                 ui.add_space(16.0);
 
-                // Resonance knob (1-10)
-                let mut resonance = params.wah_resonance.get();
+                // Resonance (param 1)
+                let desc = bridge.param_descriptor(slot, 1);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((1.0, 10.0, 5.0), |d| (d.min, d.max, d.default));
+                let mut resonance = bridge.get(slot, 1);
                 if ui
                     .add(
-                        Knob::new(&mut resonance, 1.0, 10.0, "RESO")
-                            .default(5.0)
-                            .format(|v| format!("{:.1}", v)),
+                        Knob::new(&mut resonance, min, max, "RESO")
+                            .default(default)
+                            .format(|v| format!("{v:.1}")),
                     )
                     .changed()
                 {
-                    params.wah_resonance.set(resonance);
+                    bridge.set(slot, 1, resonance);
                 }
 
                 ui.add_space(16.0);
 
-                // Sensitivity knob (0-1)
-                let mut sensitivity = params.wah_sensitivity.get();
+                // Sensitivity (param 2) — percent in ParameterInfo units (0–100)
+                let desc = bridge.param_descriptor(slot, 2);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((0.0, 100.0, 50.0), |d| (d.min, d.max, d.default));
+                let mut sensitivity = bridge.get(slot, 2);
                 if ui
                     .add(
-                        Knob::new(&mut sensitivity, 0.0, 1.0, "SENS")
-                            .default(0.5)
-                            .format_percent(),
+                        Knob::new(&mut sensitivity, min, max, "SENS")
+                            .default(default)
+                            .format(|v| format!("{v:.0}%")),
                     )
                     .changed()
                 {
-                    params.wah_sensitivity.set(sensitivity);
+                    bridge.set(slot, 2, sensitivity);
                 }
             });
         });

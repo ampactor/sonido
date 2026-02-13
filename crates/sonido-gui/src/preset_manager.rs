@@ -1,449 +1,133 @@
 //! Preset management for saving and loading effect configurations.
 //!
-//! This module uses sonido_config::Preset for storage (TOML format) while
-//! keeping SharedParams for real-time atomic parameter access in the audio thread.
+//! This module uses sonido_config::Preset for storage (TOML format) with
+//! [`ParamBridge`] for real-time atomic parameter access in the audio thread.
+//! Parameter mapping is fully generic — iterating bridge slots and descriptors
+//! instead of hand-mapping individual fields.
 
-use crate::audio_bridge::SharedParams;
 use sonido_config::{
     EffectConfig, Preset, factory_presets,
     paths::{ensure_user_presets_dir, list_user_presets, user_presets_dir},
 };
+use sonido_gui_core::ParamBridge;
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
 
-/// Convert SharedParams to a sonido_config::Preset.
+/// Convert bridge parameters to a sonido_config::Preset.
 ///
-/// Creates a preset that captures the current state of all parameters.
-pub fn params_to_preset(
-    name: &str,
-    description: Option<&str>,
-    params: &Arc<SharedParams>,
-) -> Preset {
+/// Creates a preset that captures the current state of all parameters
+/// by iterating over all slots and their descriptors in the bridge.
+/// Parameter names are normalized to snake_case for the preset file format.
+pub fn params_to_preset(name: &str, description: Option<&str>, bridge: &dyn ParamBridge) -> Preset {
     let mut preset = Preset::new(name);
 
     if let Some(desc) = description {
         preset = preset.with_description(desc);
     }
 
-    // Build effect chain from current parameters
-    // The GUI has a fixed set of effects, so we capture them all
+    for slot in 0..bridge.slot_count() {
+        let effect_id = bridge.effect_id(slot);
+        let mut config = EffectConfig::new(effect_id).with_bypass(bridge.is_bypassed(slot));
 
-    // Preamp
-    preset = preset.with_effect(
-        EffectConfig::new("preamp")
-            .with_bypass(params.bypass.preamp.load(Ordering::Relaxed))
-            .with_param("gain", format!("{}", params.preamp_gain.get())),
-    );
+        for p in 0..bridge.param_count(slot) {
+            if let Some(desc) = bridge.param_descriptor(slot, p) {
+                config =
+                    config.with_param(to_snake_case(desc.name), format!("{}", bridge.get(slot, p)));
+            }
+        }
 
-    // Distortion
-    preset = preset.with_effect(
-        EffectConfig::new("distortion")
-            .with_bypass(params.bypass.distortion.load(Ordering::Relaxed))
-            .with_param("drive", format!("{}", params.dist_drive.get()))
-            .with_param("tone", format!("{}", params.dist_tone.get()))
-            .with_param("level", format!("{}", params.dist_level.get()))
-            .with_param(
-                "waveshape",
-                format!("{}", params.dist_waveshape.load(Ordering::Relaxed)),
-            ),
-    );
-
-    // Compressor
-    preset = preset.with_effect(
-        EffectConfig::new("compressor")
-            .with_bypass(params.bypass.compressor.load(Ordering::Relaxed))
-            .with_param("threshold", format!("{}", params.comp_threshold.get()))
-            .with_param("ratio", format!("{}", params.comp_ratio.get()))
-            .with_param("attack", format!("{}", params.comp_attack.get()))
-            .with_param("release", format!("{}", params.comp_release.get()))
-            .with_param("makeup", format!("{}", params.comp_makeup.get())),
-    );
-
-    // Gate
-    preset = preset.with_effect(
-        EffectConfig::new("gate")
-            .with_bypass(params.bypass.gate.load(Ordering::Relaxed))
-            .with_param("threshold", format!("{}", params.gate_threshold.get()))
-            .with_param("attack", format!("{}", params.gate_attack.get()))
-            .with_param("release", format!("{}", params.gate_release.get()))
-            .with_param("hold", format!("{}", params.gate_hold.get())),
-    );
-
-    // Parametric EQ
-    preset = preset.with_effect(
-        EffectConfig::new("eq")
-            .with_bypass(params.bypass.eq.load(Ordering::Relaxed))
-            .with_param("low_freq", format!("{}", params.eq_low_freq.get()))
-            .with_param("low_gain", format!("{}", params.eq_low_gain.get()))
-            .with_param("low_q", format!("{}", params.eq_low_q.get()))
-            .with_param("mid_freq", format!("{}", params.eq_mid_freq.get()))
-            .with_param("mid_gain", format!("{}", params.eq_mid_gain.get()))
-            .with_param("mid_q", format!("{}", params.eq_mid_q.get()))
-            .with_param("high_freq", format!("{}", params.eq_high_freq.get()))
-            .with_param("high_gain", format!("{}", params.eq_high_gain.get()))
-            .with_param("high_q", format!("{}", params.eq_high_q.get())),
-    );
-
-    // Wah
-    preset = preset.with_effect(
-        EffectConfig::new("wah")
-            .with_bypass(params.bypass.wah.load(Ordering::Relaxed))
-            .with_param("frequency", format!("{}", params.wah_frequency.get()))
-            .with_param("resonance", format!("{}", params.wah_resonance.get()))
-            .with_param("sensitivity", format!("{}", params.wah_sensitivity.get()))
-            .with_param(
-                "mode",
-                format!("{}", params.wah_mode.load(Ordering::Relaxed)),
-            ),
-    );
-
-    // Chorus
-    preset = preset.with_effect(
-        EffectConfig::new("chorus")
-            .with_bypass(params.bypass.chorus.load(Ordering::Relaxed))
-            .with_param("rate", format!("{}", params.chorus_rate.get()))
-            .with_param("depth", format!("{}", params.chorus_depth.get()))
-            .with_param("mix", format!("{}", params.chorus_mix.get())),
-    );
-
-    // Flanger
-    preset = preset.with_effect(
-        EffectConfig::new("flanger")
-            .with_bypass(params.bypass.flanger.load(Ordering::Relaxed))
-            .with_param("rate", format!("{}", params.flanger_rate.get()))
-            .with_param("depth", format!("{}", params.flanger_depth.get()))
-            .with_param("feedback", format!("{}", params.flanger_feedback.get()))
-            .with_param("mix", format!("{}", params.flanger_mix.get())),
-    );
-
-    // Phaser
-    preset = preset.with_effect(
-        EffectConfig::new("phaser")
-            .with_bypass(params.bypass.phaser.load(Ordering::Relaxed))
-            .with_param("rate", format!("{}", params.phaser_rate.get()))
-            .with_param("depth", format!("{}", params.phaser_depth.get()))
-            .with_param("feedback", format!("{}", params.phaser_feedback.get()))
-            .with_param("mix", format!("{}", params.phaser_mix.get()))
-            .with_param(
-                "stages",
-                format!("{}", params.phaser_stages.load(Ordering::Relaxed)),
-            ),
-    );
-
-    // Tremolo
-    preset = preset.with_effect(
-        EffectConfig::new("tremolo")
-            .with_bypass(params.bypass.tremolo.load(Ordering::Relaxed))
-            .with_param("rate", format!("{}", params.tremolo_rate.get()))
-            .with_param("depth", format!("{}", params.tremolo_depth.get()))
-            .with_param(
-                "waveform",
-                format!("{}", params.tremolo_waveform.load(Ordering::Relaxed)),
-            ),
-    );
-
-    // Delay
-    preset = preset.with_effect(
-        EffectConfig::new("delay")
-            .with_bypass(params.bypass.delay.load(Ordering::Relaxed))
-            .with_param("time", format!("{}", params.delay_time.get()))
-            .with_param("feedback", format!("{}", params.delay_feedback.get()))
-            .with_param("mix", format!("{}", params.delay_mix.get())),
-    );
-
-    // Filter
-    preset = preset.with_effect(
-        EffectConfig::new("filter")
-            .with_bypass(params.bypass.filter.load(Ordering::Relaxed))
-            .with_param("cutoff", format!("{}", params.filter_cutoff.get()))
-            .with_param("resonance", format!("{}", params.filter_resonance.get())),
-    );
-
-    // MultiVibrato
-    preset = preset.with_effect(
-        EffectConfig::new("multivibrato")
-            .with_bypass(params.bypass.multivibrato.load(Ordering::Relaxed))
-            .with_param("intensity", format!("{}", params.vibrato_depth.get())),
-    );
-
-    // Tape Saturation
-    preset = preset.with_effect(
-        EffectConfig::new("tape")
-            .with_bypass(params.bypass.tape.load(Ordering::Relaxed))
-            .with_param("drive", format!("{}", params.tape_drive.get()))
-            .with_param("warmth", format!("{}", params.tape_saturation.get())),
-    );
-
-    // Reverb
-    preset = preset.with_effect(
-        EffectConfig::new("reverb")
-            .with_bypass(params.bypass.reverb.load(Ordering::Relaxed))
-            .with_param("room_size", format!("{}", params.reverb_room_size.get()))
-            .with_param("decay", format!("{}", params.reverb_decay.get()))
-            .with_param("damping", format!("{}", params.reverb_damping.get()))
-            .with_param("predelay", format!("{}", params.reverb_predelay.get()))
-            .with_param("mix", format!("{}", params.reverb_mix.get())),
-    );
+        preset = preset.with_effect(config);
+    }
 
     preset
 }
 
-/// Apply a sonido_config::Preset to SharedParams.
+/// Apply a sonido_config::Preset to a ParamBridge.
 ///
-/// Updates all atomic parameters from the preset configuration.
-pub fn preset_to_params(preset: &Preset, params: &Arc<SharedParams>) {
-    for effect in &preset.effects {
-        match effect.effect_type.as_str() {
-            "preamp" => {
-                params
-                    .bypass
-                    .preamp
-                    .store(effect.bypassed, Ordering::Relaxed);
-                if let Some(v) = effect.parse_param("gain") {
-                    params.preamp_gain.set(v);
+/// Matches effects by type and parameters by name. For each slot in the
+/// bridge, finds the corresponding effect config in the preset and applies
+/// its values. Missing effects or parameters are silently skipped.
+///
+/// Name matching is flexible: "Room Size", "room_size", and "roomsize" all
+/// match the same parameter. Legacy aliases (intensity→Depth, warmth→Saturation)
+/// are tried when a direct match fails.
+pub fn preset_to_params(preset: &Preset, bridge: &dyn ParamBridge) {
+    for slot in 0..bridge.slot_count() {
+        let effect_id = bridge.effect_id(slot);
+        let config = preset
+            .effects
+            .iter()
+            .find(|e| effect_type_matches(&e.effect_type, effect_id));
+
+        if let Some(config) = config {
+            bridge.set_bypassed(slot, config.bypassed);
+
+            for p in 0..bridge.param_count(slot) {
+                if let Some(desc) = bridge.param_descriptor(slot, p)
+                    && let Some(v) = find_param_in_config(config, desc.name)
+                {
+                    bridge.set(slot, p, v);
                 }
-            }
-            "distortion" => {
-                params
-                    .bypass
-                    .distortion
-                    .store(effect.bypassed, Ordering::Relaxed);
-                if let Some(v) = effect.parse_param("drive") {
-                    params.dist_drive.set(v);
-                }
-                if let Some(v) = effect.parse_param("tone") {
-                    params.dist_tone.set(v);
-                }
-                if let Some(v) = effect.parse_param("level") {
-                    params.dist_level.set(v);
-                }
-                if let Some(v) = effect.parse_param("waveshape") {
-                    params.dist_waveshape.store(v as u32, Ordering::Relaxed);
-                }
-            }
-            "compressor" => {
-                params
-                    .bypass
-                    .compressor
-                    .store(effect.bypassed, Ordering::Relaxed);
-                if let Some(v) = effect.parse_param("threshold") {
-                    params.comp_threshold.set(v);
-                }
-                if let Some(v) = effect.parse_param("ratio") {
-                    params.comp_ratio.set(v);
-                }
-                if let Some(v) = effect.parse_param("attack") {
-                    params.comp_attack.set(v);
-                }
-                if let Some(v) = effect.parse_param("release") {
-                    params.comp_release.set(v);
-                }
-                if let Some(v) = effect.parse_param("makeup") {
-                    params.comp_makeup.set(v);
-                }
-            }
-            "gate" => {
-                params.bypass.gate.store(effect.bypassed, Ordering::Relaxed);
-                if let Some(v) = effect.parse_param("threshold") {
-                    params.gate_threshold.set(v);
-                }
-                if let Some(v) = effect.parse_param("attack") {
-                    params.gate_attack.set(v);
-                }
-                if let Some(v) = effect.parse_param("release") {
-                    params.gate_release.set(v);
-                }
-                if let Some(v) = effect.parse_param("hold") {
-                    params.gate_hold.set(v);
-                }
-            }
-            "eq" | "parametriceq" => {
-                params.bypass.eq.store(effect.bypassed, Ordering::Relaxed);
-                if let Some(v) = effect.parse_param("low_freq") {
-                    params.eq_low_freq.set(v);
-                }
-                if let Some(v) = effect.parse_param("low_gain") {
-                    params.eq_low_gain.set(v);
-                }
-                if let Some(v) = effect.parse_param("low_q") {
-                    params.eq_low_q.set(v);
-                }
-                if let Some(v) = effect.parse_param("mid_freq") {
-                    params.eq_mid_freq.set(v);
-                }
-                if let Some(v) = effect.parse_param("mid_gain") {
-                    params.eq_mid_gain.set(v);
-                }
-                if let Some(v) = effect.parse_param("mid_q") {
-                    params.eq_mid_q.set(v);
-                }
-                if let Some(v) = effect.parse_param("high_freq") {
-                    params.eq_high_freq.set(v);
-                }
-                if let Some(v) = effect.parse_param("high_gain") {
-                    params.eq_high_gain.set(v);
-                }
-                if let Some(v) = effect.parse_param("high_q") {
-                    params.eq_high_q.set(v);
-                }
-            }
-            "wah" => {
-                params.bypass.wah.store(effect.bypassed, Ordering::Relaxed);
-                if let Some(v) = effect.parse_param("frequency") {
-                    params.wah_frequency.set(v);
-                }
-                if let Some(v) = effect.parse_param("resonance") {
-                    params.wah_resonance.set(v);
-                }
-                if let Some(v) = effect.parse_param("sensitivity") {
-                    params.wah_sensitivity.set(v);
-                }
-                if let Some(v) = effect.parse_param("mode") {
-                    params.wah_mode.store(v as u32, Ordering::Relaxed);
-                }
-            }
-            "chorus" => {
-                params
-                    .bypass
-                    .chorus
-                    .store(effect.bypassed, Ordering::Relaxed);
-                if let Some(v) = effect.parse_param("rate") {
-                    params.chorus_rate.set(v);
-                }
-                if let Some(v) = effect.parse_param("depth") {
-                    params.chorus_depth.set(v);
-                }
-                if let Some(v) = effect.parse_param("mix") {
-                    params.chorus_mix.set(v);
-                }
-            }
-            "flanger" => {
-                params
-                    .bypass
-                    .flanger
-                    .store(effect.bypassed, Ordering::Relaxed);
-                if let Some(v) = effect.parse_param("rate") {
-                    params.flanger_rate.set(v);
-                }
-                if let Some(v) = effect.parse_param("depth") {
-                    params.flanger_depth.set(v);
-                }
-                if let Some(v) = effect.parse_param("feedback") {
-                    params.flanger_feedback.set(v);
-                }
-                if let Some(v) = effect.parse_param("mix") {
-                    params.flanger_mix.set(v);
-                }
-            }
-            "phaser" => {
-                params
-                    .bypass
-                    .phaser
-                    .store(effect.bypassed, Ordering::Relaxed);
-                if let Some(v) = effect.parse_param("rate") {
-                    params.phaser_rate.set(v);
-                }
-                if let Some(v) = effect.parse_param("depth") {
-                    params.phaser_depth.set(v);
-                }
-                if let Some(v) = effect.parse_param("feedback") {
-                    params.phaser_feedback.set(v);
-                }
-                if let Some(v) = effect.parse_param("mix") {
-                    params.phaser_mix.set(v);
-                }
-                if let Some(v) = effect.parse_param("stages") {
-                    params.phaser_stages.store(v as u32, Ordering::Relaxed);
-                }
-            }
-            "tremolo" => {
-                params
-                    .bypass
-                    .tremolo
-                    .store(effect.bypassed, Ordering::Relaxed);
-                if let Some(v) = effect.parse_param("rate") {
-                    params.tremolo_rate.set(v);
-                }
-                if let Some(v) = effect.parse_param("depth") {
-                    params.tremolo_depth.set(v);
-                }
-                if let Some(v) = effect.parse_param("waveform") {
-                    params.tremolo_waveform.store(v as u32, Ordering::Relaxed);
-                }
-            }
-            "delay" => {
-                params
-                    .bypass
-                    .delay
-                    .store(effect.bypassed, Ordering::Relaxed);
-                if let Some(v) = effect.parse_param("time") {
-                    params.delay_time.set(v);
-                }
-                if let Some(v) = effect.parse_param("feedback") {
-                    params.delay_feedback.set(v);
-                }
-                if let Some(v) = effect.parse_param("mix") {
-                    params.delay_mix.set(v);
-                }
-            }
-            "filter" => {
-                params
-                    .bypass
-                    .filter
-                    .store(effect.bypassed, Ordering::Relaxed);
-                if let Some(v) = effect.parse_param("cutoff") {
-                    params.filter_cutoff.set(v);
-                }
-                if let Some(v) = effect.parse_param("resonance") {
-                    params.filter_resonance.set(v);
-                }
-            }
-            "multivibrato" => {
-                params
-                    .bypass
-                    .multivibrato
-                    .store(effect.bypassed, Ordering::Relaxed);
-                if let Some(v) = effect.parse_param("intensity") {
-                    params.vibrato_depth.set(v);
-                }
-            }
-            "tape" => {
-                params.bypass.tape.store(effect.bypassed, Ordering::Relaxed);
-                if let Some(v) = effect.parse_param("drive") {
-                    params.tape_drive.set(v);
-                }
-                if let Some(v) = effect.parse_param("warmth") {
-                    params.tape_saturation.set(v);
-                }
-            }
-            "reverb" => {
-                params
-                    .bypass
-                    .reverb
-                    .store(effect.bypassed, Ordering::Relaxed);
-                if let Some(v) = effect.parse_param("room_size") {
-                    params.reverb_room_size.set(v);
-                }
-                if let Some(v) = effect.parse_param("decay") {
-                    params.reverb_decay.set(v);
-                }
-                if let Some(v) = effect.parse_param("damping") {
-                    params.reverb_damping.set(v);
-                }
-                if let Some(v) = effect.parse_param("predelay") {
-                    params.reverb_predelay.set(v);
-                }
-                if let Some(v) = effect.parse_param("mix") {
-                    params.reverb_mix.set(v);
-                }
-            }
-            _ => {
-                // Unknown effect type, skip
-                log::warn!("Unknown effect type in preset: {}", effect.effect_type);
             }
         }
     }
+}
+
+/// Look up a parameter value in the config by descriptor name.
+///
+/// Tries normalized match first, then falls back to legacy aliases.
+fn find_param_in_config(config: &EffectConfig, descriptor_name: &str) -> Option<f32> {
+    find_by_normalized_key(config, descriptor_name).or_else(|| {
+        let alias = param_alias(descriptor_name);
+        if alias.is_empty() {
+            None
+        } else {
+            find_by_normalized_key(config, alias)
+        }
+    })
+}
+
+/// Find a parameter value using normalized key matching.
+///
+/// Strips case and separators so "Pre-Delay", "pre_delay", and "predelay"
+/// all match the same entry in the config HashMap.
+fn find_by_normalized_key(config: &EffectConfig, name: &str) -> Option<f32> {
+    let target = normalize_key(name);
+    config
+        .params
+        .iter()
+        .find(|(k, _)| normalize_key(k) == target)
+        .and_then(|(k, _)| config.parse_param(k))
+}
+
+/// Normalize a parameter name for matching: lowercase, strip separators.
+fn normalize_key(name: &str) -> String {
+    name.to_lowercase().replace([' ', '-', '_'], "")
+}
+
+/// Convert a descriptor name to snake_case for preset serialization.
+///
+/// "Room Size" → "room_size", "Pre-Delay" → "pre_delay", "Drive" → "drive"
+fn to_snake_case(name: &str) -> String {
+    name.to_lowercase().replace([' ', '-'], "_")
+}
+
+/// Map a canonical ParameterInfo name to its legacy preset alias.
+///
+/// Some parameters were renamed in the ParameterInfo definitions but
+/// old preset files still use the original names.
+fn param_alias(descriptor_name: &str) -> &str {
+    match descriptor_name {
+        "Depth" => "intensity",   // multivibrato renamed
+        "Saturation" => "warmth", // tape renamed
+        _ => "",
+    }
+}
+
+/// Check if a preset effect type matches a bridge effect id.
+///
+/// Handles legacy effect type names for backward compatibility.
+fn effect_type_matches(preset_type: &str, bridge_id: &str) -> bool {
+    preset_type == bridge_id || matches!((preset_type, bridge_id), ("parametriceq", "eq"))
 }
 
 /// Preset entry for the manager.
@@ -513,7 +197,7 @@ impl PresetEntry {
 /// Manager for loading and saving presets.
 ///
 /// Uses sonido_config::Preset for storage (TOML format) while maintaining
-/// compatibility with the GUI's SharedParams for real-time parameter access.
+/// compatibility with the GUI's [`ParamBridge`] for real-time parameter access.
 pub struct PresetManager {
     /// All available presets (factory + user).
     presets: Vec<PresetEntry>,
@@ -583,10 +267,10 @@ impl PresetManager {
     }
 
     /// Select a preset by index and apply it to the parameters.
-    pub fn select(&mut self, index: usize, params: &Arc<SharedParams>) {
+    pub fn select(&mut self, index: usize, bridge: &dyn ParamBridge) {
         if index < self.presets.len() {
             self.current_preset = index;
-            preset_to_params(&self.presets[index].preset, params);
+            preset_to_params(&self.presets[index].preset, bridge);
             self.modified = false;
         }
     }
@@ -608,25 +292,20 @@ impl PresetManager {
         &mut self,
         name: &str,
         description: Option<&str>,
-        params: &Arc<SharedParams>,
+        bridge: &dyn ParamBridge,
     ) -> Result<(), String> {
-        // Create the preset from current parameters
-        let preset = params_to_preset(name, description, params);
+        let preset = params_to_preset(name, description, bridge);
 
-        // Ensure the presets directory exists
         ensure_user_presets_dir()
             .map_err(|e| format!("Failed to create presets directory: {}", e))?;
 
-        // Generate filename from name
         let filename = format!("{}.toml", name.to_lowercase().replace(' ', "_"));
         let path = user_presets_dir().join(&filename);
 
-        // Save to file
         preset
             .save(&path)
             .map_err(|e| format!("Failed to save preset: {}", e))?;
 
-        // Add to our list
         self.presets.push(PresetEntry::user(preset, path));
         self.current_preset = self.presets.len() - 1;
         self.modified = false;
@@ -637,7 +316,7 @@ impl PresetManager {
     /// Overwrite the current user preset with updated parameters.
     ///
     /// Only works for user presets, not factory presets.
-    pub fn save_current(&mut self, params: &Arc<SharedParams>) -> Result<(), String> {
+    pub fn save_current(&mut self, bridge: &dyn ParamBridge) -> Result<(), String> {
         let entry = self
             .presets
             .get(self.current_preset)
@@ -653,19 +332,16 @@ impl PresetManager {
             }
         };
 
-        // Create updated preset
         let preset = params_to_preset(
             &entry.preset.name,
             entry.preset.description.as_deref(),
-            params,
+            bridge,
         );
 
-        // Save to file
         preset
             .save(&path)
             .map_err(|e| format!("Failed to save preset: {}", e))?;
 
-        // Update our entry
         self.presets[self.current_preset] = PresetEntry::user(preset, path);
         self.modified = false;
 
@@ -687,7 +363,6 @@ impl PresetManager {
                 return Err("Cannot delete factory preset".to_string());
             }
             PresetSource::Unsaved => {
-                // Just remove from list
                 self.presets.remove(index);
                 if self.current_preset >= self.presets.len() && self.current_preset > 0 {
                     self.current_preset -= 1;
@@ -696,10 +371,8 @@ impl PresetManager {
             }
         };
 
-        // Delete the file
         std::fs::remove_file(&path).map_err(|e| format!("Failed to delete preset file: {}", e))?;
 
-        // Remove from list
         self.presets.remove(index);
         if self.current_preset >= self.presets.len() && self.current_preset > 0 {
             self.current_preset -= 1;
@@ -745,36 +418,115 @@ impl Default for PresetManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::atomic_param_bridge::AtomicParamBridge;
+    use sonido_registry::EffectRegistry;
+
+    /// Find a parameter index by descriptor name within a bridge slot.
+    fn find_param(bridge: &AtomicParamBridge, slot: usize, name: &str) -> Option<usize> {
+        (0..bridge.param_count(slot)).find(|&i| {
+            bridge
+                .param_descriptor(slot, i)
+                .map_or(false, |d| d.name == name)
+        })
+    }
 
     #[test]
     fn test_preset_manager_new() {
         let manager = PresetManager::new();
-        // Should have factory presets loaded
         assert!(!manager.presets.is_empty());
-        // First preset should be factory
         assert!(manager.presets[0].is_factory());
     }
 
     #[test]
     fn test_params_to_preset_roundtrip() {
-        let params = Arc::new(SharedParams::default());
+        let registry = EffectRegistry::new();
+        let bridge = AtomicParamBridge::new(&registry, &["distortion", "reverb"], 48000.0);
 
-        // Set some test values
-        params.dist_drive.set(20.0);
-        params.reverb_mix.set(0.7);
-        params.bypass.chorus.store(true, Ordering::Relaxed);
+        let dist_drive = find_param(&bridge, 0, "Drive").unwrap();
+        let reverb_decay = find_param(&bridge, 1, "Decay").unwrap();
 
-        // Convert to preset
-        let preset = params_to_preset("Test", Some("Test preset"), &params);
+        bridge.set(0, dist_drive, 20.0);
+        bridge.set(1, reverb_decay, 0.7);
+        bridge.set_bypassed(1, true);
 
-        // Create fresh params and apply preset
-        let params2 = Arc::new(SharedParams::default());
-        preset_to_params(&preset, &params2);
+        // Convert to preset and apply to fresh bridge
+        let preset = params_to_preset("Test", Some("Test preset"), &bridge);
 
-        // Verify values match
-        assert!((params2.dist_drive.get() - 20.0).abs() < 0.01);
-        assert!((params2.reverb_mix.get() - 0.7).abs() < 0.01);
-        assert!(params2.bypass.chorus.load(Ordering::Relaxed));
+        let bridge2 = AtomicParamBridge::new(&registry, &["distortion", "reverb"], 48000.0);
+        preset_to_params(&preset, &bridge2);
+
+        assert!((bridge2.get(0, dist_drive) - 20.0).abs() < 0.01);
+        assert!((bridge2.get(1, reverb_decay) - 0.7).abs() < 0.01);
+        assert!(bridge2.is_bypassed(1));
+        assert!(!bridge2.is_bypassed(0));
+    }
+
+    #[test]
+    fn test_unknown_effects_ignored() {
+        let registry = EffectRegistry::new();
+        let bridge = AtomicParamBridge::new(&registry, &["distortion"], 48000.0);
+
+        // Use lowercase key as old presets would
+        let preset = Preset::new("Test")
+            .with_effect(EffectConfig::new("nonexistent").with_param("foo", "1.0"))
+            .with_effect(EffectConfig::new("distortion").with_param("drive", "15.0"));
+
+        // Should not panic — unknown effect silently skipped
+        preset_to_params(&preset, &bridge);
+
+        let drive_idx = find_param(&bridge, 0, "Drive").unwrap();
+        assert!((bridge.get(0, drive_idx) - 15.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_param_alias_resolution() {
+        let registry = EffectRegistry::new();
+        let bridge = AtomicParamBridge::new(&registry, &["multivibrato"], 48000.0);
+
+        // Old preset uses "intensity" instead of "depth"
+        let preset = Preset::new("Legacy")
+            .with_effect(EffectConfig::new("multivibrato").with_param("intensity", "80"));
+
+        preset_to_params(&preset, &bridge);
+
+        if let Some(idx) = find_param(&bridge, 0, "Depth") {
+            assert!((bridge.get(0, idx) - 80.0).abs() < 0.01);
+        }
+    }
+
+    #[test]
+    fn test_effect_type_alias() {
+        let registry = EffectRegistry::new();
+        let bridge = AtomicParamBridge::new(&registry, &["eq"], 48000.0);
+
+        // Old preset uses "parametriceq" instead of "eq"
+        let preset = Preset::new("Legacy EQ")
+            .with_effect(EffectConfig::new("parametriceq").with_bypass(true));
+
+        preset_to_params(&preset, &bridge);
+        assert!(bridge.is_bypassed(0));
+    }
+
+    #[test]
+    fn test_old_snake_case_presets_load() {
+        let registry = EffectRegistry::new();
+        let bridge = AtomicParamBridge::new(&registry, &["reverb"], 48000.0);
+
+        // Old presets used snake_case: "room_size", "predelay"
+        let preset = Preset::new("Old Format").with_effect(
+            EffectConfig::new("reverb")
+                .with_param("room_size", "0.9")
+                .with_param("predelay", "25.0"),
+        );
+
+        preset_to_params(&preset, &bridge);
+
+        if let Some(idx) = find_param(&bridge, 0, "Room Size") {
+            assert!((bridge.get(0, idx) - 0.9).abs() < 0.01);
+        }
+        if let Some(idx) = find_param(&bridge, 0, "Pre-Delay") {
+            assert!((bridge.get(0, idx) - 25.0).abs() < 0.01);
+        }
     }
 
     #[test]

@@ -1,10 +1,8 @@
 //! Filter effect UI panel.
 
-use crate::audio_bridge::SharedParams;
 use crate::widgets::{BypassToggle, Knob};
 use egui::Ui;
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use sonido_gui_core::ParamBridge;
 
 /// UI panel for the low-pass filter effect.
 pub struct FilterPanel;
@@ -16,45 +14,55 @@ impl FilterPanel {
     }
 
     /// Render the filter effect controls.
-    pub fn ui(&mut self, ui: &mut Ui, params: &Arc<SharedParams>) {
+    ///
+    /// Param indices: 0 = cutoff (Hz), 1 = resonance.
+    pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: usize) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
-                let mut active = !params.bypass.filter.load(Ordering::Relaxed);
+                let mut active = !bridge.is_bypassed(slot);
                 if ui.add(BypassToggle::new(&mut active, "Active")).changed() {
-                    params.bypass.filter.store(!active, Ordering::Relaxed);
+                    bridge.set_bypassed(slot, !active);
                 }
             });
 
             ui.add_space(12.0);
 
             ui.horizontal(|ui| {
-                // Cutoff knob (logarithmic would be ideal, but linear works)
-                let mut cutoff = params.filter_cutoff.get();
+                // Cutoff (param 0)
+                let desc = bridge.param_descriptor(slot, 0);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((20.0, 20000.0, 5000.0), |d| (d.min, d.max, d.default));
+                let mut cutoff = bridge.get(slot, 0);
                 if ui
                     .add(
-                        Knob::new(&mut cutoff, 20.0, 20000.0, "CUTOFF")
-                            .default(5000.0)
+                        Knob::new(&mut cutoff, min, max, "CUTOFF")
+                            .default(default)
                             .format_hz()
-                            .sensitivity(0.008), // Higher sensitivity for wider range
+                            .sensitivity(0.008),
                     )
                     .changed()
                 {
-                    params.filter_cutoff.set(cutoff);
+                    bridge.set(slot, 0, cutoff);
                 }
 
                 ui.add_space(16.0);
 
-                // Resonance knob
-                let mut resonance = params.filter_resonance.get();
+                // Resonance (param 1)
+                let desc = bridge.param_descriptor(slot, 1);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((0.1, 10.0, 0.7), |d| (d.min, d.max, d.default));
+                let mut resonance = bridge.get(slot, 1);
                 if ui
                     .add(
-                        Knob::new(&mut resonance, 0.1, 10.0, "RESO")
-                            .default(0.7)
-                            .format(|v| format!("{:.1}", v)),
+                        Knob::new(&mut resonance, min, max, "RESO")
+                            .default(default)
+                            .format(|v| format!("{v:.1}")),
                     )
                     .changed()
                 {
-                    params.filter_resonance.set(resonance);
+                    bridge.set(slot, 1, resonance);
                 }
             });
         });

@@ -1,4 +1,9 @@
 //! Effect UI panels for each effect type.
+//!
+//! Each panel renders controls for one effect, reading and writing parameter
+//! values through a [`ParamBridge`]. Parameter
+//! indices match the effect's `ParameterInfo`
+//! implementation — panels never access DSP state directly.
 
 mod chorus;
 mod compressor;
@@ -32,11 +37,14 @@ pub use tape::TapePanel;
 pub use tremolo::TremoloPanel;
 pub use wah::WahPanel;
 
-use crate::audio_bridge::SharedParams;
 use egui::Ui;
-use std::sync::Arc;
+use sonido_gui_core::ParamBridge;
 
 /// Trait for effect UI panels.
+///
+/// Panels render controls for a specific effect type, using the
+/// [`ParamBridge`] for all parameter access. The `slot` argument
+/// identifies which effect in the chain this panel controls.
 pub trait EffectPanel {
     /// The display name of the effect.
     fn name(&self) -> &'static str;
@@ -45,13 +53,7 @@ pub trait EffectPanel {
     fn short_name(&self) -> &'static str;
 
     /// Render the effect's controls.
-    fn ui(&mut self, ui: &mut Ui, params: &Arc<SharedParams>);
-
-    /// Check if the effect is bypassed.
-    fn is_bypassed(&self, params: &Arc<SharedParams>) -> bool;
-
-    /// Toggle bypass state.
-    fn toggle_bypass(&self, params: &Arc<SharedParams>);
+    fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: usize);
 }
 
 /// Effect type enumeration for UI purposes.
@@ -153,7 +155,7 @@ impl EffectType {
         ]
     }
 
-    /// Get index in the default order.
+    /// Get index in the default order (= chain slot index).
     pub fn index(&self) -> usize {
         match self {
             Self::Preamp => 0,

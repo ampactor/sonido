@@ -22,6 +22,7 @@ sonido-core = { path = "../sonido-core", features = ["std"] }
 sonido-effects = { path = "../sonido-effects", features = ["std"] }
 sonido-io = { path = "../sonido-io" }
 sonido-config = { path = "../sonido-config", features = ["std"] }
+sonido-gui-core = { path = "../sonido-gui-core" }
 sonido-registry = { path = "../sonido-registry", features = ["std"] }
 
 # Thread-safety
