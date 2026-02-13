@@ -6,6 +6,7 @@
 //! only owns the two global gain knobs that live outside the effect chain.
 
 use crate::chain_manager::ChainCommand;
+use crate::file_player::TransportCommand;
 use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -92,6 +93,8 @@ pub struct MeteringData {
     pub gain_reduction: f32,
     /// Audio thread CPU usage (0.0 to 100.0).
     pub cpu_usage: f32,
+    /// File playback position in seconds (0.0 when not playing a file).
+    pub playback_position_secs: f32,
 }
 
 /// Audio bridge for communication between GUI and audio threads.
@@ -107,6 +110,8 @@ pub struct AudioBridge {
     metering_rx: Receiver<MeteringData>,
     command_tx: Sender<ChainCommand>,
     command_rx: Receiver<ChainCommand>,
+    transport_tx: Sender<TransportCommand>,
+    transport_rx: Receiver<TransportCommand>,
 }
 
 impl AudioBridge {
@@ -114,6 +119,7 @@ impl AudioBridge {
     pub fn new() -> Self {
         let (metering_tx, metering_rx) = bounded(4);
         let (command_tx, command_rx) = unbounded();
+        let (transport_tx, transport_rx) = unbounded();
         Self {
             input_gain: Arc::new(AtomicParam::new(1.0, 0.0, 4.0)),
             master_volume: Arc::new(AtomicParam::new(1.0, 0.0, 4.0)),
@@ -122,6 +128,8 @@ impl AudioBridge {
             metering_rx,
             command_tx,
             command_rx,
+            transport_tx,
+            transport_rx,
         }
     }
 
@@ -185,6 +193,16 @@ impl AudioBridge {
     /// audio thread should drain the channel.
     pub fn command_receiver(&self) -> Receiver<ChainCommand> {
         self.command_rx.clone()
+    }
+
+    /// Get a clone of the transport command sender for the file player.
+    pub fn transport_sender(&self) -> Sender<TransportCommand> {
+        self.transport_tx.clone()
+    }
+
+    /// Get a clone of the transport command receiver for the audio thread.
+    pub fn transport_receiver(&self) -> Receiver<TransportCommand> {
+        self.transport_rx.clone()
     }
 }
 
@@ -401,6 +419,7 @@ mod tests {
             output_rms: 0.4,
             gain_reduction: 3.0,
             cpu_usage: 12.5,
+            playback_position_secs: 0.0,
         });
 
         let data = bridge.receive_metering();
