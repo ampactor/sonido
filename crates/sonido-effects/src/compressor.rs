@@ -30,7 +30,7 @@
 
 use sonido_core::{
     Effect, EnvelopeFollower, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam,
-    db_to_linear, linear_to_db,
+    db_to_linear, fast_db_to_linear, fast_linear_to_db, linear_to_db,
 };
 
 /// Gain computer for calculating compression curve.
@@ -163,10 +163,10 @@ impl Effect for Compressor {
     #[inline]
     fn process(&mut self, input: f32) -> f32 {
         let envelope = self.envelope_follower.process(input);
-        let envelope_db = linear_to_db(envelope);
+        let envelope_db = fast_linear_to_db(envelope);
         let gain_reduction_db = self.gain_computer.compute_gain_db(envelope_db);
         self.last_gain_reduction_db = gain_reduction_db;
-        let gain_linear = db_to_linear(gain_reduction_db);
+        let gain_linear = fast_db_to_linear(gain_reduction_db);
         let makeup = self.makeup_gain.advance();
 
         input * gain_linear * makeup
@@ -178,10 +178,10 @@ impl Effect for Compressor {
         // This prevents image shifting that would occur with independent compression
         let sum = (left + right) * 0.5;
         let envelope = self.envelope_follower.process(sum);
-        let envelope_db = linear_to_db(envelope);
+        let envelope_db = fast_linear_to_db(envelope);
         let gain_reduction_db = self.gain_computer.compute_gain_db(envelope_db);
         self.last_gain_reduction_db = gain_reduction_db;
-        let gain_linear = db_to_linear(gain_reduction_db);
+        let gain_linear = fast_db_to_linear(gain_reduction_db);
         let makeup = self.makeup_gain.advance();
 
         let gain = gain_linear * makeup;

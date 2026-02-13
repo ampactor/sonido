@@ -3,8 +3,9 @@
 //! Provides smooth, periodic modulation signals used in chorus, flanger,
 //! tremolo, vibrato, and other time-based effects.
 
-use core::f32::consts::PI;
 use libm::{floorf, sinf};
+
+use crate::fast_math::fast_sin_turns;
 
 use crate::tempo::NoteDivision;
 
@@ -127,7 +128,7 @@ impl Lfo {
     #[inline]
     pub fn advance(&mut self) -> f32 {
         let output = match self.waveform {
-            LfoWaveform::Sine => sinf(self.phase * 2.0 * PI),
+            LfoWaveform::Sine => fast_sin_turns(self.phase),
 
             LfoWaveform::Triangle => {
                 if self.phase < 0.5 {
