@@ -3,10 +3,15 @@
 //! [`FilePlayer`] manages file loading, transport controls, and UI rendering.
 //! Audio data is sent to the audio thread via [`TransportCommand`]s through
 //! a crossbeam channel. Playback position flows back through `MeteringData`.
+//!
+//! On native, uses synchronous `rfd::FileDialog`. On wasm, uses
+//! `rfd::AsyncFileDialog` with bytes-based WAV parsing via `hound`.
 
 use crossbeam_channel::Sender;
 use egui::{Color32, Ui};
+#[cfg(not(target_arch = "wasm32"))]
 use sonido_io::{read_wav_info, read_wav_stereo};
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
 
 /// Commands sent from GUI thread to audio thread for file playback.
@@ -40,9 +45,11 @@ pub enum TransportCommand {
 ///
 /// Renders transport buttons, a position scrubber, and file info.
 /// Communicates with the audio thread exclusively through commands.
+#[allow(clippy::struct_excessive_bools)]
 pub struct FilePlayer {
     transport_tx: Sender<TransportCommand>,
     file_name: String,
+    #[cfg(not(target_arch = "wasm32"))]
     file_path: Option<PathBuf>,
     duration_secs: f32,
     position_secs: f32,
@@ -50,14 +57,24 @@ pub struct FilePlayer {
     is_looping: bool,
     use_file_input: bool,
     sample_rate: f32,
+    has_file: bool,
+    /// Receives file bytes loaded by async dialog (wasm only).
+    #[cfg(target_arch = "wasm32")]
+    file_result_rx: crossbeam_channel::Receiver<(String, Vec<u8>)>,
+    #[cfg(target_arch = "wasm32")]
+    file_result_tx: Sender<(String, Vec<u8>)>,
 }
 
 impl FilePlayer {
     /// Create a new file player with the given transport command sender.
     pub fn new(transport_tx: Sender<TransportCommand>) -> Self {
+        #[cfg(target_arch = "wasm32")]
+        let (file_result_tx, file_result_rx) = crossbeam_channel::unbounded();
+
         Self {
             transport_tx,
             file_name: String::new(),
+            #[cfg(not(target_arch = "wasm32"))]
             file_path: None,
             duration_secs: 0.0,
             position_secs: 0.0,
@@ -65,6 +82,11 @@ impl FilePlayer {
             is_looping: false,
             use_file_input: false,
             sample_rate: 48000.0,
+            has_file: false,
+            #[cfg(target_arch = "wasm32")]
+            file_result_rx,
+            #[cfg(target_arch = "wasm32")]
+            file_result_tx,
         }
     }
 
@@ -82,7 +104,8 @@ impl FilePlayer {
         self.use_file_input
     }
 
-    /// Load a WAV file from disk.
+    /// Load a WAV file from disk (native only).
+    #[cfg(not(target_arch = "wasm32"))]
     fn load_file(&mut self, path: PathBuf) {
         // Read metadata first for duration
         let info = match read_wav_info(&path) {
@@ -111,11 +134,70 @@ impl FilePlayer {
         self.position_secs = 0.0;
         self.is_playing = false;
         self.file_path = Some(path);
+        self.has_file = true;
 
         let _ = self.transport_tx.send(TransportCommand::LoadFile {
             left: samples.left,
             right: samples.right,
             sample_rate: self.sample_rate,
+        });
+    }
+
+    /// Load a WAV file from raw bytes (wasm).
+    #[cfg(target_arch = "wasm32")]
+    fn load_file_from_bytes(&mut self, name: String, bytes: Vec<u8>) {
+        use std::io::Cursor;
+
+        let reader = match hound::WavReader::new(Cursor::new(&bytes)) {
+            Ok(r) => r,
+            Err(e) => {
+                log::error!("Failed to parse WAV: {e}");
+                return;
+            }
+        };
+
+        let spec = reader.spec();
+        let sample_rate = spec.sample_rate as f32;
+        let channels = spec.channels as usize;
+
+        // Read all samples as f32
+        let raw_samples: Vec<f32> = match spec.sample_format {
+            hound::SampleFormat::Float => reader
+                .into_samples::<f32>()
+                .filter_map(|s| s.ok())
+                .collect(),
+            hound::SampleFormat::Int => {
+                let bits = spec.bits_per_sample;
+                let max_val = (1u32 << (bits - 1)) as f32;
+                reader
+                    .into_samples::<i32>()
+                    .filter_map(|s| s.ok())
+                    .map(|s| s as f32 / max_val)
+                    .collect()
+            }
+        };
+
+        // Deinterleave to stereo
+        let frames = raw_samples.len() / channels.max(1);
+        let mut left = Vec::with_capacity(frames);
+        let mut right = Vec::with_capacity(frames);
+
+        for frame in raw_samples.chunks(channels.max(1)) {
+            left.push(frame[0]);
+            right.push(if channels >= 2 { frame[1] } else { frame[0] });
+        }
+
+        self.duration_secs = frames as f32 / sample_rate;
+        self.sample_rate = sample_rate;
+        self.file_name = name;
+        self.position_secs = 0.0;
+        self.is_playing = false;
+        self.has_file = true;
+
+        let _ = self.transport_tx.send(TransportCommand::LoadFile {
+            left,
+            right,
+            sample_rate,
         });
     }
 
@@ -138,14 +220,37 @@ impl FilePlayer {
 
     /// Render the file player panel (bottom bar).
     pub fn ui(&mut self, ui: &mut Ui) {
+        // Check for completed async file loads (wasm)
+        #[cfg(target_arch = "wasm32")]
+        if let Ok((name, bytes)) = self.file_result_rx.try_recv() {
+            self.load_file_from_bytes(name, bytes);
+        }
+
         ui.horizontal(|ui| {
-            // Browse button
+            // Browse button — platform-specific file dialog
+            #[cfg(not(target_arch = "wasm32"))]
             if ui.button("Open").clicked()
                 && let Some(path) = rfd::FileDialog::new()
                     .add_filter("WAV", &["wav"])
                     .pick_file()
             {
                 self.load_file(path);
+            }
+
+            #[cfg(target_arch = "wasm32")]
+            if ui.button("Open").clicked() {
+                let tx = self.file_result_tx.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    if let Some(file) = rfd::AsyncFileDialog::new()
+                        .add_filter("WAV", &["wav"])
+                        .pick_file()
+                        .await
+                    {
+                        let name = file.file_name();
+                        let bytes = file.read().await;
+                        let _ = tx.send((name, bytes));
+                    }
+                });
             }
 
             // File name display
@@ -164,7 +269,7 @@ impl FilePlayer {
             ui.add_space(12.0);
 
             // Transport controls (only if file loaded)
-            if self.file_path.is_some() {
+            if self.has_file {
                 // Play / Pause
                 let play_label = if self.is_playing { "||" } else { ">" };
                 if ui.button(play_label).clicked() {
@@ -226,27 +331,30 @@ impl FilePlayer {
             }
         });
 
-        // Handle drag-and-drop
-        ui.ctx().input(|i| {
-            if let Some(dropped) = i.raw.dropped_files.first()
-                && let Some(path) = &dropped.path
-                && path
-                    .extension()
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("wav"))
-            {
-                self.file_path = Some(path.clone());
-            }
-        });
+        // Handle drag-and-drop (native only — wasm drag-and-drop doesn't provide paths)
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            ui.ctx().input(|i| {
+                if let Some(dropped) = i.raw.dropped_files.first()
+                    && let Some(path) = &dropped.path
+                    && path
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("wav"))
+                {
+                    self.file_path = Some(path.clone());
+                }
+            });
 
-        // Deferred drag-drop load: check if file_path changed without a loaded file_name match
-        if let Some(ref path) = self.file_path {
-            let name = path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            if name != self.file_name && !name.is_empty() {
-                let path = path.clone();
-                self.load_file(path);
+            // Deferred drag-drop load: check if file_path changed without a loaded file_name match
+            if let Some(ref path) = self.file_path {
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                if name != self.file_name && !name.is_empty() {
+                    let path = path.clone();
+                    self.load_file(path);
+                }
             }
         }
     }

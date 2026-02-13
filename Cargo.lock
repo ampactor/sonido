@@ -3758,6 +3758,7 @@ dependencies = [
  "egui",
  "egui_extras",
  "env_logger",
+ "hound",
  "log",
  "parking_lot",
  "rfd",
@@ -3770,6 +3771,10 @@ dependencies = [
  "sonido-io",
  "sonido-registry",
  "thiserror 2.0.18",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
 ]
 
 [[package]]
