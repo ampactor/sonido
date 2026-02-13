@@ -5,6 +5,7 @@ use crate::audio_bridge::{AudioBridge, EffectOrder, MeteringData};
 use crate::chain_manager::{ChainCommand, ChainManager};
 use crate::chain_view::ChainView;
 use crate::effects_ui::{self, EffectType};
+use crate::file_player::FilePlayer;
 use crate::preset_manager::PresetManager;
 use crate::theme::Theme;
 use crate::widgets::{Knob, LevelMeter};
@@ -58,6 +59,7 @@ pub struct SonidoApp {
     // UI
     theme: Theme,
     chain_view: ChainView,
+    file_player: FilePlayer,
     preset_manager: PresetManager,
 
     // Status
@@ -86,14 +88,18 @@ impl SonidoApp {
         bridge.set_default_bypass(8, true); // phaser
         bridge.set_default_bypass(9, true); // tremolo
 
+        let audio_bridge = AudioBridge::new();
+        let transport_tx = audio_bridge.transport_sender();
+
         let mut app = Self {
-            audio_bridge: AudioBridge::new(),
+            audio_bridge,
             audio_thread: None,
             metering: MeteringData::default(),
             bridge,
             registry,
             theme: Theme::default(),
             chain_view: ChainView::new(),
+            file_player: FilePlayer::new(transport_tx),
             preset_manager: PresetManager::new(),
             sample_rate: 48000.0,
             buffer_size: 512,
@@ -129,6 +135,7 @@ impl SonidoApp {
         let metering_tx = self.audio_bridge.metering_sender();
         let effect_order = self.chain_view.effect_order().clone();
         let command_rx = self.audio_bridge.command_receiver();
+        let transport_rx = self.audio_bridge.transport_receiver();
 
         running.store(true, Ordering::SeqCst);
 
@@ -144,6 +151,7 @@ impl SonidoApp {
                 metering_tx,
                 effect_order,
                 command_rx,
+                transport_rx,
                 sample_rate,
                 buffer_size,
             ) {
@@ -221,6 +229,9 @@ impl SonidoApp {
             if let Some(idx) = selected_preset {
                 self.preset_manager.select(idx, &*self.bridge);
             }
+
+            ui.add_space(8.0);
+            self.file_player.render_source_toggle(ui);
 
             if ui.button("Save").clicked() {
                 self.show_save_dialog = true;
@@ -433,6 +444,7 @@ impl eframe::App for SonidoApp {
         // Update metering data
         if let Some(data) = self.audio_bridge.receive_metering() {
             self.cpu_usage = data.cpu_usage;
+            self.file_player.set_position(data.playback_position_secs);
             self.metering = data;
         }
 
@@ -464,6 +476,15 @@ impl eframe::App for SonidoApp {
             self.render_status_bar(ui);
             ui.add_space(2.0);
         });
+
+        // File player bar (above status bar when file input active)
+        if self.file_player.use_file_input() {
+            TopBottomPanel::bottom("file_player").show(ctx, |ui| {
+                ui.add_space(2.0);
+                self.file_player.ui(ui);
+                ui.add_space(2.0);
+            });
+        }
 
         // Main content
         CentralPanel::default().show(ctx, |ui| {
@@ -516,12 +537,67 @@ impl eframe::App for SonidoApp {
     }
 }
 
+/// File playback state owned by the audio callback closure.
+struct FilePlayback {
+    left: Vec<f32>,
+    right: Vec<f32>,
+    position: usize,
+    file_sample_rate: f32,
+    playing: bool,
+    looping: bool,
+    file_mode: bool,
+}
+
+impl FilePlayback {
+    fn new() -> Self {
+        Self {
+            left: Vec::new(),
+            right: Vec::new(),
+            position: 0,
+            file_sample_rate: 48000.0,
+            playing: false,
+            looping: false,
+            file_mode: false,
+        }
+    }
+
+    /// Read the next stereo frame from the file buffer, advancing position.
+    fn next_frame(&mut self) -> (f32, f32) {
+        if self.left.is_empty() || !self.playing {
+            return (0.0, 0.0);
+        }
+        if self.position >= self.left.len() {
+            if self.looping {
+                self.position = 0;
+            } else {
+                self.playing = false;
+                self.position = 0;
+                return (0.0, 0.0);
+            }
+        }
+        let l = self.left[self.position];
+        let r = self.right[self.position];
+        self.position += 1;
+        (l, r)
+    }
+
+    /// Current playback position in seconds.
+    fn position_secs(&self) -> f32 {
+        if self.file_sample_rate > 0.0 {
+            self.position as f32 / self.file_sample_rate
+        } else {
+            0.0
+        }
+    }
+}
+
 /// Run the audio processing thread.
 ///
 /// Processes audio in stereo through the effect chain, respecting the user-defined
 /// effect order. Uses [`ChainManager`] for registry-driven effect creation and
 /// dispatch. Drains [`ChainCommand`]s from the GUI before each buffer to handle
-/// dynamic add/remove. Measures CPU usage and reports metering data to the GUI.
+/// dynamic add/remove. Handles file playback via [`TransportCommand`]s.
+/// Measures CPU usage and reports metering data to the GUI.
 #[allow(clippy::too_many_arguments)]
 fn run_audio_thread(
     bridge: Arc<AtomicParamBridge>,
@@ -531,9 +607,11 @@ fn run_audio_thread(
     metering_tx: Sender<MeteringData>,
     effect_order: EffectOrder,
     command_rx: Receiver<ChainCommand>,
+    transport_rx: Receiver<crate::file_player::TransportCommand>,
     sample_rate: f32,
     buffer_size: usize,
 ) -> Result<(), String> {
+    use crate::file_player::TransportCommand;
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
     let host = cpal::default_host();
@@ -601,6 +679,9 @@ fn run_audio_thread(
     let out_ch = output_channels as usize;
     let buffer_time_secs = buffer_size as f64 / sample_rate as f64;
 
+    // File playback state
+    let mut file_pb = FilePlayback::new();
+
     // Output stream — process and output in stereo
     let output_stream = output_device
         .build_output_stream(
@@ -612,6 +693,43 @@ fn run_audio_thread(
                 }
 
                 let process_start = Instant::now();
+
+                // Drain transport commands
+                while let Ok(cmd) = transport_rx.try_recv() {
+                    match cmd {
+                        TransportCommand::LoadFile {
+                            left,
+                            right,
+                            sample_rate: sr,
+                        } => {
+                            file_pb.left = left;
+                            file_pb.right = right;
+                            file_pb.file_sample_rate = sr;
+                            file_pb.position = 0;
+                            file_pb.playing = false;
+                        }
+                        TransportCommand::UnloadFile => {
+                            file_pb.left.clear();
+                            file_pb.right.clear();
+                            file_pb.position = 0;
+                            file_pb.playing = false;
+                        }
+                        TransportCommand::Play => file_pb.playing = true,
+                        TransportCommand::Pause => file_pb.playing = false,
+                        TransportCommand::Stop => {
+                            file_pb.playing = false;
+                            file_pb.position = 0;
+                        }
+                        TransportCommand::Seek(secs) => {
+                            file_pb.position = (secs * file_pb.file_sample_rate) as usize;
+                            if file_pb.position >= file_pb.left.len() {
+                                file_pb.position = file_pb.left.len().saturating_sub(1);
+                            }
+                        }
+                        TransportCommand::SetLoop(v) => file_pb.looping = v,
+                        TransportCommand::SetFileMode(v) => file_pb.file_mode = v,
+                    }
+                }
 
                 // Drain dynamic chain commands before processing
                 while let Ok(cmd) = command_rx.try_recv() {
@@ -652,19 +770,28 @@ fn run_audio_thread(
                 let mut output_rms_sum = 0.0_f32;
 
                 let frames = data.len() / out_ch;
+                let use_file = file_pb.file_mode && !file_pb.left.is_empty();
 
                 for i in 0..frames {
-                    // Deinterleave input (mono: duplicate, stereo: take L/R)
-                    let (in_l, in_r) = if in_ch >= 2 {
-                        let l = rx.try_recv().unwrap_or(0.0);
-                        let r = rx.try_recv().unwrap_or(0.0);
-                        for _ in 2..in_ch {
+                    let (in_l, in_r) = if use_file {
+                        // Drain mic input to keep the ring buffer from overflowing
+                        for _ in 0..in_ch {
                             let _ = rx.try_recv();
                         }
-                        (l, r)
+                        file_pb.next_frame()
                     } else {
-                        let s = rx.try_recv().unwrap_or(0.0);
-                        (s, s)
+                        // Deinterleave mic input (mono: duplicate, stereo: take L/R)
+                        if in_ch >= 2 {
+                            let l = rx.try_recv().unwrap_or(0.0);
+                            let r = rx.try_recv().unwrap_or(0.0);
+                            for _ in 2..in_ch {
+                                let _ = rx.try_recv();
+                            }
+                            (l, r)
+                        } else {
+                            let s = rx.try_recv().unwrap_or(0.0);
+                            (s, s)
+                        }
                     };
 
                     let mut l = in_l * ig;
@@ -714,9 +841,9 @@ fn run_audio_thread(
                     input_rms: (input_rms_sum / count).sqrt(),
                     output_peak,
                     output_rms: (output_rms_sum / count).sqrt(),
-                    // TODO: gain reduction requires metering trait on dyn EffectWithParams
                     gain_reduction: 0.0,
                     cpu_usage: cpu_pct,
+                    playback_position_secs: file_pb.position_secs(),
                 });
             },
             |err| log::error!("Output stream error: {}", err),

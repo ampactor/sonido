@@ -29,6 +29,9 @@ sonido-registry = { path = "../sonido-registry", features = ["std"] }
 crossbeam-channel = "0.5"
 parking_lot = "0.12"
 
+# File dialogs
+rfd = "0.15"
+
 # Presets
 serde.workspace = true
 serde_json = "1.0"
