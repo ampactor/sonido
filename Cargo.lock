@@ -3664,7 +3664,16 @@ dependencies = [
  "sonido-core",
  "sonido-effects",
  "sonido-io",
+ "sonido-registry",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "sonido-gui-core"
+version = "0.1.0"
+dependencies = [
+ "egui",
+ "sonido-core",
 ]
 
 [[package]]

@@ -383,6 +383,8 @@ pub struct MeteringData {
     pub output_rms: f32,
     /// Compressor gain reduction in dB.
     pub gain_reduction: f32,
+    /// Audio thread CPU usage (0.0 to 100.0).
+    pub cpu_usage: f32,
 }
 
 /// Audio bridge for communication between GUI and audio threads.
@@ -545,6 +547,7 @@ mod tests {
             output_peak: 0.6,
             output_rms: 0.4,
             gain_reduction: 3.0,
+            cpu_usage: 12.5,
         });
 
         let data = bridge.receive_metering();

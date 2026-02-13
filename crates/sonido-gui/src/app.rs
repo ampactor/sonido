@@ -1,6 +1,7 @@
 //! Main application state and UI layout.
 
-use crate::audio_bridge::{AudioBridge, MeteringData, SharedParams};
+use crate::audio_bridge::{AudioBridge, EffectOrder, MeteringData, SharedParams};
+use crate::chain_manager::ChainManager;
 use crate::chain_view::ChainView;
 use crate::effects_ui::{
     ChorusPanel, CompressorPanel, DelayPanel, DistortionPanel, EffectType, FilterPanel,
@@ -12,14 +13,30 @@ use crate::theme::Theme;
 use crate::widgets::{Knob, LevelMeter};
 use crossbeam_channel::Sender;
 use egui::{CentralPanel, Color32, Context, Frame, Margin, TopBottomPanel};
-use sonido_core::Effect;
-use sonido_effects::{
-    Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, LowPassFilter, MultiVibrato,
-    ParametricEq, Phaser, Reverb, TapeSaturation, Tremolo, TremoloWaveform, Wah, WaveShape,
-};
+use sonido_registry::EffectRegistry;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
+use std::time::Instant;
+
+/// Default effect chain order — matches the slot indices used by SharedParams.
+const DEFAULT_CHAIN: &[&str] = &[
+    "preamp",       // 0
+    "distortion",   // 1
+    "compressor",   // 2
+    "gate",         // 3
+    "eq",           // 4
+    "wah",          // 5
+    "chorus",       // 6
+    "flanger",      // 7
+    "phaser",       // 8
+    "tremolo",      // 9
+    "delay",        // 10
+    "filter",       // 11
+    "multivibrato", // 12
+    "tape",         // 13
+    "reverb",       // 14
+];
 
 /// Audio processing thread state.
 struct AudioThread {
@@ -123,13 +140,22 @@ impl SonidoApp {
         let params = self.audio_bridge.params();
         let running = self.audio_bridge.running();
         let metering_tx = self.audio_bridge.metering_sender();
+        let effect_order = self.chain_view.effect_order().clone();
 
         running.store(true, Ordering::SeqCst);
 
         let sample_rate = self.sample_rate;
+        let buffer_size = self.buffer_size;
 
         let handle = thread::spawn(move || {
-            if let Err(e) = run_audio_thread(params, running.clone(), metering_tx, sample_rate) {
+            if let Err(e) = run_audio_thread(
+                params,
+                running.clone(),
+                metering_tx,
+                effect_order,
+                sample_rate,
+                buffer_size,
+            ) {
                 log::error!("Audio thread error: {}", e);
             }
             running.store(false, Ordering::SeqCst);
@@ -429,6 +455,7 @@ impl eframe::App for SonidoApp {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
         // Update metering data
         if let Some(data) = self.audio_bridge.receive_metering() {
+            self.cpu_usage = data.cpu_usage;
             self.metering = data;
         }
 
@@ -500,12 +527,187 @@ impl eframe::App for SonidoApp {
     }
 }
 
+/// Sync SharedParams values to ChainManager effects via `set_param()`.
+///
+/// SharedParams stores some values in internal representation (0-1 for fractions)
+/// while `set_param()` expects user-facing values (0-100 for percent). This function
+/// handles the conversion. Temporary — will be eliminated when SharedParams is replaced
+/// by `AtomicParamBridge` in Phase 3.
+#[allow(clippy::too_many_lines)]
+fn sync_shared_params_to_chain(params: &SharedParams, chain: &mut ChainManager) {
+    // Helper: fraction (0-1) stored in SharedParams → percent (0-100) for set_param
+    let pct = |v: f32| v * 100.0;
+
+    // Slot 0: Preamp — gain (dB), output, headroom all in dB (direct)
+    if let Some(slot) = chain.slot_mut(0) {
+        slot.effect.effect_set_param(0, params.preamp_gain.get());
+    }
+
+    // Slot 1: Distortion — drive/tone/level in dB/Hz, waveshape as enum index
+    if let Some(slot) = chain.slot_mut(1) {
+        slot.effect.effect_set_param(0, params.dist_drive.get());
+        slot.effect.effect_set_param(1, params.dist_tone.get());
+        slot.effect.effect_set_param(2, params.dist_level.get());
+        slot.effect
+            .effect_set_param(3, params.dist_waveshape.load(Ordering::Relaxed) as f32);
+    }
+
+    // Slot 2: Compressor — threshold/makeup in dB, ratio direct, attack/release in ms
+    if let Some(slot) = chain.slot_mut(2) {
+        slot.effect.effect_set_param(0, params.comp_threshold.get());
+        slot.effect.effect_set_param(1, params.comp_ratio.get());
+        slot.effect.effect_set_param(2, params.comp_attack.get());
+        slot.effect.effect_set_param(3, params.comp_release.get());
+        slot.effect.effect_set_param(4, params.comp_makeup.get());
+    }
+
+    // Slot 3: Gate — threshold in dB, attack/release/hold in ms
+    if let Some(slot) = chain.slot_mut(3) {
+        slot.effect.effect_set_param(0, params.gate_threshold.get());
+        slot.effect.effect_set_param(1, params.gate_attack.get());
+        slot.effect.effect_set_param(2, params.gate_release.get());
+        slot.effect.effect_set_param(3, params.gate_hold.get());
+    }
+
+    // Slot 4: EQ — freq in Hz, gain in dB, Q direct
+    if let Some(slot) = chain.slot_mut(4) {
+        slot.effect.effect_set_param(0, params.eq_low_freq.get());
+        slot.effect.effect_set_param(1, params.eq_low_gain.get());
+        slot.effect.effect_set_param(2, params.eq_low_q.get());
+        slot.effect.effect_set_param(3, params.eq_mid_freq.get());
+        slot.effect.effect_set_param(4, params.eq_mid_gain.get());
+        slot.effect.effect_set_param(5, params.eq_mid_q.get());
+        slot.effect.effect_set_param(6, params.eq_high_freq.get());
+        slot.effect.effect_set_param(7, params.eq_high_gain.get());
+        slot.effect.effect_set_param(8, params.eq_high_q.get());
+    }
+
+    // Slot 5: Wah — freq in Hz, resonance direct, sensitivity 0-1→0-100, mode as enum
+    if let Some(slot) = chain.slot_mut(5) {
+        slot.effect.effect_set_param(0, params.wah_frequency.get());
+        slot.effect.effect_set_param(1, params.wah_resonance.get());
+        slot.effect
+            .effect_set_param(2, pct(params.wah_sensitivity.get()));
+        slot.effect
+            .effect_set_param(3, params.wah_mode.load(Ordering::Relaxed) as f32);
+    }
+
+    // Slot 6: Chorus — rate in Hz, depth/mix 0-1→0-100
+    if let Some(slot) = chain.slot_mut(6) {
+        slot.effect.effect_set_param(0, params.chorus_rate.get());
+        slot.effect
+            .effect_set_param(1, pct(params.chorus_depth.get()));
+        slot.effect
+            .effect_set_param(2, pct(params.chorus_mix.get()));
+    }
+
+    // Slot 7: Flanger — rate in Hz, depth/feedback/mix 0-1→0-100
+    if let Some(slot) = chain.slot_mut(7) {
+        slot.effect.effect_set_param(0, params.flanger_rate.get());
+        slot.effect
+            .effect_set_param(1, pct(params.flanger_depth.get()));
+        slot.effect
+            .effect_set_param(2, pct(params.flanger_feedback.get()));
+        slot.effect
+            .effect_set_param(3, pct(params.flanger_mix.get()));
+    }
+
+    // Slot 8: Phaser — rate in Hz, depth/feedback/mix 0-1→0-100, stages as int
+    if let Some(slot) = chain.slot_mut(8) {
+        slot.effect.effect_set_param(0, params.phaser_rate.get());
+        slot.effect
+            .effect_set_param(1, pct(params.phaser_depth.get()));
+        slot.effect
+            .effect_set_param(2, params.phaser_stages.load(Ordering::Relaxed) as f32);
+        slot.effect
+            .effect_set_param(3, pct(params.phaser_feedback.get()));
+        slot.effect
+            .effect_set_param(4, pct(params.phaser_mix.get()));
+    }
+
+    // Slot 9: Tremolo — rate in Hz, depth 0-1→0-100, waveform as enum
+    if let Some(slot) = chain.slot_mut(9) {
+        slot.effect.effect_set_param(0, params.tremolo_rate.get());
+        slot.effect
+            .effect_set_param(1, pct(params.tremolo_depth.get()));
+        slot.effect
+            .effect_set_param(2, params.tremolo_waveform.load(Ordering::Relaxed) as f32);
+    }
+
+    // Slot 10: Delay — time in ms, feedback/mix 0-1→0-100
+    if let Some(slot) = chain.slot_mut(10) {
+        slot.effect.effect_set_param(0, params.delay_time.get());
+        slot.effect
+            .effect_set_param(1, pct(params.delay_feedback.get()));
+        slot.effect.effect_set_param(2, pct(params.delay_mix.get()));
+    }
+
+    // Slot 11: Filter — cutoff in Hz, resonance (Q) direct
+    if let Some(slot) = chain.slot_mut(11) {
+        slot.effect.effect_set_param(0, params.filter_cutoff.get());
+        slot.effect
+            .effect_set_param(1, params.filter_resonance.get());
+    }
+
+    // Slot 12: MultiVibrato — depth 0-1→0-100
+    if let Some(slot) = chain.slot_mut(12) {
+        slot.effect
+            .effect_set_param(0, pct(params.vibrato_depth.get()));
+    }
+
+    // Slot 13: Tape Saturation — drive in dB, saturation 0-1→0-100
+    if let Some(slot) = chain.slot_mut(13) {
+        slot.effect.effect_set_param(0, params.tape_drive.get());
+        slot.effect
+            .effect_set_param(1, pct(params.tape_saturation.get()));
+    }
+
+    // Slot 14: Reverb — room_size/decay/damping/mix 0-1→0-100, predelay in ms, type as enum
+    if let Some(slot) = chain.slot_mut(14) {
+        slot.effect
+            .effect_set_param(0, pct(params.reverb_room_size.get()));
+        slot.effect
+            .effect_set_param(1, pct(params.reverb_decay.get()));
+        slot.effect
+            .effect_set_param(2, pct(params.reverb_damping.get()));
+        slot.effect
+            .effect_set_param(3, params.reverb_predelay.get());
+        slot.effect
+            .effect_set_param(4, pct(params.reverb_mix.get()));
+        // Params 5 (stereo width) and 6 (reverb type) not in SharedParams — use defaults
+    }
+
+    // Sync bypass states
+    chain.set_bypassed(0, params.bypass.preamp.load(Ordering::Relaxed));
+    chain.set_bypassed(1, params.bypass.distortion.load(Ordering::Relaxed));
+    chain.set_bypassed(2, params.bypass.compressor.load(Ordering::Relaxed));
+    chain.set_bypassed(3, params.bypass.gate.load(Ordering::Relaxed));
+    chain.set_bypassed(4, params.bypass.eq.load(Ordering::Relaxed));
+    chain.set_bypassed(5, params.bypass.wah.load(Ordering::Relaxed));
+    chain.set_bypassed(6, params.bypass.chorus.load(Ordering::Relaxed));
+    chain.set_bypassed(7, params.bypass.flanger.load(Ordering::Relaxed));
+    chain.set_bypassed(8, params.bypass.phaser.load(Ordering::Relaxed));
+    chain.set_bypassed(9, params.bypass.tremolo.load(Ordering::Relaxed));
+    chain.set_bypassed(10, params.bypass.delay.load(Ordering::Relaxed));
+    chain.set_bypassed(11, params.bypass.filter.load(Ordering::Relaxed));
+    chain.set_bypassed(12, params.bypass.multivibrato.load(Ordering::Relaxed));
+    chain.set_bypassed(13, params.bypass.tape.load(Ordering::Relaxed));
+    chain.set_bypassed(14, params.bypass.reverb.load(Ordering::Relaxed));
+}
+
 /// Run the audio processing thread.
+///
+/// Processes audio in stereo through the effect chain, respecting the user-defined
+/// effect order. Uses [`ChainManager`] for registry-driven effect creation and
+/// dispatch. Measures CPU usage and reports metering data to the GUI.
+#[allow(clippy::too_many_arguments)]
 fn run_audio_thread(
     params: Arc<SharedParams>,
     running: Arc<AtomicBool>,
     metering_tx: Sender<MeteringData>,
+    effect_order: EffectOrder,
     sample_rate: f32,
+    buffer_size: usize,
 ) -> Result<(), String> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
@@ -517,44 +719,45 @@ fn run_audio_thread(
         .default_output_device()
         .ok_or("No output device available")?;
 
-    let config = cpal::StreamConfig {
-        channels: 1,
+    // Use stereo config; fall back to device default channel count
+    let output_channels = output_device
+        .default_output_config()
+        .map(|c| c.channels())
+        .unwrap_or(2);
+    let input_channels = input_device
+        .default_input_config()
+        .map(|c| c.channels())
+        .unwrap_or(1);
+
+    let output_config = cpal::StreamConfig {
+        channels: output_channels,
         sample_rate: cpal::SampleRate(sample_rate as u32),
-        buffer_size: cpal::BufferSize::Fixed(512),
+        buffer_size: cpal::BufferSize::Fixed(buffer_size as u32),
+    };
+    let input_config = cpal::StreamConfig {
+        channels: input_channels,
+        sample_rate: cpal::SampleRate(sample_rate as u32),
+        buffer_size: cpal::BufferSize::Fixed(buffer_size as u32),
     };
 
-    // Create effects
-    let mut preamp = CleanPreamp::new(sample_rate);
-    let mut distortion = Distortion::new(sample_rate);
-    let mut compressor = Compressor::new(sample_rate);
-    let mut gate = Gate::new(sample_rate);
-    let mut eq = ParametricEq::new(sample_rate);
-    let mut wah = Wah::new(sample_rate);
-    let mut chorus = Chorus::new(sample_rate);
-    let mut flanger = Flanger::new(sample_rate);
-    let mut phaser = Phaser::new(sample_rate);
-    let mut tremolo = Tremolo::new(sample_rate);
-    let mut delay = Delay::new(sample_rate);
-    let mut filter = LowPassFilter::new(sample_rate);
-    let mut vibrato = MultiVibrato::new(sample_rate);
-    let mut tape = TapeSaturation::new(sample_rate);
-    let mut reverb = Reverb::new(sample_rate);
+    // Create effect chain from registry
+    let registry = EffectRegistry::new();
+    let mut chain = ChainManager::new(&registry, DEFAULT_CHAIN, sample_rate);
 
-    // Audio buffer for communication between input and output
-    // Use larger buffer to absorb timing variations between streams
-    let (tx, rx) = crossbeam_channel::bounded::<f32>(8192);
+    // Stereo audio buffer (interleaved L, R pairs)
+    let (tx, rx) = crossbeam_channel::bounded::<f32>(16384);
 
-    // Pre-fill buffer with silence to prevent initial underruns
-    for _ in 0..1024 {
+    // Pre-fill with silence (stereo frames)
+    for _ in 0..(1024 * input_channels as usize) {
         let _ = tx.try_send(0.0);
     }
 
     let running_input = Arc::clone(&running);
 
-    // Input stream - just forward samples
+    // Input stream - forward all samples (mono or stereo)
     let input_stream = input_device
         .build_input_stream(
-            &config,
+            &input_config,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
                 if !running_input.load(Ordering::Relaxed) {
                     return;
@@ -570,202 +773,106 @@ fn run_audio_thread(
 
     let params_output = Arc::clone(&params);
     let running_output = Arc::clone(&running);
+    let in_ch = input_channels as usize;
+    let out_ch = output_channels as usize;
+    let buffer_time_secs = buffer_size as f64 / sample_rate as f64;
 
-    // Output stream - process and output
+    // Output stream - process and output in stereo
     let output_stream = output_device
         .build_output_stream(
-            &config,
+            &output_config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 if !running_output.load(Ordering::Relaxed) {
                     data.fill(0.0);
                     return;
                 }
 
-                // Update effect parameters from shared params
+                let process_start = Instant::now();
+
+                // Global gain levels
                 let input_gain_db = params_output.input_gain.get();
                 let master_vol_db = params_output.master_volume.get();
                 let input_gain = 10.0_f32.powf(input_gain_db / 20.0);
                 let master_vol = 10.0_f32.powf(master_vol_db / 20.0);
 
-                // Update effect parameters
-                preamp.set_gain_db(params_output.preamp_gain.get());
+                // Sync SharedParams → effect parameters and bypass states
+                sync_shared_params_to_chain(&params_output, &mut chain);
 
-                distortion.set_drive_db(params_output.dist_drive.get());
-                distortion.set_tone_hz(params_output.dist_tone.get());
-                distortion.set_level_db(params_output.dist_level.get());
-                let ws = params_output.dist_waveshape.load(Ordering::Relaxed);
-                distortion.set_waveshape(match ws {
-                    0 => WaveShape::SoftClip,
-                    1 => WaveShape::HardClip,
-                    2 => WaveShape::Foldback,
-                    _ => WaveShape::Asymmetric,
-                });
-
-                compressor.set_threshold_db(params_output.comp_threshold.get());
-                compressor.set_ratio(params_output.comp_ratio.get());
-                compressor.set_attack_ms(params_output.comp_attack.get());
-                compressor.set_release_ms(params_output.comp_release.get());
-                compressor.set_makeup_gain_db(params_output.comp_makeup.get());
-
-                gate.set_threshold_db(params_output.gate_threshold.get());
-                gate.set_attack_ms(params_output.gate_attack.get());
-                gate.set_release_ms(params_output.gate_release.get());
-                gate.set_hold_ms(params_output.gate_hold.get());
-
-                eq.set_low_freq(params_output.eq_low_freq.get());
-                eq.set_low_gain(params_output.eq_low_gain.get());
-                eq.set_low_q(params_output.eq_low_q.get());
-                eq.set_mid_freq(params_output.eq_mid_freq.get());
-                eq.set_mid_gain(params_output.eq_mid_gain.get());
-                eq.set_mid_q(params_output.eq_mid_q.get());
-                eq.set_high_freq(params_output.eq_high_freq.get());
-                eq.set_high_gain(params_output.eq_high_gain.get());
-                eq.set_high_q(params_output.eq_high_q.get());
-
-                wah.set_frequency(params_output.wah_frequency.get());
-                wah.set_resonance(params_output.wah_resonance.get());
-                wah.set_sensitivity(params_output.wah_sensitivity.get());
-                wah.set_mode_index(params_output.wah_mode.load(Ordering::Relaxed) as usize);
-
-                chorus.set_rate(params_output.chorus_rate.get());
-                chorus.set_depth(params_output.chorus_depth.get());
-                chorus.set_mix(params_output.chorus_mix.get());
-
-                flanger.set_rate(params_output.flanger_rate.get());
-                flanger.set_depth(params_output.flanger_depth.get());
-                flanger.set_feedback(params_output.flanger_feedback.get());
-                flanger.set_mix(params_output.flanger_mix.get());
-
-                phaser.set_rate(params_output.phaser_rate.get());
-                phaser.set_depth(params_output.phaser_depth.get());
-                phaser.set_feedback(params_output.phaser_feedback.get());
-                phaser.set_mix(params_output.phaser_mix.get());
-                phaser.set_stages(params_output.phaser_stages.load(Ordering::Relaxed) as usize);
-
-                tremolo.set_rate(params_output.tremolo_rate.get());
-                tremolo.set_depth(params_output.tremolo_depth.get());
-                let trem_wave = params_output.tremolo_waveform.load(Ordering::Relaxed);
-                tremolo.set_waveform(match trem_wave {
-                    0 => TremoloWaveform::Sine,
-                    1 => TremoloWaveform::Triangle,
-                    2 => TremoloWaveform::Square,
-                    _ => TremoloWaveform::SampleHold,
-                });
-
-                delay.set_delay_time_ms(params_output.delay_time.get());
-                delay.set_feedback(params_output.delay_feedback.get());
-                delay.set_mix(params_output.delay_mix.get());
-
-                filter.set_cutoff_hz(params_output.filter_cutoff.get());
-                filter.set_q(params_output.filter_resonance.get());
-
-                vibrato.set_depth(params_output.vibrato_depth.get());
-
-                // Convert tape drive from dB to linear
-                let tape_drive_linear = 10.0_f32.powf(params_output.tape_drive.get() / 20.0);
-                tape.set_drive(tape_drive_linear);
-                tape.set_saturation(params_output.tape_saturation.get());
-
-                reverb.set_room_size(params_output.reverb_room_size.get());
-                reverb.set_decay(params_output.reverb_decay.get());
-                reverb.set_damping(params_output.reverb_damping.get());
-                reverb.set_predelay_ms(params_output.reverb_predelay.get());
-                reverb.set_mix(params_output.reverb_mix.get());
-
-                // Cache bypass states to avoid per-sample atomic loads
-                let bypass_preamp = params_output.bypass.preamp.load(Ordering::Relaxed);
-                let bypass_distortion = params_output.bypass.distortion.load(Ordering::Relaxed);
-                let bypass_compressor = params_output.bypass.compressor.load(Ordering::Relaxed);
-                let bypass_gate = params_output.bypass.gate.load(Ordering::Relaxed);
-                let bypass_eq = params_output.bypass.eq.load(Ordering::Relaxed);
-                let bypass_wah = params_output.bypass.wah.load(Ordering::Relaxed);
-                let bypass_chorus = params_output.bypass.chorus.load(Ordering::Relaxed);
-                let bypass_flanger = params_output.bypass.flanger.load(Ordering::Relaxed);
-                let bypass_phaser = params_output.bypass.phaser.load(Ordering::Relaxed);
-                let bypass_tremolo = params_output.bypass.tremolo.load(Ordering::Relaxed);
-                let bypass_delay = params_output.bypass.delay.load(Ordering::Relaxed);
-                let bypass_filter = params_output.bypass.filter.load(Ordering::Relaxed);
-                let bypass_vibrato = params_output.bypass.multivibrato.load(Ordering::Relaxed);
-                let bypass_tape = params_output.bypass.tape.load(Ordering::Relaxed);
-                let bypass_reverb = params_output.bypass.reverb.load(Ordering::Relaxed);
+                // Sync effect order from GUI
+                let order = effect_order.get();
+                chain.reorder(order);
 
                 let mut input_peak = 0.0_f32;
                 let mut input_rms_sum = 0.0_f32;
                 let mut output_peak = 0.0_f32;
                 let mut output_rms_sum = 0.0_f32;
 
-                for sample in data.iter_mut() {
-                    // Get input sample
-                    let input = rx.try_recv().unwrap_or(0.0) * input_gain;
-                    input_peak = input_peak.max(input.abs());
-                    input_rms_sum += input * input;
+                let frames = data.len() / out_ch;
 
-                    // Process through effect chain (using cached bypass states)
-                    let mut out = input;
+                for i in 0..frames {
+                    // Deinterleave input (mono: duplicate, stereo: take L/R)
+                    let (in_l, in_r) = if in_ch >= 2 {
+                        let l = rx.try_recv().unwrap_or(0.0);
+                        let r = rx.try_recv().unwrap_or(0.0);
+                        for _ in 2..in_ch {
+                            let _ = rx.try_recv();
+                        }
+                        (l, r)
+                    } else {
+                        let s = rx.try_recv().unwrap_or(0.0);
+                        (s, s)
+                    };
 
-                    if !bypass_preamp {
-                        out = preamp.process(out);
-                    }
-                    if !bypass_distortion {
-                        out = distortion.process(out);
-                    }
-                    if !bypass_compressor {
-                        out = compressor.process(out);
-                    }
-                    if !bypass_gate {
-                        out = gate.process(out);
-                    }
-                    if !bypass_eq {
-                        out = eq.process(out);
-                    }
-                    if !bypass_wah {
-                        out = wah.process(out);
-                    }
-                    if !bypass_chorus {
-                        out = chorus.process(out);
-                    }
-                    if !bypass_flanger {
-                        out = flanger.process(out);
-                    }
-                    if !bypass_phaser {
-                        out = phaser.process(out);
-                    }
-                    if !bypass_tremolo {
-                        out = tremolo.process(out);
-                    }
-                    if !bypass_delay {
-                        out = delay.process(out);
-                    }
-                    if !bypass_filter {
-                        out = filter.process(out);
-                    }
-                    if !bypass_vibrato {
-                        out = vibrato.process(out);
-                    }
-                    if !bypass_tape {
-                        out = tape.process(out);
-                    }
-                    if !bypass_reverb {
-                        out = reverb.process(out);
-                    }
+                    let mut l = in_l * input_gain;
+                    let mut r = in_r * input_gain;
+
+                    let mono_in = (l + r) * 0.5;
+                    input_peak = input_peak.max(mono_in.abs());
+                    input_rms_sum += mono_in * mono_in;
+
+                    // Process through effect chain (order + bypass handled by ChainManager)
+                    (l, r) = chain.process_stereo(l, r);
 
                     // Apply master volume
-                    out *= master_vol;
+                    l *= master_vol;
+                    r *= master_vol;
 
-                    output_peak = output_peak.max(out.abs());
-                    output_rms_sum += out * out;
+                    let mono_out = (l + r) * 0.5;
+                    output_peak = output_peak.max(mono_out.abs());
+                    output_rms_sum += mono_out * mono_out;
 
-                    *sample = out;
+                    // Interleave output
+                    let idx = i * out_ch;
+                    match out_ch {
+                        1 => data[idx] = (l + r) * 0.5,
+                        2 => {
+                            data[idx] = l;
+                            data[idx + 1] = r;
+                        }
+                        _ => {
+                            data[idx] = l;
+                            data[idx + 1] = r;
+                            for c in 2..out_ch {
+                                data[idx + c] = 0.0;
+                            }
+                        }
+                    }
                 }
 
+                // CPU usage measurement
+                let elapsed = process_start.elapsed().as_secs_f64();
+                let cpu_pct = (elapsed / buffer_time_secs * 100.0) as f32;
+
                 // Send metering data (non-blocking)
-                let count = data.len().max(1) as f32;
+                let count = frames.max(1) as f32;
                 let _ = metering_tx.try_send(MeteringData {
                     input_peak,
                     input_rms: (input_rms_sum / count).sqrt(),
                     output_peak,
                     output_rms: (output_rms_sum / count).sqrt(),
-                    gain_reduction: compressor.gain_reduction_db(),
+                    // TODO: gain reduction requires metering trait on dyn EffectWithParams
+                    gain_reduction: 0.0,
+                    cpu_usage: cpu_pct,
                 });
             },
             |err| log::error!("Output stream error: {}", err),
