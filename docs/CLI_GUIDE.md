@@ -27,6 +27,7 @@ make dev-install
 |---------|-------------|
 | `process` | Process audio files through effects |
 | `realtime` | Real-time audio processing |
+| `play` | Play WAV files through effects |
 | `generate` | Generate test signals and synthesis |
 | `analyze` | Spectral and audio analysis |
 | `compare` | A/B audio comparison |
@@ -172,6 +173,51 @@ sonido realtime --effect delay --buffer-size 128
 ```
 
 Press `Ctrl+C` to stop real-time processing.
+
+---
+
+## play
+
+Play a WAV file through optional effects with real-time output.
+
+### Basic Usage
+
+```bash
+sonido play <FILE> [OPTIONS]
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `-e, --effect <NAME>` | Single effect to apply during playback |
+| `-c, --chain <SPEC>` | Effect chain specification |
+| `-p, --preset <NAME>` | Preset name or path (factory, user, or file) |
+| `--param <KEY=VALUE>` | Effect parameter (used with `--effect`) |
+| `-o, --output <DEVICE>` | Output device (index, name, or partial name) |
+| `-l, --loop` | Loop playback continuously |
+| `--mono` | Force mono output |
+
+### Examples
+
+```bash
+# Play a file with no effects
+sonido play test.wav
+
+# Play through a reverb effect
+sonido play vocals.wav --effect reverb --param mix=0.4
+
+# Play through a chain of effects, looping
+sonido play drums.wav --chain "compressor:ratio=4|delay:time=300" --loop
+
+# Play with a preset on a specific output device
+sonido play guitar.wav --preset tape_warmth --output "USB Audio"
+
+# Force mono output
+sonido play stereo_mix.wav --mono
+```
+
+Press `Ctrl+C` to stop playback.
 
 ---
 
