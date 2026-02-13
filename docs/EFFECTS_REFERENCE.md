@@ -9,7 +9,7 @@ Some effects have alternate names for convenience:
 | Primary Name | Alias | Notes |
 |-------------|-------|-------|
 | `filter` | `lowpass` | Resonant lowpass filter |
-| `multivibrato` | `vibrato` | 10-unit tape wow/flutter |
+| `multivibrato` | `vibrato` | 6-unit tape wow/flutter |
 | `gate` | `noisegate` | Noise gate |
 | `wah` | `autowah` | Auto-wah/manual wah |
 | `eq` | `parametriceq`, `peq` | 3-band parametric EQ |
@@ -206,9 +206,9 @@ sonido process in.wav --effect filter \
 
 ## multivibrato
 
-10-unit tape wow/flutter vibrato. Also available as `vibrato`.
+6-unit tape wow/flutter vibrato. Also available as `vibrato`.
 
-Simulates the complex pitch modulation of analog tape machines with 10 independent modulation units at different rates.
+Simulates the complex pitch modulation of analog tape machines with 6 independent modulation units at different rates.
 
 | Parameter | Description | Default | Range |
 |-----------|-------------|---------|-------|

@@ -3,10 +3,9 @@
 //! J37/Kramer MPX inspired tape warmth with soft saturation,
 //! even harmonic enhancement, and high frequency rolloff.
 
-use libm::expf;
 use sonido_core::{
     Effect, OnePole, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, db_to_linear,
-    linear_to_db,
+    fast_exp2, linear_to_db,
 };
 
 /// Tape saturation effect
@@ -128,10 +127,11 @@ impl TapeSaturation {
         let driven = x * drive + self.bias;
 
         // Soft saturation with asymmetry for even harmonics
+        // expf(x) = exp2(x * LOG2_E)
         let positive = if driven > 0.0 {
-            1.0 - expf(-driven * 2.0)
+            1.0 - fast_exp2(-driven * 2.0 * core::f32::consts::LOG2_E)
         } else {
-            -1.0 + expf(driven * 1.8) // Slight asymmetry
+            -1.0 + fast_exp2(driven * 1.8 * core::f32::consts::LOG2_E) // Slight asymmetry
         };
 
         // Blend clean and saturated based on saturation amount

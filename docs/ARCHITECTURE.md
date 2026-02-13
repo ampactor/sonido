@@ -105,7 +105,7 @@ Audio effect implementations built on sonido-core. All `no_std` compatible with 
 - `TapeSaturation`: J37-style tape warmth with HF rolloff
 - `CleanPreamp`: Simple gain stage with input/output control
 - `LowPassFilter`: Resonant 2-pole lowpass (SVF-based)
-- `MultiVibrato`: 10-unit tape wow/flutter simulation
+- `MultiVibrato`: 6-unit tape wow/flutter simulation
 
 ### sonido-analysis
 
