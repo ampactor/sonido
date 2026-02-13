@@ -12,6 +12,7 @@ env:
 jobs:
   test:
     name: Test (${{ matrix.os }})
+    timeout-minutes: 15
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
@@ -43,6 +44,7 @@ jobs:
   no-std:
     name: no_std Check
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -78,6 +80,7 @@ jobs:
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -106,6 +109,7 @@ jobs:
   docs:
     name: Documentation
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -137,6 +141,7 @@ jobs:
   fmt:
     name: Format
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -151,8 +156,24 @@ jobs:
   deny:
     name: Dependency Check
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     continue-on-error: true
 
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v1
+
+  wasm-check:
+    name: Wasm Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Check wasm compilation
+        run: cargo check --target wasm32-unknown-unknown -p sonido-gui
