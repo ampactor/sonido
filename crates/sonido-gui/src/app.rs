@@ -10,7 +10,10 @@ use crate::preset_manager::PresetManager;
 use crate::theme::Theme;
 use crate::widgets::{Knob, LevelMeter};
 use crossbeam_channel::{Receiver, Sender};
-use egui::{CentralPanel, Color32, Context, Frame, Margin, TopBottomPanel};
+use egui::{
+    Align, CentralPanel, Color32, Context, Frame, Layout, Margin, Rect, TopBottomPanel, UiBuilder,
+    pos2, vec2,
+};
 use sonido_gui_core::ParamBridge;
 use sonido_registry::EffectRegistry;
 use std::sync::Arc;
@@ -359,85 +362,80 @@ impl SonidoApp {
 
     /// Render the I/O section with meters and gain controls.
     fn render_io_section(&mut self, ui: &mut egui::Ui) {
-        ui.vertical(|ui| {
-            // Input section
-            ui.group(|ui| {
-                ui.set_min_width(80.0);
-                ui.vertical_centered(|ui| {
-                    ui.label(
-                        egui::RichText::new("INPUT")
-                            .small()
-                            .color(Color32::from_rgb(150, 150, 160)),
-                    );
+        ui.group(|ui| {
+            ui.set_min_width(80.0);
+            ui.vertical_centered(|ui| {
+                ui.label(
+                    egui::RichText::new("INPUT")
+                        .small()
+                        .color(Color32::from_rgb(150, 150, 160)),
+                );
 
-                    ui.add_space(4.0);
+                ui.add_space(4.0);
 
-                    // Input meter
-                    ui.add(
-                        LevelMeter::new(self.metering.input_peak, self.metering.input_rms)
-                            .size(24.0, 100.0),
-                    );
+                // Input meter
+                ui.add(
+                    LevelMeter::new(self.metering.input_peak, self.metering.input_rms)
+                        .size(24.0, 100.0),
+                );
 
-                    ui.add_space(8.0);
+                ui.add_space(8.0);
 
-                    // Input gain knob
-                    let input_gain = self.audio_bridge.input_gain();
-                    let mut gain_val = input_gain.get();
-                    if ui
-                        .add(
-                            Knob::new(&mut gain_val, -20.0, 20.0, "GAIN")
-                                .default(0.0)
-                                .format_db()
-                                .diameter(50.0),
-                        )
-                        .changed()
-                    {
-                        input_gain.set(gain_val);
-                        self.preset_manager.mark_modified();
-                    }
-                });
+                // Input gain knob
+                let input_gain = self.audio_bridge.input_gain();
+                let mut gain_val = input_gain.get();
+                if ui
+                    .add(
+                        Knob::new(&mut gain_val, -20.0, 20.0, "GAIN")
+                            .default(0.0)
+                            .format_db()
+                            .diameter(50.0),
+                    )
+                    .changed()
+                {
+                    input_gain.set(gain_val);
+                    self.preset_manager.mark_modified();
+                }
             });
         });
     }
 
     /// Render the output section.
     fn render_output_section(&mut self, ui: &mut egui::Ui) {
-        ui.vertical(|ui| {
-            ui.group(|ui| {
-                ui.set_min_width(80.0);
-                ui.vertical_centered(|ui| {
-                    ui.label(
-                        egui::RichText::new("OUTPUT")
-                            .small()
-                            .color(Color32::from_rgb(150, 150, 160)),
-                    );
+        ui.group(|ui| {
+            ui.set_min_width(80.0);
+            ui.vertical_centered(|ui| {
+                ui.label(
+                    egui::RichText::new("OUTPUT")
+                        .small()
+                        .color(Color32::from_rgb(150, 150, 160)),
+                );
 
-                    ui.add_space(4.0);
+                ui.add_space(4.0);
 
-                    // Output meter
-                    ui.add(
-                        LevelMeter::new(self.metering.output_peak, self.metering.output_rms)
-                            .size(24.0, 100.0),
-                    );
+                // Output meter
+                ui.add(
+                    LevelMeter::new(self.metering.output_peak, self.metering.output_rms)
+                        .size(24.0, 100.0),
+                );
 
-                    ui.add_space(8.0);
+                ui.add_space(8.0);
 
-                    // Master volume knob
-                    let master_vol_param = self.audio_bridge.master_volume();
-                    let mut master_val = master_vol_param.get();
-                    if ui
-                        .add(
-                            Knob::new(&mut master_val, -40.0, 6.0, "MASTER")
-                                .default(0.0)
-                                .format_db()
-                                .diameter(50.0),
-                        )
-                        .changed()
-                    {
-                        master_vol_param.set(master_val);
-                        self.preset_manager.mark_modified();
-                    }
-                });
+                // Master volume knob
+                let master_vol_param = self.audio_bridge.master_volume();
+                let mut master_val = master_vol_param.get();
+                if ui
+                    .add(
+                        Knob::new(&mut master_val, -40.0, 6.0, "MASTER")
+                            .default(0.0)
+                            .format_db()
+                            .diameter(50.0),
+                    )
+                    .changed()
+                {
+                    master_vol_param.set(master_val);
+                    self.preset_manager.mark_modified();
+                }
             });
         });
     }
@@ -611,42 +609,86 @@ impl eframe::App for SonidoApp {
 
             ui.add_space(8.0);
 
-            // Main horizontal layout: Input | Chain + Effect | Output
-            ui.horizontal(|ui| {
-                // Input section
-                self.render_io_section(ui);
+            // Main layout: INPUT (100px) | 16px gap | CENTER (flex) | 16px gap | OUTPUT (100px)
+            // Manual rect splitting avoids the vertical_centered-inside-horizontal width bug.
+            let avail = ui.available_rect_before_wrap();
+            let io_width = 100.0;
+            let gap = 16.0;
+            let center_width = (avail.width() - 2.0 * io_width - 2.0 * gap).max(200.0);
 
-                ui.add_space(16.0);
+            let input_rect = Rect::from_min_size(avail.min, vec2(io_width, avail.height()));
+            let center_rect = Rect::from_min_size(
+                pos2(avail.min.x + io_width + gap, avail.min.y),
+                vec2(center_width, avail.height()),
+            );
+            let output_rect = Rect::from_min_size(
+                pos2(
+                    avail.min.x + io_width + gap + center_width + gap,
+                    avail.min.y,
+                ),
+                vec2(io_width, avail.height()),
+            );
 
-                // Center section (chain + effect panel)
-                ui.vertical(|ui| {
-                    // Effect chain strip
-                    ui.group(|ui| {
-                        ui.set_min_width(500.0);
-                        ui.vertical_centered(|ui| {
-                            ui.label(
-                                egui::RichText::new("EFFECT CHAIN")
-                                    .small()
-                                    .color(Color32::from_rgb(150, 150, 160)),
-                            );
-                            ui.add_space(4.0);
-                            self.chain_view.ui(ui, &*self.bridge, &self.registry);
-                        });
+            // Input column
+            {
+                let mut child = ui.new_child(
+                    UiBuilder::new()
+                        .id_salt("input_col")
+                        .max_rect(input_rect)
+                        .layout(Layout::top_down(Align::Center)),
+                );
+                self.render_io_section(&mut child);
+            }
+
+            // Center column (chain strip + effect panel)
+            {
+                let mut child = ui.new_child(
+                    UiBuilder::new()
+                        .id_salt("center_col")
+                        .max_rect(center_rect)
+                        .layout(Layout::top_down(Align::LEFT)),
+                );
+
+                // Effect chain strip
+                child.group(|ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.label(
+                            egui::RichText::new("EFFECT CHAIN")
+                                .small()
+                                .color(Color32::from_rgb(150, 150, 160)),
+                        );
+                        ui.add_space(4.0);
+                        self.chain_view.ui(ui, &*self.bridge, &self.registry);
                     });
-
-                    ui.add_space(16.0);
-
-                    // Selected effect panel
-                    if let Some(slot) = self.chain_view.selected() {
-                        self.render_effect_panel(ui, slot);
-                    }
                 });
 
-                ui.add_space(16.0);
+                child.add_space(16.0);
 
-                // Output section
-                self.render_output_section(ui);
-            });
+                // Selected effect panel
+                if let Some(slot) = self.chain_view.selected() {
+                    self.render_effect_panel(&mut child, slot);
+                }
+            }
+
+            // Output column
+            {
+                let mut child = ui.new_child(
+                    UiBuilder::new()
+                        .id_salt("output_col")
+                        .max_rect(output_rect)
+                        .layout(Layout::top_down(Align::Center)),
+                );
+                self.render_output_section(&mut child);
+            }
+
+            // Advance parent cursor past all three columns
+            ui.advance_cursor_after_rect(Rect::from_min_max(
+                avail.min,
+                pos2(
+                    avail.min.x + io_width + gap + center_width + gap + io_width,
+                    avail.max.y,
+                ),
+            ));
         });
 
         // Dialogs (save dialog is native-only)
