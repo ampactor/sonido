@@ -5,7 +5,7 @@
 
 use sonido_core::{
     Effect, EnvelopeFollower, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam,
-    db_to_linear,
+    fast_db_to_linear,
 };
 
 /// Noise gate states.
@@ -73,6 +73,8 @@ pub struct Gate {
     release_dec: f32,
     /// Output level with smoothing
     output_level: SmoothedParam,
+    /// Cached linear threshold (recomputed only while threshold param is smoothing)
+    cached_threshold_linear: f32,
 
     sample_rate: f32,
 }
@@ -96,6 +98,7 @@ impl Gate {
             attack_inc: 0.0,
             release_dec: 0.0,
             output_level: sonido_core::gain::output_level_param(sample_rate),
+            cached_threshold_linear: fast_db_to_linear(-40.0),
             sample_rate,
         };
         gate.recalculate_rates();
@@ -173,8 +176,11 @@ impl Effect for Gate {
         // Get envelope level
         let envelope = self.envelope_follower.process(input);
 
-        // Convert threshold to linear
-        let threshold_linear = db_to_linear(threshold_db);
+        // Recompute linear threshold only while the smoothed param is moving
+        if !self.threshold.is_settled() {
+            self.cached_threshold_linear = fast_db_to_linear(threshold_db);
+        }
+        let threshold_linear = self.cached_threshold_linear;
 
         // Calculate hold samples
         let hold_samples = ((hold_ms / 1000.0) * self.sample_rate) as u32;
@@ -243,7 +249,11 @@ impl Effect for Gate {
         let sum = (left.abs() + right.abs()) * 0.5;
         let envelope = self.envelope_follower.process(sum);
 
-        let threshold_linear = db_to_linear(threshold_db);
+        // Recompute linear threshold only while the smoothed param is moving
+        if !self.threshold.is_settled() {
+            self.cached_threshold_linear = fast_db_to_linear(threshold_db);
+        }
+        let threshold_linear = self.cached_threshold_linear;
         let hold_samples = ((hold_ms / 1000.0) * self.sample_rate) as u32;
         let above_threshold = envelope > threshold_linear;
 
@@ -316,6 +326,7 @@ impl Effect for Gate {
         self.release_ms.snap_to_target();
         self.hold_ms.snap_to_target();
         self.output_level.snap_to_target();
+        self.cached_threshold_linear = fast_db_to_linear(self.threshold.target());
         self.state = GateState::Closed;
         self.gain = 0.0;
         self.hold_counter = 0;

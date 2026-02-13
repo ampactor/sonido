@@ -6,14 +6,19 @@
 //! This creates notches in the frequency spectrum that sweep up and down.
 
 use core::f32::consts::PI;
-use libm::tanf;
 use sonido_core::{
-    Effect, Lfo, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, flush_denormal,
-    wet_dry_mix,
+    Effect, Lfo, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, fast_exp2, fast_log2,
+    fast_tan, flush_denormal, wet_dry_mix,
 };
 
 /// Maximum number of allpass stages.
 const MAX_STAGES: usize = 12;
+
+/// How many samples between allpass coefficient updates.
+///
+/// At 48 kHz this gives ~0.67 ms between updates — fast enough that the
+/// sweep sounds continuous, but saves 31/32 of the tanf work.
+const COEFF_UPDATE_INTERVAL: u32 = 32;
 
 /// Phaser effect with LFO-modulated allpass filters.
 ///
@@ -85,6 +90,9 @@ pub struct Phaser {
     min_freq: f32,
     /// Maximum center frequency (Hz)
     max_freq: f32,
+    /// Down-counter for block-rate coefficient decimation.
+    /// Starts at 0 so the first sample triggers an immediate update.
+    coeff_update_counter: u32,
 }
 
 /// Simple first-order allpass filter for phaser.
@@ -118,7 +126,7 @@ impl FirstOrderAllpass {
     fn set_frequency(&mut self, freq: f32, sample_rate: f32) {
         // Clamp frequency to valid range (10 Hz to Nyquist/2)
         let freq = freq.clamp(10.0, sample_rate * 0.4);
-        let tan_val = tanf(PI * freq / sample_rate);
+        let tan_val = fast_tan(PI * freq / sample_rate);
         self.a = (tan_val - 1.0) / (tan_val + 1.0);
     }
 
@@ -166,6 +174,7 @@ impl Phaser {
             feedback_sample_r: 0.0,
             min_freq: Self::MIN_FREQ,
             max_freq: Self::MAX_FREQ,
+            coeff_update_counter: 1,
         }
     }
 
@@ -239,23 +248,30 @@ impl Effect for Phaser {
         let mix = self.mix.advance();
         let output_gain = self.output_level.advance();
 
-        // Update LFO frequency
+        // Update LFO frequency — must happen every sample
         self.lfo.set_frequency(rate);
 
-        // LFO output is in range [0, 1] for unipolar
+        // LFO must advance every sample to keep phase correct
         let lfo_value = self.lfo.advance_unipolar();
 
-        // Calculate center frequency using exponential mapping for natural sweep
-        // freq = min_freq * (max_freq/min_freq)^(lfo * depth)
-        let freq_ratio = self.max_freq / self.min_freq;
-        let center_freq = self.min_freq * libm::powf(freq_ratio, lfo_value * depth);
+        // Decimate allpass coefficient updates to every COEFF_UPDATE_INTERVAL samples
+        self.coeff_update_counter = self.coeff_update_counter.wrapping_sub(1);
+        if self.coeff_update_counter == 0 {
+            self.coeff_update_counter = COEFF_UPDATE_INTERVAL;
 
-        // Update allpass frequencies
-        for i in 0..self.stages {
-            // Slightly offset each stage for richer sound
-            let stage_offset = 1.0 + (i as f32 * 0.1);
-            let stage_freq = center_freq * stage_offset;
-            self.allpass[i].set_frequency(stage_freq, self.sample_rate);
+            // Calculate center frequency using exponential mapping for natural sweep
+            // freq = min_freq * (max_freq/min_freq)^(lfo * depth)
+            // Uses fast_exp2(fast_log2()) in place of powf for ~3× speedup
+            let freq_ratio = self.max_freq / self.min_freq;
+            let center_freq = self.min_freq * fast_exp2(fast_log2(freq_ratio) * lfo_value * depth);
+
+            // Update allpass frequencies
+            for i in 0..self.stages {
+                // Slightly offset each stage for richer sound
+                let stage_offset = 1.0 + (i as f32 * 0.1);
+                let stage_freq = center_freq * stage_offset;
+                self.allpass[i].set_frequency(stage_freq, self.sample_rate);
+            }
         }
 
         // Add feedback to input
@@ -283,26 +299,32 @@ impl Effect for Phaser {
         let mix = self.mix.advance();
         let output_gain = self.output_level.advance();
 
-        // Update LFO frequencies
+        // Update LFO frequencies — must happen every sample
         self.lfo.set_frequency(rate);
         self.lfo_r.set_frequency(rate);
 
-        // Maintain phase offset for right channel
-        // Get LFO values
+        // Both LFOs must advance every sample to keep phase correct
         let lfo_l = self.lfo.advance_unipolar();
         let lfo_r = self.lfo_r.advance_unipolar();
 
-        let freq_ratio = self.max_freq / self.min_freq;
+        // Decimate allpass coefficient updates to every COEFF_UPDATE_INTERVAL samples
+        self.coeff_update_counter = self.coeff_update_counter.wrapping_sub(1);
+        if self.coeff_update_counter == 0 {
+            self.coeff_update_counter = COEFF_UPDATE_INTERVAL;
 
-        // Calculate center frequencies for each channel
-        let center_freq_l = self.min_freq * libm::powf(freq_ratio, lfo_l * depth);
-        let center_freq_r = self.min_freq * libm::powf(freq_ratio, lfo_r * depth);
+            let freq_ratio = self.max_freq / self.min_freq;
+            let log_ratio = fast_log2(freq_ratio);
 
-        // Update allpass frequencies for left channel
-        for i in 0..self.stages {
-            let stage_offset = 1.0 + (i as f32 * 0.1);
-            self.allpass[i].set_frequency(center_freq_l * stage_offset, self.sample_rate);
-            self.allpass_r[i].set_frequency(center_freq_r * stage_offset, self.sample_rate);
+            // Calculate center frequencies for each channel
+            let center_freq_l = self.min_freq * fast_exp2(log_ratio * lfo_l * depth);
+            let center_freq_r = self.min_freq * fast_exp2(log_ratio * lfo_r * depth);
+
+            // Update allpass frequencies for both channels
+            for i in 0..self.stages {
+                let stage_offset = 1.0 + (i as f32 * 0.1);
+                self.allpass[i].set_frequency(center_freq_l * stage_offset, self.sample_rate);
+                self.allpass_r[i].set_frequency(center_freq_r * stage_offset, self.sample_rate);
+            }
         }
 
         // Process left channel
@@ -355,6 +377,7 @@ impl Effect for Phaser {
         self.lfo_r.set_phase(self.stereo_spread);
         self.feedback_sample = 0.0;
         self.feedback_sample_r = 0.0;
+        self.coeff_update_counter = 1; // wrapping_sub(1) → 0 on next sample, triggers immediate update
         self.rate.snap_to_target();
         self.depth.snap_to_target();
         self.feedback.snap_to_target();

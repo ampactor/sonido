@@ -7,6 +7,11 @@ use sonido_core::{
     peaking_eq_coefficients,
 };
 
+/// Number of samples between biquad coefficient recalculations during parameter
+/// transitions. 32 samples = 0.67 ms at 48 kHz, well below the audible
+/// threshold for filter sweep artifacts.
+const COEFF_UPDATE_INTERVAL: u32 = 32;
+
 /// 3-band parametric equalizer.
 ///
 /// Each band has independent frequency, gain, and Q (bandwidth) controls.
@@ -88,6 +93,10 @@ pub struct ParametricEq {
     low_needs_update: bool,
     mid_needs_update: bool,
     high_needs_update: bool,
+
+    /// Down-counter for block-rate coefficient decimation.
+    /// When zero, coefficients are recalculated and the counter reloads.
+    coeff_update_counter: u32,
 }
 
 impl Default for ParametricEq {
@@ -130,6 +139,7 @@ impl ParametricEq {
             low_needs_update: true,
             mid_needs_update: true,
             high_needs_update: true,
+            coeff_update_counter: 1,
         };
 
         eq.update_all_coefficients();
@@ -292,7 +302,7 @@ impl ParametricEq {
 impl Effect for ParametricEq {
     #[inline]
     fn process(&mut self, input: f32) -> f32 {
-        // Advance smoothed parameters
+        // Advance smoothed parameters every sample
         self.low_freq.advance();
         self.low_gain.advance();
         self.low_q.advance();
@@ -304,27 +314,32 @@ impl Effect for ParametricEq {
         self.high_q.advance();
         let output_gain = self.output_level.advance();
 
-        // Update coefficients if needed
-        if self.low_needs_update
-            || !self.low_freq.is_settled()
-            || !self.low_gain.is_settled()
-            || !self.low_q.is_settled()
-        {
-            self.update_low_coefficients();
-        }
-        if self.mid_needs_update
-            || !self.mid_freq.is_settled()
-            || !self.mid_gain.is_settled()
-            || !self.mid_q.is_settled()
-        {
-            self.update_mid_coefficients();
-        }
-        if self.high_needs_update
-            || !self.high_freq.is_settled()
-            || !self.high_gain.is_settled()
-            || !self.high_q.is_settled()
-        {
-            self.update_high_coefficients();
+        // Block-rate coefficient decimation: recalculate only every N samples
+        self.coeff_update_counter = self.coeff_update_counter.wrapping_sub(1);
+        if self.coeff_update_counter == 0 {
+            self.coeff_update_counter = COEFF_UPDATE_INTERVAL;
+
+            if self.low_needs_update
+                || !self.low_freq.is_settled()
+                || !self.low_gain.is_settled()
+                || !self.low_q.is_settled()
+            {
+                self.update_low_coefficients();
+            }
+            if self.mid_needs_update
+                || !self.mid_freq.is_settled()
+                || !self.mid_gain.is_settled()
+                || !self.mid_q.is_settled()
+            {
+                self.update_mid_coefficients();
+            }
+            if self.high_needs_update
+                || !self.high_freq.is_settled()
+                || !self.high_gain.is_settled()
+                || !self.high_q.is_settled()
+            {
+                self.update_high_coefficients();
+            }
         }
 
         // Process through cascaded filters
@@ -346,26 +361,32 @@ impl Effect for ParametricEq {
         self.high_q.advance();
         let output_gain = self.output_level.advance();
 
-        if self.low_needs_update
-            || !self.low_freq.is_settled()
-            || !self.low_gain.is_settled()
-            || !self.low_q.is_settled()
-        {
-            self.update_low_coefficients();
-        }
-        if self.mid_needs_update
-            || !self.mid_freq.is_settled()
-            || !self.mid_gain.is_settled()
-            || !self.mid_q.is_settled()
-        {
-            self.update_mid_coefficients();
-        }
-        if self.high_needs_update
-            || !self.high_freq.is_settled()
-            || !self.high_gain.is_settled()
-            || !self.high_q.is_settled()
-        {
-            self.update_high_coefficients();
+        // Block-rate coefficient decimation: recalculate only every N samples
+        self.coeff_update_counter = self.coeff_update_counter.wrapping_sub(1);
+        if self.coeff_update_counter == 0 {
+            self.coeff_update_counter = COEFF_UPDATE_INTERVAL;
+
+            if self.low_needs_update
+                || !self.low_freq.is_settled()
+                || !self.low_gain.is_settled()
+                || !self.low_q.is_settled()
+            {
+                self.update_low_coefficients();
+            }
+            if self.mid_needs_update
+                || !self.mid_freq.is_settled()
+                || !self.mid_gain.is_settled()
+                || !self.mid_q.is_settled()
+            {
+                self.update_mid_coefficients();
+            }
+            if self.high_needs_update
+                || !self.high_freq.is_settled()
+                || !self.high_gain.is_settled()
+                || !self.high_q.is_settled()
+            {
+                self.update_high_coefficients();
+            }
         }
 
         // Process left channel through L filters
@@ -398,6 +419,7 @@ impl Effect for ParametricEq {
         self.low_needs_update = true;
         self.mid_needs_update = true;
         self.high_needs_update = true;
+        self.coeff_update_counter = 1;
         self.update_all_coefficients();
     }
 
@@ -423,6 +445,7 @@ impl Effect for ParametricEq {
         self.low_needs_update = true;
         self.mid_needs_update = true;
         self.high_needs_update = true;
+        self.coeff_update_counter = 1;
         self.update_all_coefficients();
     }
 }

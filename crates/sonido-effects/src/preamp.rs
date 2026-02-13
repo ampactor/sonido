@@ -3,7 +3,7 @@
 //! High-headroom, zero-latency preamp that handles hot signals
 //! without clipping until you want it to.
 
-use libm::{powf, tanhf};
+use libm::tanhf;
 use sonido_core::{
     Effect, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, db_to_linear, linear_to_db,
 };
@@ -38,6 +38,8 @@ pub struct CleanPreamp {
     output: SmoothedParam,
     /// Headroom in dB before clipping
     headroom_db: f32,
+    /// Cached linear threshold derived from `headroom_db` (avoids per-sample `powf`)
+    cached_threshold: f32,
     /// Sample rate
     sample_rate: f32,
 }
@@ -55,6 +57,7 @@ impl CleanPreamp {
             gain: SmoothedParam::standard(1.0, sample_rate),
             output: SmoothedParam::standard(1.0, sample_rate),
             headroom_db: 20.0, // +20dB headroom
+            cached_threshold: db_to_linear(20.0),
             sample_rate,
         }
     }
@@ -82,6 +85,7 @@ impl CleanPreamp {
     /// Set headroom in dB
     pub fn set_headroom_db(&mut self, db: f32) {
         self.headroom_db = db.clamp(6.0, 40.0);
+        self.cached_threshold = db_to_linear(self.headroom_db);
     }
 
     /// Get current headroom in dB
@@ -98,7 +102,7 @@ impl Effect for CleanPreamp {
 
         // Simple gain stage - clean until clipping threshold
         let gained = input * gain;
-        let threshold = powf(10.0, self.headroom_db / 20.0);
+        let threshold = self.cached_threshold;
 
         // Soft clip only at extreme levels
         let output = if gained.abs() > threshold {
@@ -115,7 +119,7 @@ impl Effect for CleanPreamp {
         // Dual-mono: process each channel independently with same settings
         let gain = self.gain.advance();
         let output_level = self.output.advance();
-        let threshold = powf(10.0, self.headroom_db / 20.0);
+        let threshold = self.cached_threshold;
 
         // Process left
         let gained_l = left * gain;
