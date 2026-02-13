@@ -18,6 +18,11 @@
     </style>
 </head>
 <body>
-    <canvas id="sonido_canvas"></canvas>
+    <canvas id="sonido_canvas" width="1280" height="720"></canvas>
+    <script>
+        const canvas = document.getElementById('sonido_canvas');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    </script>
 </body>
 </html>
