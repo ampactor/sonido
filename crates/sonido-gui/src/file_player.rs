@@ -14,6 +14,13 @@ use sonido_io::{read_wav_info, read_wav_stereo};
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
 
+/// Maximum total samples (all channels) allowed when loading WAV on wasm.
+///
+/// 60 seconds of stereo audio at 48 kHz = 5 760 000 samples (~23 MB of f32).
+/// Beyond this the browser's linear memory is at risk of exhaustion.
+#[cfg(target_arch = "wasm32")]
+const MAX_WASM_SAMPLES: u32 = 48_000 * 60 * 2;
+
 /// Commands sent from GUI thread to audio thread for file playback.
 pub enum TransportCommand {
     /// Load a stereo file into the audio thread's playback buffer.
@@ -144,6 +151,9 @@ impl FilePlayer {
     }
 
     /// Load a WAV file from raw bytes (wasm).
+    ///
+    /// Files exceeding [`MAX_WASM_SAMPLES`] are rejected to prevent
+    /// out-of-memory crashes in the browser's linear memory.
     #[cfg(target_arch = "wasm32")]
     fn load_file_from_bytes(&mut self, name: String, bytes: Vec<u8>) {
         use std::io::Cursor;
@@ -159,6 +169,17 @@ impl FilePlayer {
         let spec = reader.spec();
         let sample_rate = spec.sample_rate as f32;
         let channels = spec.channels as usize;
+
+        // Guard against oversized files that would exhaust wasm linear memory.
+        // len() returns total samples across all channels.
+        let total_samples = reader.len();
+        if total_samples > MAX_WASM_SAMPLES {
+            let secs = total_samples / u32::from(spec.channels) / spec.sample_rate;
+            log::error!(
+                "WAV too large for wasm: {total_samples} samples ({secs}s). Max is 60s stereo."
+            );
+            return;
+        }
 
         // Read all samples as f32
         let raw_samples: Vec<f32> = match spec.sample_format {

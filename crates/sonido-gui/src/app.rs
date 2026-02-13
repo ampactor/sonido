@@ -58,6 +58,9 @@ pub struct SonidoApp {
     audio_thread: Option<AudioThread>,
     #[cfg(target_arch = "wasm32")]
     _audio_streams: Vec<cpal::Stream>,
+    /// Whether we've re-called play() after a user gesture (wasm autoplay policy).
+    #[cfg(target_arch = "wasm32")]
+    audio_resumed: bool,
     metering: MeteringData,
 
     /// Registry-driven parameter bridge (GUI ↔ audio thread).
@@ -110,6 +113,8 @@ impl SonidoApp {
             audio_thread: None,
             #[cfg(target_arch = "wasm32")]
             _audio_streams: Vec::new(),
+            #[cfg(target_arch = "wasm32")]
+            audio_resumed: false,
             metering: MeteringData::default(),
             bridge,
             registry,
@@ -148,6 +153,16 @@ impl SonidoApp {
     /// Start the audio processing thread (native: spawns thread, wasm: creates streams directly).
     #[cfg(not(target_arch = "wasm32"))]
     fn start_audio(&mut self) -> Result<(), String> {
+        // Query actual device sample rate for GUI display and effect init
+        {
+            use cpal::traits::{DeviceTrait, HostTrait};
+            if let Some(device) = cpal::default_host().default_output_device()
+                && let Ok(config) = device.default_output_config()
+            {
+                self.sample_rate = config.sample_rate() as f32;
+            }
+        }
+
         let bridge = Arc::clone(&self.bridge);
         let input_gain = self.audio_bridge.input_gain();
         let master_volume = self.audio_bridge.master_volume();
@@ -191,6 +206,16 @@ impl SonidoApp {
     /// Start audio streams directly (wasm — no threads, cpal uses Web Audio callbacks).
     #[cfg(target_arch = "wasm32")]
     fn start_audio(&mut self) -> Result<(), String> {
+        // Query actual device sample rate for GUI display and effect init
+        {
+            use cpal::traits::{DeviceTrait, HostTrait};
+            if let Some(device) = cpal::default_host().default_output_device()
+                && let Ok(config) = device.default_output_config()
+            {
+                self.sample_rate = config.sample_rate() as f32;
+            }
+        }
+
         let bridge = Arc::clone(&self.bridge);
         let input_gain = self.audio_bridge.input_gain();
         let master_volume = self.audio_bridge.master_volume();
@@ -312,12 +337,21 @@ impl SonidoApp {
                 };
                 ui.label(egui::RichText::new("●").color(status_color).size(12.0));
 
+                let mut retry = false;
                 if let Some(ref error) = self.audio_error {
                     ui.label(
                         egui::RichText::new(error)
                             .color(Color32::from_rgb(220, 100, 100))
                             .small(),
                     );
+                    retry = ui.small_button("Retry").clicked();
+                }
+                if retry {
+                    self.stop_audio();
+                    match self.start_audio() {
+                        Ok(()) => self.audio_error = None,
+                        Err(e) => self.audio_error = Some(e),
+                    }
                 }
             });
         });
@@ -522,8 +556,23 @@ impl eframe::App for SonidoApp {
                 .send_command(ChainCommand::Remove { slot });
         }
 
+        // Resume audio on first user gesture (wasm autoplay policy).
+        // Browsers suspend AudioContext until a trusted user interaction.
+        // Re-calling play() from within the user-activation window resumes it.
+        #[cfg(target_arch = "wasm32")]
+        if !self.audio_resumed && ctx.input(|i| i.pointer.any_pressed() || !i.events.is_empty()) {
+            use cpal::traits::StreamTrait;
+            for stream in &self._audio_streams {
+                let _ = stream.play();
+            }
+            self.audio_resumed = true;
+        }
+
         // Request continuous repaint for metering
-        ctx.request_repaint();
+        #[cfg(target_arch = "wasm32")]
+        ctx.request_repaint_after(std::time::Duration::from_millis(33)); // 30fps
+        #[cfg(not(target_arch = "wasm32"))]
+        ctx.request_repaint(); // native: full speed
 
         // Header
         TopBottomPanel::top("header").show(ctx, |ui| {
@@ -550,6 +599,16 @@ impl eframe::App for SonidoApp {
 
         // Main content
         CentralPanel::default().show(ctx, |ui| {
+            #[cfg(target_arch = "wasm32")]
+            if !self.audio_resumed {
+                log::debug!(
+                    "wasm layout: available={:.0}x{:.0} ppp={:.2}",
+                    ui.available_width(),
+                    ui.available_height(),
+                    ctx.pixels_per_point()
+                );
+            }
+
             ui.add_space(8.0);
 
             // Main horizontal layout: Input | Chain + Effect | Output
@@ -683,10 +742,11 @@ fn build_audio_streams(
     // Input device is optional (mic permission may be denied on wasm)
     let input_device = host.default_input_device();
 
-    let output_channels = output_device
-        .default_output_config()
-        .map(|c| c.channels())
-        .unwrap_or(2);
+    // Use device's actual sample rate; fall back to passed-in value on error
+    let (output_channels, sample_rate) = match output_device.default_output_config() {
+        Ok(config) => (config.channels(), config.sample_rate() as f32),
+        Err(_) => (2, sample_rate),
+    };
 
     let output_config = cpal::StreamConfig {
         channels: output_channels,
