@@ -283,9 +283,13 @@ Supported factors: 2 (good balance), 4 (recommended for distortion), 8 (high qua
 cargo test                          # All tests
 cargo test --no-default-features    # no_std check
 cargo bench                         # Benchmarks
-cargo run -p sonido-gui             # Launch GUI
+cargo run -p sonido-gui             # Launch GUI (native)
 cargo run -p sonido-cli -- --help   # CLI help
 make dev-install                    # Symlink debug build to ~/.local/bin
+
+# Wasm (requires trunk: cargo install trunk)
+cargo check --target wasm32-unknown-unknown -p sonido-gui  # Compile check
+cd crates/sonido-gui && trunk serve                        # Dev server at :8080
 ```
 
 ## Key Files
