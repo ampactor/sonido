@@ -5,6 +5,7 @@
 
 pub mod app;
 pub mod audio_bridge;
+pub mod chain_manager;
 pub mod chain_view;
 pub mod effects_ui;
 pub mod preset_manager;

@@ -171,6 +171,14 @@ impl AudioStream {
         self.config.sample_rate
     }
 
+    /// Get the output device channel count.
+    pub fn output_channels(&self) -> u16 {
+        self.output_device
+            .default_output_config()
+            .map(|c| c.channels())
+            .unwrap_or(2)
+    }
+
     /// Run the audio stream with a processing callback.
     ///
     /// The callback receives input samples and must fill the output buffer.

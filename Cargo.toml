@@ -7,6 +7,7 @@ members = [
     "crates/sonido-io",
     "crates/sonido-cli",
     "crates/sonido-gui",
+    "crates/sonido-gui-core",
     "crates/sonido-registry",
     "crates/sonido-platform",
     "crates/sonido-config",

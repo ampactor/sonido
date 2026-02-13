@@ -15,6 +15,7 @@ Production-grade DSP library in Rust for audio effects, plugins, and embedded sy
 | sonido-analysis | FFT, spectral analysis, transfer functions, CFC/PAC analysis | No |
 | sonido-io | WAV I/O, real-time audio streaming (cpal), stereo support | No |
 | sonido-cli | Command-line processor and analyzer | No |
+| sonido-gui-core | Shared GUI widgets, theme, and ParamBridge trait for standalone + plugin UIs | No |
 | sonido-gui | egui-based real-time effects GUI | No |
 
 ## Documentation Rules (Mandatory)
@@ -312,6 +313,10 @@ make dev-install                    # Symlink debug build to ~/.local/bin
 | PAC/Comodulogram | crates/sonido-analysis/src/cfc.rs |
 | FilterBank | crates/sonido-analysis/src/filterbank.rs |
 | HilbertTransform | crates/sonido-analysis/src/hilbert.rs |
+| ParamBridge trait | crates/sonido-gui-core/src/param_bridge.rs |
+| GUI widgets (knob, meter, toggle) | crates/sonido-gui-core/src/widgets/ |
+| GUI theme | crates/sonido-gui-core/src/theme.rs |
+| ChainManager | crates/sonido-gui/src/chain_manager.rs |
 | GUI app | crates/sonido-gui/src/app.rs |
 | CLI commands | crates/sonido-cli/src/main.rs |
 | CLI analyze commands | crates/sonido-cli/src/commands/analyze.rs |

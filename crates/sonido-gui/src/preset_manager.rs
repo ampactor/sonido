@@ -60,6 +60,44 @@ pub fn params_to_preset(
             .with_param("makeup", format!("{}", params.comp_makeup.get())),
     );
 
+    // Gate
+    preset = preset.with_effect(
+        EffectConfig::new("gate")
+            .with_bypass(params.bypass.gate.load(Ordering::Relaxed))
+            .with_param("threshold", format!("{}", params.gate_threshold.get()))
+            .with_param("attack", format!("{}", params.gate_attack.get()))
+            .with_param("release", format!("{}", params.gate_release.get()))
+            .with_param("hold", format!("{}", params.gate_hold.get())),
+    );
+
+    // Parametric EQ
+    preset = preset.with_effect(
+        EffectConfig::new("eq")
+            .with_bypass(params.bypass.eq.load(Ordering::Relaxed))
+            .with_param("low_freq", format!("{}", params.eq_low_freq.get()))
+            .with_param("low_gain", format!("{}", params.eq_low_gain.get()))
+            .with_param("low_q", format!("{}", params.eq_low_q.get()))
+            .with_param("mid_freq", format!("{}", params.eq_mid_freq.get()))
+            .with_param("mid_gain", format!("{}", params.eq_mid_gain.get()))
+            .with_param("mid_q", format!("{}", params.eq_mid_q.get()))
+            .with_param("high_freq", format!("{}", params.eq_high_freq.get()))
+            .with_param("high_gain", format!("{}", params.eq_high_gain.get()))
+            .with_param("high_q", format!("{}", params.eq_high_q.get())),
+    );
+
+    // Wah
+    preset = preset.with_effect(
+        EffectConfig::new("wah")
+            .with_bypass(params.bypass.wah.load(Ordering::Relaxed))
+            .with_param("frequency", format!("{}", params.wah_frequency.get()))
+            .with_param("resonance", format!("{}", params.wah_resonance.get()))
+            .with_param("sensitivity", format!("{}", params.wah_sensitivity.get()))
+            .with_param(
+                "mode",
+                format!("{}", params.wah_mode.load(Ordering::Relaxed)),
+            ),
+    );
+
     // Chorus
     preset = preset.with_effect(
         EffectConfig::new("chorus")
@@ -67,6 +105,42 @@ pub fn params_to_preset(
             .with_param("rate", format!("{}", params.chorus_rate.get()))
             .with_param("depth", format!("{}", params.chorus_depth.get()))
             .with_param("mix", format!("{}", params.chorus_mix.get())),
+    );
+
+    // Flanger
+    preset = preset.with_effect(
+        EffectConfig::new("flanger")
+            .with_bypass(params.bypass.flanger.load(Ordering::Relaxed))
+            .with_param("rate", format!("{}", params.flanger_rate.get()))
+            .with_param("depth", format!("{}", params.flanger_depth.get()))
+            .with_param("feedback", format!("{}", params.flanger_feedback.get()))
+            .with_param("mix", format!("{}", params.flanger_mix.get())),
+    );
+
+    // Phaser
+    preset = preset.with_effect(
+        EffectConfig::new("phaser")
+            .with_bypass(params.bypass.phaser.load(Ordering::Relaxed))
+            .with_param("rate", format!("{}", params.phaser_rate.get()))
+            .with_param("depth", format!("{}", params.phaser_depth.get()))
+            .with_param("feedback", format!("{}", params.phaser_feedback.get()))
+            .with_param("mix", format!("{}", params.phaser_mix.get()))
+            .with_param(
+                "stages",
+                format!("{}", params.phaser_stages.load(Ordering::Relaxed)),
+            ),
+    );
+
+    // Tremolo
+    preset = preset.with_effect(
+        EffectConfig::new("tremolo")
+            .with_bypass(params.bypass.tremolo.load(Ordering::Relaxed))
+            .with_param("rate", format!("{}", params.tremolo_rate.get()))
+            .with_param("depth", format!("{}", params.tremolo_depth.get()))
+            .with_param(
+                "waveform",
+                format!("{}", params.tremolo_waveform.load(Ordering::Relaxed)),
+            ),
     );
 
     // Delay
@@ -169,6 +243,66 @@ pub fn preset_to_params(preset: &Preset, params: &Arc<SharedParams>) {
                     params.comp_makeup.set(v);
                 }
             }
+            "gate" => {
+                params.bypass.gate.store(effect.bypassed, Ordering::Relaxed);
+                if let Some(v) = effect.parse_param("threshold") {
+                    params.gate_threshold.set(v);
+                }
+                if let Some(v) = effect.parse_param("attack") {
+                    params.gate_attack.set(v);
+                }
+                if let Some(v) = effect.parse_param("release") {
+                    params.gate_release.set(v);
+                }
+                if let Some(v) = effect.parse_param("hold") {
+                    params.gate_hold.set(v);
+                }
+            }
+            "eq" | "parametriceq" => {
+                params.bypass.eq.store(effect.bypassed, Ordering::Relaxed);
+                if let Some(v) = effect.parse_param("low_freq") {
+                    params.eq_low_freq.set(v);
+                }
+                if let Some(v) = effect.parse_param("low_gain") {
+                    params.eq_low_gain.set(v);
+                }
+                if let Some(v) = effect.parse_param("low_q") {
+                    params.eq_low_q.set(v);
+                }
+                if let Some(v) = effect.parse_param("mid_freq") {
+                    params.eq_mid_freq.set(v);
+                }
+                if let Some(v) = effect.parse_param("mid_gain") {
+                    params.eq_mid_gain.set(v);
+                }
+                if let Some(v) = effect.parse_param("mid_q") {
+                    params.eq_mid_q.set(v);
+                }
+                if let Some(v) = effect.parse_param("high_freq") {
+                    params.eq_high_freq.set(v);
+                }
+                if let Some(v) = effect.parse_param("high_gain") {
+                    params.eq_high_gain.set(v);
+                }
+                if let Some(v) = effect.parse_param("high_q") {
+                    params.eq_high_q.set(v);
+                }
+            }
+            "wah" => {
+                params.bypass.wah.store(effect.bypassed, Ordering::Relaxed);
+                if let Some(v) = effect.parse_param("frequency") {
+                    params.wah_frequency.set(v);
+                }
+                if let Some(v) = effect.parse_param("resonance") {
+                    params.wah_resonance.set(v);
+                }
+                if let Some(v) = effect.parse_param("sensitivity") {
+                    params.wah_sensitivity.set(v);
+                }
+                if let Some(v) = effect.parse_param("mode") {
+                    params.wah_mode.store(v as u32, Ordering::Relaxed);
+                }
+            }
             "chorus" => {
                 params
                     .bypass
@@ -182,6 +316,60 @@ pub fn preset_to_params(preset: &Preset, params: &Arc<SharedParams>) {
                 }
                 if let Some(v) = effect.parse_param("mix") {
                     params.chorus_mix.set(v);
+                }
+            }
+            "flanger" => {
+                params
+                    .bypass
+                    .flanger
+                    .store(effect.bypassed, Ordering::Relaxed);
+                if let Some(v) = effect.parse_param("rate") {
+                    params.flanger_rate.set(v);
+                }
+                if let Some(v) = effect.parse_param("depth") {
+                    params.flanger_depth.set(v);
+                }
+                if let Some(v) = effect.parse_param("feedback") {
+                    params.flanger_feedback.set(v);
+                }
+                if let Some(v) = effect.parse_param("mix") {
+                    params.flanger_mix.set(v);
+                }
+            }
+            "phaser" => {
+                params
+                    .bypass
+                    .phaser
+                    .store(effect.bypassed, Ordering::Relaxed);
+                if let Some(v) = effect.parse_param("rate") {
+                    params.phaser_rate.set(v);
+                }
+                if let Some(v) = effect.parse_param("depth") {
+                    params.phaser_depth.set(v);
+                }
+                if let Some(v) = effect.parse_param("feedback") {
+                    params.phaser_feedback.set(v);
+                }
+                if let Some(v) = effect.parse_param("mix") {
+                    params.phaser_mix.set(v);
+                }
+                if let Some(v) = effect.parse_param("stages") {
+                    params.phaser_stages.store(v as u32, Ordering::Relaxed);
+                }
+            }
+            "tremolo" => {
+                params
+                    .bypass
+                    .tremolo
+                    .store(effect.bypassed, Ordering::Relaxed);
+                if let Some(v) = effect.parse_param("rate") {
+                    params.tremolo_rate.set(v);
+                }
+                if let Some(v) = effect.parse_param("depth") {
+                    params.tremolo_depth.set(v);
+                }
+                if let Some(v) = effect.parse_param("waveform") {
+                    params.tremolo_waveform.store(v as u32, Ordering::Relaxed);
                 }
             }
             "delay" => {
