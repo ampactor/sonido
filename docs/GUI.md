@@ -98,7 +98,7 @@ The chain strip shows all 15 effects in processing order:
 | Chorus | CHO | Modulated delay chorus |
 | Flanger | FLG | Classic flanger effect |
 | Phaser | PHAS | Multi-stage phaser |
-| MultiVibrato | VIB | 10-unit tape wow/flutter |
+| MultiVibrato | VIB | 6-unit tape wow/flutter |
 | Delay | DLY | Tape-style feedback delay |
 | Tape | TAPE | Tape saturation |
 | Reverb | REV | Freeverb-style reverb |

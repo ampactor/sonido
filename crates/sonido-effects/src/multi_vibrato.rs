@@ -1,6 +1,6 @@
 //! Multi-Vibrato tape simulation
 //!
-//! 10 simultaneous subtle vibratos at different frequencies and waveforms
+//! 6 simultaneous subtle vibratos at different frequencies and waveforms
 //! to simulate authentic tape wow and flutter.
 
 use sonido_core::{
@@ -9,7 +9,7 @@ use sonido_core::{
 };
 
 /// Number of vibrato units in MultiVibrato
-pub const NUM_VIBRATOS: usize = 10;
+pub const NUM_VIBRATOS: usize = 6;
 
 /// Single vibrato unit with its own LFO
 struct VibratoUnit {
@@ -17,7 +17,7 @@ struct VibratoUnit {
     /// Depth in cents (very subtle: 0.1-2 cents typical)
     depth_cents: f32,
     /// Delay line for pitch modulation
-    delay: FixedDelayLine<512>,
+    delay: FixedDelayLine<256>,
     /// Base delay in samples
     base_delay: f32,
 }
@@ -109,11 +109,7 @@ impl MultiVibrato {
             (0.31, 1.2, LfoWaveform::Triangle), // Slow wobble
             (0.67, 0.6, LfoWaveform::Sine),     // Medium drift
             (1.1, 0.9, LfoWaveform::Triangle),  // Flutter component
-            (1.7, 0.5, LfoWaveform::Sine),      // Higher flutter
             (2.3, 0.4, LfoWaveform::Triangle),  // Subtle fast
-            (0.23, 1.5, LfoWaveform::Sine),     // Another slow
-            (3.1, 0.3, LfoWaveform::Triangle),  // Fast, subtle
-            (0.47, 1.0, LfoWaveform::Sine),     // Medium
             (4.7, 0.2, LfoWaveform::Triangle),  // Fastest, most subtle
         ];
 
