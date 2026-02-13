@@ -56,6 +56,40 @@ pub trait EffectPanel {
     fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: usize);
 }
 
+/// Implement [`EffectPanel`] for a panel struct that already has an inherent
+/// `ui(&mut self, &mut Ui, &dyn ParamBridge, usize)` method.
+macro_rules! impl_effect_panel {
+    ($panel:ty, $name:expr, $short:expr) => {
+        impl EffectPanel for $panel {
+            fn name(&self) -> &'static str {
+                $name
+            }
+            fn short_name(&self) -> &'static str {
+                $short
+            }
+            fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: usize) {
+                <$panel>::ui(self, ui, bridge, slot);
+            }
+        }
+    };
+}
+
+impl_effect_panel!(PreampPanel, "Preamp", "Pre");
+impl_effect_panel!(DistortionPanel, "Distortion", "Dist");
+impl_effect_panel!(CompressorPanel, "Compressor", "Comp");
+impl_effect_panel!(GatePanel, "Gate", "Gate");
+impl_effect_panel!(ParametricEqPanel, "Parametric EQ", "EQ");
+impl_effect_panel!(WahPanel, "Wah", "Wah");
+impl_effect_panel!(ChorusPanel, "Chorus", "Chor");
+impl_effect_panel!(FlangerPanel, "Flanger", "Flgr");
+impl_effect_panel!(PhaserPanel, "Phaser", "Phsr");
+impl_effect_panel!(TremoloPanel, "Tremolo", "Trem");
+impl_effect_panel!(DelayPanel, "Delay", "Dly");
+impl_effect_panel!(FilterPanel, "Filter", "Flt");
+impl_effect_panel!(MultiVibratoPanel, "Vibrato", "Vib");
+impl_effect_panel!(TapePanel, "Tape", "Tape");
+impl_effect_panel!(ReverbPanel, "Reverb", "Rev");
+
 /// Effect type enumeration for UI purposes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EffectType {
@@ -179,5 +213,76 @@ impl EffectType {
     /// Get effect type from index.
     pub fn from_index(index: usize) -> Option<Self> {
         Self::all().get(index).copied()
+    }
+
+    /// Look up an [`EffectType`] from a registry effect ID string.
+    ///
+    /// Returns `None` for unrecognised IDs.
+    pub fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "preamp" => Some(Self::Preamp),
+            "distortion" => Some(Self::Distortion),
+            "compressor" => Some(Self::Compressor),
+            "gate" => Some(Self::Gate),
+            "eq" => Some(Self::ParametricEq),
+            "wah" => Some(Self::Wah),
+            "chorus" => Some(Self::Chorus),
+            "flanger" => Some(Self::Flanger),
+            "phaser" => Some(Self::Phaser),
+            "tremolo" => Some(Self::Tremolo),
+            "delay" => Some(Self::Delay),
+            "filter" => Some(Self::Filter),
+            "multivibrato" => Some(Self::MultiVibrato),
+            "tape" => Some(Self::Tape),
+            "reverb" => Some(Self::Reverb),
+            _ => None,
+        }
+    }
+
+    /// Returns the registry effect ID string for this effect type.
+    ///
+    /// This is the inverse of [`from_id`](Self::from_id).
+    pub fn effect_id(&self) -> &'static str {
+        match self {
+            Self::Preamp => "preamp",
+            Self::Distortion => "distortion",
+            Self::Compressor => "compressor",
+            Self::Gate => "gate",
+            Self::ParametricEq => "eq",
+            Self::Wah => "wah",
+            Self::Chorus => "chorus",
+            Self::Flanger => "flanger",
+            Self::Phaser => "phaser",
+            Self::Tremolo => "tremolo",
+            Self::Delay => "delay",
+            Self::Filter => "filter",
+            Self::MultiVibrato => "multivibrato",
+            Self::Tape => "tape",
+            Self::Reverb => "reverb",
+        }
+    }
+}
+
+/// Create an effect panel for the given registry effect ID.
+///
+/// Returns `None` if `effect_id` doesn't map to a known panel type.
+pub fn create_panel(effect_id: &str) -> Option<Box<dyn EffectPanel>> {
+    match effect_id {
+        "preamp" => Some(Box::new(PreampPanel::new())),
+        "distortion" => Some(Box::new(DistortionPanel::new())),
+        "compressor" => Some(Box::new(CompressorPanel::new())),
+        "gate" => Some(Box::new(GatePanel::new())),
+        "eq" => Some(Box::new(ParametricEqPanel::new())),
+        "wah" => Some(Box::new(WahPanel::new())),
+        "chorus" => Some(Box::new(ChorusPanel::new())),
+        "flanger" => Some(Box::new(FlangerPanel::new())),
+        "phaser" => Some(Box::new(PhaserPanel::new())),
+        "tremolo" => Some(Box::new(TremoloPanel::new())),
+        "delay" => Some(Box::new(DelayPanel::new())),
+        "filter" => Some(Box::new(FilterPanel::new())),
+        "multivibrato" => Some(Box::new(MultiVibratoPanel::new())),
+        "tape" => Some(Box::new(TapePanel::new())),
+        "reverb" => Some(Box::new(ReverbPanel::new())),
+        _ => None,
     }
 }

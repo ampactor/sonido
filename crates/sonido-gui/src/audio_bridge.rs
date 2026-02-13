@@ -5,7 +5,8 @@
 //! handled by [`AtomicParamBridge`](super::atomic_param_bridge) — this module
 //! only owns the two global gain knobs that live outside the effect chain.
 
-use crossbeam_channel::{Receiver, Sender, bounded};
+use crate::chain_manager::ChainCommand;
+use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
@@ -96,26 +97,31 @@ pub struct MeteringData {
 /// Audio bridge for communication between GUI and audio threads.
 ///
 /// Owns the two global gain controls (input gain, master volume) that sit
-/// outside the per-effect parameter system, plus metering transport and
-/// the running flag.
+/// outside the per-effect parameter system, plus metering transport,
+/// the running flag, and a command channel for dynamic chain mutations.
 pub struct AudioBridge {
     input_gain: Arc<AtomicParam>,
     master_volume: Arc<AtomicParam>,
     running: Arc<AtomicBool>,
     metering_tx: Sender<MeteringData>,
     metering_rx: Receiver<MeteringData>,
+    command_tx: Sender<ChainCommand>,
+    command_rx: Receiver<ChainCommand>,
 }
 
 impl AudioBridge {
     /// Create a new audio bridge.
     pub fn new() -> Self {
         let (metering_tx, metering_rx) = bounded(4);
+        let (command_tx, command_rx) = unbounded();
         Self {
             input_gain: Arc::new(AtomicParam::new(1.0, 0.0, 4.0)),
             master_volume: Arc::new(AtomicParam::new(1.0, 0.0, 4.0)),
             running: Arc::new(AtomicBool::new(false)),
             metering_tx,
             metering_rx,
+            command_tx,
+            command_rx,
         }
     }
 
@@ -164,6 +170,22 @@ impl AudioBridge {
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
     }
+
+    /// Send a chain mutation command to the audio thread (non-blocking).
+    ///
+    /// Commands are drained by the audio thread at the start of each buffer
+    /// via the receiver obtained from [`command_receiver`](Self::command_receiver).
+    pub fn send_command(&self, cmd: ChainCommand) {
+        let _ = self.command_tx.send(cmd);
+    }
+
+    /// Get a clone of the command receiver for the audio thread.
+    ///
+    /// `crossbeam` receivers are cheaply cloneable. In practice only one
+    /// audio thread should drain the channel.
+    pub fn command_receiver(&self) -> Receiver<ChainCommand> {
+        self.command_rx.clone()
+    }
 }
 
 impl Default for AudioBridge {
@@ -173,6 +195,9 @@ impl Default for AudioBridge {
 }
 
 /// Effect chain order (indices into a fixed array of effects).
+///
+/// Thread-safe via `RwLock`. Supports dynamic add/remove to match
+/// `ChainManager` and `AtomicParamBridge` mutations.
 #[derive(Debug, Clone)]
 pub struct EffectOrder {
     order: Arc<parking_lot::RwLock<Vec<usize>>>,
@@ -180,16 +205,18 @@ pub struct EffectOrder {
 
 impl Default for EffectOrder {
     fn default() -> Self {
-        // Default order with all effects
-        Self {
-            order: Arc::new(parking_lot::RwLock::new(vec![
-                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
-            ])),
-        }
+        Self::new(15)
     }
 }
 
 impl EffectOrder {
+    /// Create an order with `len` sequential indices (`0..len`).
+    pub fn new(len: usize) -> Self {
+        Self {
+            order: Arc::new(parking_lot::RwLock::new((0..len).collect())),
+        }
+    }
+
     /// Get current effect order.
     pub fn get(&self) -> Vec<usize> {
         self.order.read().clone()
@@ -207,6 +234,47 @@ impl EffectOrder {
             let effect = order.remove(from);
             order.insert(to, effect);
         }
+    }
+
+    /// Append a new index at the end, returning the appended value.
+    ///
+    /// The appended value equals the current length before insertion,
+    /// matching the index that `ChainManager::add_effect` assigns.
+    pub fn push(&self) -> usize {
+        let mut order = self.order.write();
+        let idx = order.len();
+        order.push(idx);
+        idx
+    }
+
+    /// Remove `slot` from the order and remap the swapped-in last index.
+    ///
+    /// Mirrors the swap-remove semantics of `ChainManager::remove_effect`
+    /// and `AtomicParamBridge::remove_slot`: after their swap-remove, the
+    /// element that was at the last position is now at `slot`. This method
+    /// removes `slot` from the order vector and replaces any occurrence of
+    /// the old last index with `slot`.
+    pub fn swap_remove(&self, slot: usize) {
+        let mut order = self.order.write();
+        let old_last = order.len().saturating_sub(1);
+        order.retain(|&i| i != slot);
+        if slot != old_last {
+            for idx in &mut *order {
+                if *idx == old_last {
+                    *idx = slot;
+                }
+            }
+        }
+    }
+
+    /// Returns the number of entries in the order.
+    pub fn len(&self) -> usize {
+        self.order.read().len()
+    }
+
+    /// Returns `true` if the order is empty.
+    pub fn is_empty(&self) -> bool {
+        self.order.read().is_empty()
     }
 }
 
@@ -251,6 +319,75 @@ mod tests {
             order.get(),
             vec![1, 2, 0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
         );
+    }
+
+    #[test]
+    fn test_effect_order_new() {
+        let order = EffectOrder::new(3);
+        assert_eq!(order.get(), vec![0, 1, 2]);
+        assert_eq!(order.len(), 3);
+        assert!(!order.is_empty());
+
+        let empty = EffectOrder::new(0);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn test_effect_order_push() {
+        let order = EffectOrder::new(2);
+        assert_eq!(order.get(), vec![0, 1]);
+
+        let idx = order.push();
+        assert_eq!(idx, 2);
+        assert_eq!(order.get(), vec![0, 1, 2]);
+        assert_eq!(order.len(), 3);
+    }
+
+    #[test]
+    fn test_effect_order_swap_remove_last() {
+        // Remove last element — no remap needed
+        let order = EffectOrder::new(3);
+        order.swap_remove(2);
+        assert_eq!(order.get(), vec![0, 1]);
+    }
+
+    #[test]
+    fn test_effect_order_swap_remove_middle() {
+        // Remove slot 0 from [0, 1, 2] → remove 0, remap 2→0 → [1, 0]
+        let order = EffectOrder::new(3);
+        order.swap_remove(0);
+        assert_eq!(order.get(), vec![1, 0]);
+    }
+
+    #[test]
+    fn test_command_channel() {
+        use sonido_registry::EffectRegistry;
+
+        let bridge = AudioBridge::new();
+        let rx = bridge.command_receiver();
+
+        let registry = EffectRegistry::new();
+        let effect = registry.create("distortion", 48000.0).unwrap();
+        bridge.send_command(ChainCommand::Add {
+            id: "distortion",
+            effect,
+        });
+        bridge.send_command(ChainCommand::Remove { slot: 0 });
+
+        // Drain the channel
+        let cmd1 = rx.try_recv().unwrap();
+        assert!(matches!(
+            cmd1,
+            ChainCommand::Add {
+                id: "distortion",
+                ..
+            }
+        ));
+
+        let cmd2 = rx.try_recv().unwrap();
+        assert!(matches!(cmd2, ChainCommand::Remove { slot: 0 }));
+
+        assert!(rx.try_recv().is_err());
     }
 
     #[test]

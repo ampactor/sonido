@@ -1,26 +1,37 @@
-//! Effect chain visualization and reordering.
+//! Effect chain visualization, reordering, and dynamic add/remove.
+//!
+//! The [`ChainView`] renders the pedalboard strip, letting users click to
+//! select, double-click to bypass, drag to reorder, right-click to remove,
+//! and press "+" to add new effects.
 
 use crate::audio_bridge::EffectOrder;
 use crate::effects_ui::EffectType;
 use egui::{Color32, Response, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
 use sonido_gui_core::ParamBridge;
+use sonido_registry::EffectRegistry;
 
-/// Chain view state for drag-and-drop.
+/// Chain view state for drag-and-drop, selection, and pending commands.
 pub struct ChainView {
     effect_order: EffectOrder,
     dragging: Option<usize>,
     drag_offset: f32,
-    selected: Option<EffectType>,
+    selected: Option<usize>,
+    /// Effect ID to add (set by "+" menu, polled by app).
+    pending_add: Option<&'static str>,
+    /// Slot index to remove (set by context menu, polled by app).
+    pending_remove: Option<usize>,
 }
 
 impl ChainView {
-    /// Create a new chain view.
+    /// Create a new chain view with no selection.
     pub fn new() -> Self {
         Self {
             effect_order: EffectOrder::default(),
             dragging: None,
             drag_offset: 0.0,
-            selected: Some(EffectType::Distortion), // Default selection
+            selected: None,
+            pending_add: None,
+            pending_remove: None,
         }
     }
 
@@ -29,19 +40,56 @@ impl ChainView {
         &self.effect_order
     }
 
-    /// Get the currently selected effect.
-    pub fn selected(&self) -> Option<EffectType> {
+    /// Get the currently selected slot index.
+    pub fn selected(&self) -> Option<usize> {
         self.selected
     }
 
+    /// Take the pending add request (if any), clearing it.
+    pub fn take_pending_add(&mut self) -> Option<&'static str> {
+        self.pending_add.take()
+    }
+
+    /// Take the pending remove request (if any), clearing it.
+    pub fn take_pending_remove(&mut self) -> Option<usize> {
+        self.pending_remove.take()
+    }
+
     /// Render the chain view.
-    pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge) -> Option<EffectType> {
+    ///
+    /// Returns the currently selected slot index (if any). The caller should
+    /// also poll [`take_pending_add`](Self::take_pending_add) and
+    /// [`take_pending_remove`](Self::take_pending_remove) for user actions.
+    pub fn ui(
+        &mut self,
+        ui: &mut Ui,
+        bridge: &dyn ParamBridge,
+        registry: &EffectRegistry,
+    ) -> Option<usize> {
         let order = self.effect_order.get();
+        let slot_count = bridge.slot_count();
+
+        // Clear selection if the selected slot was removed
+        if let Some(sel) = self.selected
+            && sel >= slot_count
+        {
+            self.selected = None;
+        }
         let effect_width = 70.0;
         let spacing = 8.0;
         let arrow_width = 20.0;
+        let add_button_width = 36.0;
 
-        let total_width = order.len() as f32 * (effect_width + spacing + arrow_width) - arrow_width;
+        // Only show slots that exist in both the order and the bridge
+        let visible: Vec<usize> = order.iter().copied().filter(|&i| i < slot_count).collect();
+
+        let total_width = if visible.is_empty() {
+            add_button_width
+        } else {
+            visible.len() as f32 * (effect_width + spacing + arrow_width) - arrow_width
+                + spacing
+                + add_button_width
+        };
 
         ui.horizontal(|ui| {
             // Center the chain
@@ -50,23 +98,30 @@ impl ChainView {
                 ui.add_space((available - total_width) / 2.0);
             }
 
-            for (pos, &effect_idx) in order.iter().enumerate() {
-                let effect_type = EffectType::from_index(effect_idx);
-                if effect_type.is_none() {
-                    continue;
-                }
-                let effect_type = effect_type.unwrap();
+            for (pos, &slot_idx) in visible.iter().enumerate() {
+                let effect_id = bridge.effect_id(slot_idx);
+                let short_name = EffectType::from_id(effect_id)
+                    .map(|t| t.short_name())
+                    .unwrap_or("???");
 
-                // Effect pedal button
-                let is_selected = self.selected == Some(effect_type);
-                let is_bypassed = bridge.is_bypassed(effect_type.index());
+                let is_selected = self.selected == Some(slot_idx);
+                let is_bypassed = bridge.is_bypassed(slot_idx);
 
-                let response = self.effect_pedal(ui, effect_type, is_selected, is_bypassed, bridge);
+                let response =
+                    self.effect_pedal(ui, short_name, is_selected, is_bypassed, slot_idx, bridge);
 
-                // Handle selection
+                // Click → select
                 if response.clicked() {
-                    self.selected = Some(effect_type);
+                    self.selected = Some(slot_idx);
                 }
+
+                // Right-click → context menu
+                response.context_menu(|ui| {
+                    if ui.button("Remove Effect").clicked() {
+                        self.pending_remove = Some(slot_idx);
+                        ui.close_menu();
+                    }
+                });
 
                 // Handle drag start
                 if response.drag_started() {
@@ -78,9 +133,8 @@ impl ChainView {
                     let delta = response.drag_delta().x;
                     self.drag_offset += delta;
 
-                    // Check if we should swap with adjacent effect
                     let swap_threshold = effect_width / 2.0 + spacing;
-                    if self.drag_offset > swap_threshold && pos < order.len() - 1 {
+                    if self.drag_offset > swap_threshold && pos < visible.len() - 1 {
                         self.effect_order.move_effect(pos, pos + 1);
                         self.dragging = Some(pos + 1);
                         self.drag_offset = 0.0;
@@ -98,12 +152,16 @@ impl ChainView {
                 }
 
                 // Arrow between effects (except last)
-                if pos < order.len() - 1 {
+                if pos < visible.len() - 1 {
                     ui.add_space(spacing / 2.0);
                     self.draw_arrow(ui, arrow_width);
                     ui.add_space(spacing / 2.0);
                 }
             }
+
+            // "+" button to add new effects
+            ui.add_space(spacing);
+            self.add_button(ui, registry, add_button_width);
         });
 
         self.selected
@@ -113,9 +171,10 @@ impl ChainView {
     fn effect_pedal(
         &self,
         ui: &mut Ui,
-        effect_type: EffectType,
+        short_name: &str,
         is_selected: bool,
         is_bypassed: bool,
+        slot_idx: usize,
         bridge: &dyn ParamBridge,
     ) -> Response {
         let size = vec2(70.0, 50.0);
@@ -175,7 +234,7 @@ impl ChainView {
             painter.text(
                 pos2(rect.center().x, rect.bottom() - 12.0),
                 egui::Align2::CENTER_CENTER,
-                effect_type.short_name(),
+                short_name,
                 egui::FontId::proportional(11.0),
                 text_color,
             );
@@ -193,11 +252,56 @@ impl ChainView {
 
         // Double-click to toggle bypass
         if response.double_clicked() {
-            let slot = effect_type.index();
-            bridge.set_bypassed(slot, !bridge.is_bypassed(slot));
+            bridge.set_bypassed(slot_idx, !bridge.is_bypassed(slot_idx));
         }
 
         response
+    }
+
+    /// Draw the "+" button and its popup menu for adding effects.
+    fn add_button(&mut self, ui: &mut Ui, registry: &EffectRegistry, width: f32) {
+        let size = vec2(width, 50.0);
+        let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+
+        if ui.is_rect_visible(rect) {
+            let painter = ui.painter();
+            let body_color = Color32::from_rgb(40, 45, 50);
+            painter.rect_filled(rect, 6.0, body_color);
+            painter.rect_stroke(
+                rect,
+                6.0,
+                Stroke::new(1.0, Color32::from_rgb(60, 70, 80)),
+                StrokeKind::Inside,
+            );
+            painter.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "+",
+                egui::FontId::proportional(20.0),
+                Color32::from_rgb(120, 140, 160),
+            );
+        }
+
+        // Popup menu listing all available effects
+        let popup_id = ui.make_persistent_id("add_effect_popup");
+        if response.clicked() {
+            ui.memory_mut(|mem| mem.toggle_popup(popup_id));
+        }
+
+        egui::popup_below_widget(
+            ui,
+            popup_id,
+            &response,
+            egui::PopupCloseBehavior::CloseOnClick,
+            |ui| {
+                ui.set_min_width(160.0);
+                for desc in registry.all_effects() {
+                    if ui.button(desc.name).clicked() {
+                        self.pending_add = Some(desc.id);
+                    }
+                }
+            },
+        );
     }
 
     /// Draw an arrow between effects.

@@ -2,17 +2,13 @@
 
 use crate::atomic_param_bridge::AtomicParamBridge;
 use crate::audio_bridge::{AudioBridge, EffectOrder, MeteringData};
-use crate::chain_manager::ChainManager;
+use crate::chain_manager::{ChainCommand, ChainManager};
 use crate::chain_view::ChainView;
-use crate::effects_ui::{
-    ChorusPanel, CompressorPanel, DelayPanel, DistortionPanel, EffectType, FilterPanel,
-    FlangerPanel, GatePanel, MultiVibratoPanel, ParametricEqPanel, PhaserPanel, PreampPanel,
-    ReverbPanel, TapePanel, TremoloPanel, WahPanel,
-};
+use crate::effects_ui::{self, EffectType};
 use crate::preset_manager::PresetManager;
 use crate::theme::Theme;
 use crate::widgets::{Knob, LevelMeter};
-use crossbeam_channel::Sender;
+use crossbeam_channel::{Receiver, Sender};
 use egui::{CentralPanel, Color32, Context, Frame, Margin, TopBottomPanel};
 use sonido_gui_core::ParamBridge;
 use sonido_registry::EffectRegistry;
@@ -56,27 +52,13 @@ pub struct SonidoApp {
     /// Registry-driven parameter bridge (GUI ↔ audio thread).
     bridge: Arc<AtomicParamBridge>,
 
+    /// Effect registry for creating new effects.
+    registry: Arc<EffectRegistry>,
+
     // UI
     theme: Theme,
     chain_view: ChainView,
     preset_manager: PresetManager,
-
-    // Effect panels
-    preamp_panel: PreampPanel,
-    distortion_panel: DistortionPanel,
-    compressor_panel: CompressorPanel,
-    gate_panel: GatePanel,
-    eq_panel: ParametricEqPanel,
-    wah_panel: WahPanel,
-    chorus_panel: ChorusPanel,
-    flanger_panel: FlangerPanel,
-    phaser_panel: PhaserPanel,
-    tremolo_panel: TremoloPanel,
-    delay_panel: DelayPanel,
-    filter_panel: FilterPanel,
-    multivibrato_panel: MultiVibratoPanel,
-    tape_panel: TapePanel,
-    reverb_panel: ReverbPanel,
 
     // Status
     sample_rate: f32,
@@ -93,7 +75,7 @@ pub struct SonidoApp {
 impl SonidoApp {
     /// Create a new application instance.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let registry = EffectRegistry::new();
+        let registry = Arc::new(EffectRegistry::new());
         let bridge = Arc::new(AtomicParamBridge::new(&registry, DEFAULT_CHAIN, 48000.0));
 
         // Effects that start bypassed
@@ -109,24 +91,10 @@ impl SonidoApp {
             audio_thread: None,
             metering: MeteringData::default(),
             bridge,
+            registry,
             theme: Theme::default(),
             chain_view: ChainView::new(),
             preset_manager: PresetManager::new(),
-            preamp_panel: PreampPanel::new(),
-            distortion_panel: DistortionPanel::new(),
-            compressor_panel: CompressorPanel::new(),
-            gate_panel: GatePanel::new(),
-            eq_panel: ParametricEqPanel::new(),
-            wah_panel: WahPanel::new(),
-            chorus_panel: ChorusPanel::new(),
-            flanger_panel: FlangerPanel::new(),
-            phaser_panel: PhaserPanel::new(),
-            tremolo_panel: TremoloPanel::new(),
-            delay_panel: DelayPanel::new(),
-            filter_panel: FilterPanel::new(),
-            multivibrato_panel: MultiVibratoPanel::new(),
-            tape_panel: TapePanel::new(),
-            reverb_panel: ReverbPanel::new(),
             sample_rate: 48000.0,
             buffer_size: 512,
             cpu_usage: 0.0,
@@ -160,6 +128,7 @@ impl SonidoApp {
         let running = self.audio_bridge.running();
         let metering_tx = self.audio_bridge.metering_sender();
         let effect_order = self.chain_view.effect_order().clone();
+        let command_rx = self.audio_bridge.command_receiver();
 
         running.store(true, Ordering::SeqCst);
 
@@ -174,6 +143,7 @@ impl SonidoApp {
                 running.clone(),
                 metering_tx,
                 effect_order,
+                command_rx,
                 sample_rate,
                 buffer_size,
             ) {
@@ -366,8 +336,13 @@ impl SonidoApp {
         });
     }
 
-    /// Render the effect panel for the selected effect.
-    fn render_effect_panel(&mut self, ui: &mut egui::Ui, effect_type: EffectType) {
+    /// Render the effect panel for the selected slot.
+    fn render_effect_panel(&mut self, ui: &mut egui::Ui, slot: usize) {
+        let effect_id = self.bridge.effect_id(slot);
+        let panel_name = EffectType::from_id(effect_id)
+            .map(|t| t.name())
+            .unwrap_or("Unknown");
+
         let panel_frame = Frame::new()
             .fill(Color32::from_rgb(40, 40, 48))
             .corner_radius(8.0)
@@ -378,32 +353,15 @@ impl SonidoApp {
 
             ui.vertical(|ui| {
                 // Panel title
-                ui.heading(
-                    egui::RichText::new(effect_type.name()).color(Color32::from_rgb(100, 180, 255)),
-                );
+                ui.heading(egui::RichText::new(panel_name).color(Color32::from_rgb(100, 180, 255)));
                 ui.add_space(8.0);
                 ui.separator();
                 ui.add_space(12.0);
 
-                // Effect-specific controls — all panels take (&dyn ParamBridge, slot)
-                let bridge: &dyn ParamBridge = &*self.bridge;
-                let slot = effect_type.index();
-                match effect_type {
-                    EffectType::Preamp => self.preamp_panel.ui(ui, bridge, slot),
-                    EffectType::Distortion => self.distortion_panel.ui(ui, bridge, slot),
-                    EffectType::Compressor => self.compressor_panel.ui(ui, bridge, slot),
-                    EffectType::Gate => self.gate_panel.ui(ui, bridge, slot),
-                    EffectType::ParametricEq => self.eq_panel.ui(ui, bridge, slot),
-                    EffectType::Wah => self.wah_panel.ui(ui, bridge, slot),
-                    EffectType::Chorus => self.chorus_panel.ui(ui, bridge, slot),
-                    EffectType::Flanger => self.flanger_panel.ui(ui, bridge, slot),
-                    EffectType::Phaser => self.phaser_panel.ui(ui, bridge, slot),
-                    EffectType::Tremolo => self.tremolo_panel.ui(ui, bridge, slot),
-                    EffectType::Delay => self.delay_panel.ui(ui, bridge, slot),
-                    EffectType::Filter => self.filter_panel.ui(ui, bridge, slot),
-                    EffectType::MultiVibrato => self.multivibrato_panel.ui(ui, bridge, slot),
-                    EffectType::Tape => self.tape_panel.ui(ui, bridge, slot),
-                    EffectType::Reverb => self.reverb_panel.ui(ui, bridge, slot),
+                // Effect-specific controls via factory
+                if let Some(mut panel) = effects_ui::create_panel(effect_id) {
+                    let bridge: &dyn ParamBridge = &*self.bridge;
+                    panel.ui(ui, bridge, slot);
                 }
             });
         });
@@ -478,6 +436,18 @@ impl eframe::App for SonidoApp {
             self.metering = data;
         }
 
+        // Handle pending add/remove from chain view
+        if let Some(id) = self.chain_view.take_pending_add()
+            && let Some(effect) = self.registry.create(id, self.sample_rate)
+        {
+            self.audio_bridge
+                .send_command(ChainCommand::Add { id, effect });
+        }
+        if let Some(slot) = self.chain_view.take_pending_remove() {
+            self.audio_bridge
+                .send_command(ChainCommand::Remove { slot });
+        }
+
         // Request continuous repaint for metering
         ctx.request_repaint();
 
@@ -518,15 +488,15 @@ impl eframe::App for SonidoApp {
                                     .color(Color32::from_rgb(150, 150, 160)),
                             );
                             ui.add_space(4.0);
-                            self.chain_view.ui(ui, &*self.bridge);
+                            self.chain_view.ui(ui, &*self.bridge, &self.registry);
                         });
                     });
 
                     ui.add_space(16.0);
 
                     // Selected effect panel
-                    if let Some(selected) = self.chain_view.selected() {
-                        self.render_effect_panel(ui, selected);
+                    if let Some(slot) = self.chain_view.selected() {
+                        self.render_effect_panel(ui, slot);
                     }
                 });
 
@@ -550,7 +520,8 @@ impl eframe::App for SonidoApp {
 ///
 /// Processes audio in stereo through the effect chain, respecting the user-defined
 /// effect order. Uses [`ChainManager`] for registry-driven effect creation and
-/// dispatch. Measures CPU usage and reports metering data to the GUI.
+/// dispatch. Drains [`ChainCommand`]s from the GUI before each buffer to handle
+/// dynamic add/remove. Measures CPU usage and reports metering data to the GUI.
 #[allow(clippy::too_many_arguments)]
 fn run_audio_thread(
     bridge: Arc<AtomicParamBridge>,
@@ -559,6 +530,7 @@ fn run_audio_thread(
     running: Arc<AtomicBool>,
     metering_tx: Sender<MeteringData>,
     effect_order: EffectOrder,
+    command_rx: Receiver<ChainCommand>,
     sample_rate: f32,
     buffer_size: usize,
 ) -> Result<(), String> {
@@ -640,6 +612,26 @@ fn run_audio_thread(
                 }
 
                 let process_start = Instant::now();
+
+                // Drain dynamic chain commands before processing
+                while let Ok(cmd) = command_rx.try_recv() {
+                    match cmd {
+                        ChainCommand::Add { id, effect } => {
+                            let count = effect.effect_param_count();
+                            let descriptors: Vec<_> = (0..count)
+                                .filter_map(|i| effect.effect_param_info(i))
+                                .collect();
+                            chain.add_effect(id, effect);
+                            bridge.add_slot(id, descriptors);
+                            effect_order.push();
+                        }
+                        ChainCommand::Remove { slot } => {
+                            chain.remove_effect(slot);
+                            bridge.remove_slot(slot);
+                            effect_order.swap_remove(slot);
+                        }
+                    }
+                }
 
                 // Global gain levels
                 let input_gain_db = input_gain.get();
