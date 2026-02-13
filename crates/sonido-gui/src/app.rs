@@ -1,6 +1,7 @@
 //! Main application state and UI layout.
 
-use crate::audio_bridge::{AudioBridge, EffectOrder, MeteringData, SharedParams};
+use crate::atomic_param_bridge::AtomicParamBridge;
+use crate::audio_bridge::{AudioBridge, EffectOrder, MeteringData};
 use crate::chain_manager::ChainManager;
 use crate::chain_view::ChainView;
 use crate::effects_ui::{
@@ -13,13 +14,14 @@ use crate::theme::Theme;
 use crate::widgets::{Knob, LevelMeter};
 use crossbeam_channel::Sender;
 use egui::{CentralPanel, Color32, Context, Frame, Margin, TopBottomPanel};
+use sonido_gui_core::ParamBridge;
 use sonido_registry::EffectRegistry;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Instant;
 
-/// Default effect chain order — matches the slot indices used by SharedParams.
+/// Default effect chain order — matches the slot indices used by `AtomicParamBridge`.
 const DEFAULT_CHAIN: &[&str] = &[
     "preamp",       // 0
     "distortion",   // 1
@@ -50,6 +52,9 @@ pub struct SonidoApp {
     audio_bridge: AudioBridge,
     audio_thread: Option<AudioThread>,
     metering: MeteringData,
+
+    /// Registry-driven parameter bridge (GUI ↔ audio thread).
+    bridge: Arc<AtomicParamBridge>,
 
     // UI
     theme: Theme,
@@ -88,10 +93,22 @@ pub struct SonidoApp {
 impl SonidoApp {
     /// Create a new application instance.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        let registry = EffectRegistry::new();
+        let bridge = Arc::new(AtomicParamBridge::new(&registry, DEFAULT_CHAIN, 48000.0));
+
+        // Effects that start bypassed
+        bridge.set_default_bypass(3, true); // gate
+        bridge.set_default_bypass(4, true); // eq
+        bridge.set_default_bypass(5, true); // wah
+        bridge.set_default_bypass(7, true); // flanger
+        bridge.set_default_bypass(8, true); // phaser
+        bridge.set_default_bypass(9, true); // tremolo
+
         let mut app = Self {
             audio_bridge: AudioBridge::new(),
             audio_thread: None,
             metering: MeteringData::default(),
+            bridge,
             theme: Theme::default(),
             chain_view: ChainView::new(),
             preset_manager: PresetManager::new(),
@@ -122,9 +139,9 @@ impl SonidoApp {
         // Apply theme
         app.theme.apply(&cc.egui_ctx);
 
-        // Load initial preset - select first preset which applies it to params
+        // Load initial preset — select first preset which applies it to bridge
         if !app.preset_manager.presets().is_empty() {
-            app.preset_manager.select(0, &app.audio_bridge.params);
+            app.preset_manager.select(0, &*app.bridge);
         }
 
         // Start audio
@@ -137,7 +154,9 @@ impl SonidoApp {
 
     /// Start the audio processing thread.
     fn start_audio(&mut self) -> Result<(), String> {
-        let params = self.audio_bridge.params();
+        let bridge = Arc::clone(&self.bridge);
+        let input_gain = self.audio_bridge.input_gain();
+        let master_volume = self.audio_bridge.master_volume();
         let running = self.audio_bridge.running();
         let metering_tx = self.audio_bridge.metering_sender();
         let effect_order = self.chain_view.effect_order().clone();
@@ -149,7 +168,9 @@ impl SonidoApp {
 
         let handle = thread::spawn(move || {
             if let Err(e) = run_audio_thread(
-                params,
+                bridge,
+                input_gain,
+                master_volume,
                 running.clone(),
                 metering_tx,
                 effect_order,
@@ -228,7 +249,7 @@ impl SonidoApp {
 
             // Apply preset selection after borrow ends
             if let Some(idx) = selected_preset {
-                self.preset_manager.select(idx, &self.audio_bridge.params);
+                self.preset_manager.select(idx, &*self.bridge);
             }
 
             if ui.button("Save").clicked() {
@@ -284,17 +305,18 @@ impl SonidoApp {
                     ui.add_space(8.0);
 
                     // Input gain knob
-                    let mut input_gain = self.audio_bridge.params.input_gain.get();
+                    let input_gain = self.audio_bridge.input_gain();
+                    let mut gain_val = input_gain.get();
                     if ui
                         .add(
-                            Knob::new(&mut input_gain, -20.0, 20.0, "GAIN")
+                            Knob::new(&mut gain_val, -20.0, 20.0, "GAIN")
                                 .default(0.0)
                                 .format_db()
                                 .diameter(50.0),
                         )
                         .changed()
                     {
-                        self.audio_bridge.params.input_gain.set(input_gain);
+                        input_gain.set(gain_val);
                         self.preset_manager.mark_modified();
                     }
                 });
@@ -325,17 +347,18 @@ impl SonidoApp {
                     ui.add_space(8.0);
 
                     // Master volume knob
-                    let mut master_vol = self.audio_bridge.params.master_volume.get();
+                    let master_vol_param = self.audio_bridge.master_volume();
+                    let mut master_val = master_vol_param.get();
                     if ui
                         .add(
-                            Knob::new(&mut master_vol, -40.0, 6.0, "MASTER")
+                            Knob::new(&mut master_val, -40.0, 6.0, "MASTER")
                                 .default(0.0)
                                 .format_db()
                                 .diameter(50.0),
                         )
                         .changed()
                     {
-                        self.audio_bridge.params.master_volume.set(master_vol);
+                        master_vol_param.set(master_val);
                         self.preset_manager.mark_modified();
                     }
                 });
@@ -362,29 +385,25 @@ impl SonidoApp {
                 ui.separator();
                 ui.add_space(12.0);
 
-                // Effect-specific controls
+                // Effect-specific controls — all panels take (&dyn ParamBridge, slot)
+                let bridge: &dyn ParamBridge = &*self.bridge;
+                let slot = effect_type.index();
                 match effect_type {
-                    EffectType::Preamp => self.preamp_panel.ui(ui, &self.audio_bridge.params),
-                    EffectType::Distortion => {
-                        self.distortion_panel.ui(ui, &self.audio_bridge.params)
-                    }
-                    EffectType::Compressor => {
-                        self.compressor_panel.ui(ui, &self.audio_bridge.params)
-                    }
-                    EffectType::Gate => self.gate_panel.ui(ui, &self.audio_bridge.params),
-                    EffectType::ParametricEq => self.eq_panel.ui(ui, &self.audio_bridge.params),
-                    EffectType::Wah => self.wah_panel.ui(ui, &self.audio_bridge.params),
-                    EffectType::Chorus => self.chorus_panel.ui(ui, &self.audio_bridge.params),
-                    EffectType::Flanger => self.flanger_panel.ui(ui, &self.audio_bridge.params),
-                    EffectType::Phaser => self.phaser_panel.ui(ui, &self.audio_bridge.params),
-                    EffectType::Tremolo => self.tremolo_panel.ui(ui, &self.audio_bridge.params),
-                    EffectType::Delay => self.delay_panel.ui(ui, &self.audio_bridge.params),
-                    EffectType::Filter => self.filter_panel.ui(ui, &self.audio_bridge.params),
-                    EffectType::MultiVibrato => {
-                        self.multivibrato_panel.ui(ui, &self.audio_bridge.params)
-                    }
-                    EffectType::Tape => self.tape_panel.ui(ui, &self.audio_bridge.params),
-                    EffectType::Reverb => self.reverb_panel.ui(ui, &self.audio_bridge.params),
+                    EffectType::Preamp => self.preamp_panel.ui(ui, bridge, slot),
+                    EffectType::Distortion => self.distortion_panel.ui(ui, bridge, slot),
+                    EffectType::Compressor => self.compressor_panel.ui(ui, bridge, slot),
+                    EffectType::Gate => self.gate_panel.ui(ui, bridge, slot),
+                    EffectType::ParametricEq => self.eq_panel.ui(ui, bridge, slot),
+                    EffectType::Wah => self.wah_panel.ui(ui, bridge, slot),
+                    EffectType::Chorus => self.chorus_panel.ui(ui, bridge, slot),
+                    EffectType::Flanger => self.flanger_panel.ui(ui, bridge, slot),
+                    EffectType::Phaser => self.phaser_panel.ui(ui, bridge, slot),
+                    EffectType::Tremolo => self.tremolo_panel.ui(ui, bridge, slot),
+                    EffectType::Delay => self.delay_panel.ui(ui, bridge, slot),
+                    EffectType::Filter => self.filter_panel.ui(ui, bridge, slot),
+                    EffectType::MultiVibrato => self.multivibrato_panel.ui(ui, bridge, slot),
+                    EffectType::Tape => self.tape_panel.ui(ui, bridge, slot),
+                    EffectType::Reverb => self.reverb_panel.ui(ui, bridge, slot),
                 }
             });
         });
@@ -440,7 +459,7 @@ impl SonidoApp {
                         if let Err(e) = self.preset_manager.save_as(
                             &self.new_preset_name,
                             description,
-                            &self.audio_bridge.params,
+                            &*self.bridge,
                         ) {
                             log::error!("Failed to save preset: {}", e);
                         }
@@ -499,7 +518,7 @@ impl eframe::App for SonidoApp {
                                     .color(Color32::from_rgb(150, 150, 160)),
                             );
                             ui.add_space(4.0);
-                            self.chain_view.ui(ui, &self.audio_bridge.params);
+                            self.chain_view.ui(ui, &*self.bridge);
                         });
                     });
 
@@ -527,174 +546,6 @@ impl eframe::App for SonidoApp {
     }
 }
 
-/// Sync SharedParams values to ChainManager effects via `set_param()`.
-///
-/// SharedParams stores some values in internal representation (0-1 for fractions)
-/// while `set_param()` expects user-facing values (0-100 for percent). This function
-/// handles the conversion. Temporary — will be eliminated when SharedParams is replaced
-/// by `AtomicParamBridge` in Phase 3.
-#[allow(clippy::too_many_lines)]
-fn sync_shared_params_to_chain(params: &SharedParams, chain: &mut ChainManager) {
-    // Helper: fraction (0-1) stored in SharedParams → percent (0-100) for set_param
-    let pct = |v: f32| v * 100.0;
-
-    // Slot 0: Preamp — gain (dB), output, headroom all in dB (direct)
-    if let Some(slot) = chain.slot_mut(0) {
-        slot.effect.effect_set_param(0, params.preamp_gain.get());
-    }
-
-    // Slot 1: Distortion — drive/tone/level in dB/Hz, waveshape as enum index
-    if let Some(slot) = chain.slot_mut(1) {
-        slot.effect.effect_set_param(0, params.dist_drive.get());
-        slot.effect.effect_set_param(1, params.dist_tone.get());
-        slot.effect.effect_set_param(2, params.dist_level.get());
-        slot.effect
-            .effect_set_param(3, params.dist_waveshape.load(Ordering::Relaxed) as f32);
-    }
-
-    // Slot 2: Compressor — threshold/makeup in dB, ratio direct, attack/release in ms
-    if let Some(slot) = chain.slot_mut(2) {
-        slot.effect.effect_set_param(0, params.comp_threshold.get());
-        slot.effect.effect_set_param(1, params.comp_ratio.get());
-        slot.effect.effect_set_param(2, params.comp_attack.get());
-        slot.effect.effect_set_param(3, params.comp_release.get());
-        slot.effect.effect_set_param(4, params.comp_makeup.get());
-    }
-
-    // Slot 3: Gate — threshold in dB, attack/release/hold in ms
-    if let Some(slot) = chain.slot_mut(3) {
-        slot.effect.effect_set_param(0, params.gate_threshold.get());
-        slot.effect.effect_set_param(1, params.gate_attack.get());
-        slot.effect.effect_set_param(2, params.gate_release.get());
-        slot.effect.effect_set_param(3, params.gate_hold.get());
-    }
-
-    // Slot 4: EQ — freq in Hz, gain in dB, Q direct
-    if let Some(slot) = chain.slot_mut(4) {
-        slot.effect.effect_set_param(0, params.eq_low_freq.get());
-        slot.effect.effect_set_param(1, params.eq_low_gain.get());
-        slot.effect.effect_set_param(2, params.eq_low_q.get());
-        slot.effect.effect_set_param(3, params.eq_mid_freq.get());
-        slot.effect.effect_set_param(4, params.eq_mid_gain.get());
-        slot.effect.effect_set_param(5, params.eq_mid_q.get());
-        slot.effect.effect_set_param(6, params.eq_high_freq.get());
-        slot.effect.effect_set_param(7, params.eq_high_gain.get());
-        slot.effect.effect_set_param(8, params.eq_high_q.get());
-    }
-
-    // Slot 5: Wah — freq in Hz, resonance direct, sensitivity 0-1→0-100, mode as enum
-    if let Some(slot) = chain.slot_mut(5) {
-        slot.effect.effect_set_param(0, params.wah_frequency.get());
-        slot.effect.effect_set_param(1, params.wah_resonance.get());
-        slot.effect
-            .effect_set_param(2, pct(params.wah_sensitivity.get()));
-        slot.effect
-            .effect_set_param(3, params.wah_mode.load(Ordering::Relaxed) as f32);
-    }
-
-    // Slot 6: Chorus — rate in Hz, depth/mix 0-1→0-100
-    if let Some(slot) = chain.slot_mut(6) {
-        slot.effect.effect_set_param(0, params.chorus_rate.get());
-        slot.effect
-            .effect_set_param(1, pct(params.chorus_depth.get()));
-        slot.effect
-            .effect_set_param(2, pct(params.chorus_mix.get()));
-    }
-
-    // Slot 7: Flanger — rate in Hz, depth/feedback/mix 0-1→0-100
-    if let Some(slot) = chain.slot_mut(7) {
-        slot.effect.effect_set_param(0, params.flanger_rate.get());
-        slot.effect
-            .effect_set_param(1, pct(params.flanger_depth.get()));
-        slot.effect
-            .effect_set_param(2, pct(params.flanger_feedback.get()));
-        slot.effect
-            .effect_set_param(3, pct(params.flanger_mix.get()));
-    }
-
-    // Slot 8: Phaser — rate in Hz, depth/feedback/mix 0-1→0-100, stages as int
-    if let Some(slot) = chain.slot_mut(8) {
-        slot.effect.effect_set_param(0, params.phaser_rate.get());
-        slot.effect
-            .effect_set_param(1, pct(params.phaser_depth.get()));
-        slot.effect
-            .effect_set_param(2, params.phaser_stages.load(Ordering::Relaxed) as f32);
-        slot.effect
-            .effect_set_param(3, pct(params.phaser_feedback.get()));
-        slot.effect
-            .effect_set_param(4, pct(params.phaser_mix.get()));
-    }
-
-    // Slot 9: Tremolo — rate in Hz, depth 0-1→0-100, waveform as enum
-    if let Some(slot) = chain.slot_mut(9) {
-        slot.effect.effect_set_param(0, params.tremolo_rate.get());
-        slot.effect
-            .effect_set_param(1, pct(params.tremolo_depth.get()));
-        slot.effect
-            .effect_set_param(2, params.tremolo_waveform.load(Ordering::Relaxed) as f32);
-    }
-
-    // Slot 10: Delay — time in ms, feedback/mix 0-1→0-100
-    if let Some(slot) = chain.slot_mut(10) {
-        slot.effect.effect_set_param(0, params.delay_time.get());
-        slot.effect
-            .effect_set_param(1, pct(params.delay_feedback.get()));
-        slot.effect.effect_set_param(2, pct(params.delay_mix.get()));
-    }
-
-    // Slot 11: Filter — cutoff in Hz, resonance (Q) direct
-    if let Some(slot) = chain.slot_mut(11) {
-        slot.effect.effect_set_param(0, params.filter_cutoff.get());
-        slot.effect
-            .effect_set_param(1, params.filter_resonance.get());
-    }
-
-    // Slot 12: MultiVibrato — depth 0-1→0-100
-    if let Some(slot) = chain.slot_mut(12) {
-        slot.effect
-            .effect_set_param(0, pct(params.vibrato_depth.get()));
-    }
-
-    // Slot 13: Tape Saturation — drive in dB, saturation 0-1→0-100
-    if let Some(slot) = chain.slot_mut(13) {
-        slot.effect.effect_set_param(0, params.tape_drive.get());
-        slot.effect
-            .effect_set_param(1, pct(params.tape_saturation.get()));
-    }
-
-    // Slot 14: Reverb — room_size/decay/damping/mix 0-1→0-100, predelay in ms, type as enum
-    if let Some(slot) = chain.slot_mut(14) {
-        slot.effect
-            .effect_set_param(0, pct(params.reverb_room_size.get()));
-        slot.effect
-            .effect_set_param(1, pct(params.reverb_decay.get()));
-        slot.effect
-            .effect_set_param(2, pct(params.reverb_damping.get()));
-        slot.effect
-            .effect_set_param(3, params.reverb_predelay.get());
-        slot.effect
-            .effect_set_param(4, pct(params.reverb_mix.get()));
-        // Params 5 (stereo width) and 6 (reverb type) not in SharedParams — use defaults
-    }
-
-    // Sync bypass states
-    chain.set_bypassed(0, params.bypass.preamp.load(Ordering::Relaxed));
-    chain.set_bypassed(1, params.bypass.distortion.load(Ordering::Relaxed));
-    chain.set_bypassed(2, params.bypass.compressor.load(Ordering::Relaxed));
-    chain.set_bypassed(3, params.bypass.gate.load(Ordering::Relaxed));
-    chain.set_bypassed(4, params.bypass.eq.load(Ordering::Relaxed));
-    chain.set_bypassed(5, params.bypass.wah.load(Ordering::Relaxed));
-    chain.set_bypassed(6, params.bypass.chorus.load(Ordering::Relaxed));
-    chain.set_bypassed(7, params.bypass.flanger.load(Ordering::Relaxed));
-    chain.set_bypassed(8, params.bypass.phaser.load(Ordering::Relaxed));
-    chain.set_bypassed(9, params.bypass.tremolo.load(Ordering::Relaxed));
-    chain.set_bypassed(10, params.bypass.delay.load(Ordering::Relaxed));
-    chain.set_bypassed(11, params.bypass.filter.load(Ordering::Relaxed));
-    chain.set_bypassed(12, params.bypass.multivibrato.load(Ordering::Relaxed));
-    chain.set_bypassed(13, params.bypass.tape.load(Ordering::Relaxed));
-    chain.set_bypassed(14, params.bypass.reverb.load(Ordering::Relaxed));
-}
-
 /// Run the audio processing thread.
 ///
 /// Processes audio in stereo through the effect chain, respecting the user-defined
@@ -702,7 +553,9 @@ fn sync_shared_params_to_chain(params: &SharedParams, chain: &mut ChainManager) 
 /// dispatch. Measures CPU usage and reports metering data to the GUI.
 #[allow(clippy::too_many_arguments)]
 fn run_audio_thread(
-    params: Arc<SharedParams>,
+    bridge: Arc<AtomicParamBridge>,
+    input_gain: Arc<crate::audio_bridge::AtomicParam>,
+    master_volume: Arc<crate::audio_bridge::AtomicParam>,
     running: Arc<AtomicBool>,
     metering_tx: Sender<MeteringData>,
     effect_order: EffectOrder,
@@ -754,7 +607,7 @@ fn run_audio_thread(
 
     let running_input = Arc::clone(&running);
 
-    // Input stream - forward all samples (mono or stereo)
+    // Input stream — forward all samples (mono or stereo)
     let input_stream = input_device
         .build_input_stream(
             &input_config,
@@ -771,13 +624,12 @@ fn run_audio_thread(
         )
         .map_err(|e| format!("Failed to build input stream: {}", e))?;
 
-    let params_output = Arc::clone(&params);
     let running_output = Arc::clone(&running);
     let in_ch = input_channels as usize;
     let out_ch = output_channels as usize;
     let buffer_time_secs = buffer_size as f64 / sample_rate as f64;
 
-    // Output stream - process and output in stereo
+    // Output stream — process and output in stereo
     let output_stream = output_device
         .build_output_stream(
             &output_config,
@@ -790,13 +642,13 @@ fn run_audio_thread(
                 let process_start = Instant::now();
 
                 // Global gain levels
-                let input_gain_db = params_output.input_gain.get();
-                let master_vol_db = params_output.master_volume.get();
-                let input_gain = 10.0_f32.powf(input_gain_db / 20.0);
-                let master_vol = 10.0_f32.powf(master_vol_db / 20.0);
+                let input_gain_db = input_gain.get();
+                let master_vol_db = master_volume.get();
+                let ig = 10.0_f32.powf(input_gain_db / 20.0);
+                let mv = 10.0_f32.powf(master_vol_db / 20.0);
 
-                // Sync SharedParams → effect parameters and bypass states
-                sync_shared_params_to_chain(&params_output, &mut chain);
+                // Sync bridge → effect parameters and bypass states
+                bridge.sync_to_chain(&mut chain);
 
                 // Sync effect order from GUI
                 let order = effect_order.get();
@@ -823,8 +675,8 @@ fn run_audio_thread(
                         (s, s)
                     };
 
-                    let mut l = in_l * input_gain;
-                    let mut r = in_r * input_gain;
+                    let mut l = in_l * ig;
+                    let mut r = in_r * ig;
 
                     let mono_in = (l + r) * 0.5;
                     input_peak = input_peak.max(mono_in.abs());
@@ -834,8 +686,8 @@ fn run_audio_thread(
                     (l, r) = chain.process_stereo(l, r);
 
                     // Apply master volume
-                    l *= master_vol;
-                    r *= master_vol;
+                    l *= mv;
+                    r *= mv;
 
                     let mono_out = (l + r) * 0.5;
                     output_peak = output_peak.max(mono_out.abs());

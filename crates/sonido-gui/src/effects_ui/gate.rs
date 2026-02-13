@@ -1,10 +1,8 @@
 //! Gate effect UI panel.
 
-use crate::audio_bridge::SharedParams;
 use crate::widgets::{BypassToggle, Knob};
 use egui::Ui;
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use sonido_gui_core::ParamBridge;
 
 /// UI panel for the noise gate effect.
 pub struct GatePanel;
@@ -16,75 +14,88 @@ impl GatePanel {
     }
 
     /// Render the noise gate controls.
-    pub fn ui(&mut self, ui: &mut Ui, params: &Arc<SharedParams>) {
+    ///
+    /// Param indices: 0 = threshold (dB), 1 = attack (ms), 2 = release (ms), 3 = hold (ms).
+    pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: usize) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
-                let mut active = !params.bypass.gate.load(Ordering::Relaxed);
+                let mut active = !bridge.is_bypassed(slot);
                 if ui.add(BypassToggle::new(&mut active, "Active")).changed() {
-                    params.bypass.gate.store(!active, Ordering::Relaxed);
+                    bridge.set_bypassed(slot, !active);
                 }
             });
 
             ui.add_space(12.0);
 
-            // First row: Threshold, Attack
             ui.horizontal(|ui| {
-                // Threshold knob (-80 to 0 dB)
-                let mut threshold = params.gate_threshold.get();
+                let desc = bridge.param_descriptor(slot, 0);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((-80.0, 0.0, -40.0), |d| (d.min, d.max, d.default));
+                let mut threshold = bridge.get(slot, 0);
                 if ui
                     .add(
-                        Knob::new(&mut threshold, -80.0, 0.0, "THRESH")
-                            .default(-40.0)
+                        Knob::new(&mut threshold, min, max, "THRESH")
+                            .default(default)
                             .format_db(),
                     )
                     .changed()
                 {
-                    params.gate_threshold.set(threshold);
+                    bridge.set(slot, 0, threshold);
                 }
 
                 ui.add_space(16.0);
 
-                // Attack knob (0.1-50 ms)
-                let mut attack = params.gate_attack.get();
+                let desc = bridge.param_descriptor(slot, 1);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((0.1, 50.0, 1.0), |d| (d.min, d.max, d.default));
+                let mut attack = bridge.get(slot, 1);
                 if ui
                     .add(
-                        Knob::new(&mut attack, 0.1, 50.0, "ATTACK")
-                            .default(1.0)
+                        Knob::new(&mut attack, min, max, "ATTACK")
+                            .default(default)
                             .format_ms(),
                     )
                     .changed()
                 {
-                    params.gate_attack.set(attack);
+                    bridge.set(slot, 1, attack);
                 }
 
                 ui.add_space(16.0);
 
-                // Release knob (10-1000 ms)
-                let mut release = params.gate_release.get();
+                let desc = bridge.param_descriptor(slot, 2);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((10.0, 1000.0, 100.0), |d| (d.min, d.max, d.default));
+                let mut release = bridge.get(slot, 2);
                 if ui
                     .add(
-                        Knob::new(&mut release, 10.0, 1000.0, "RELEASE")
-                            .default(100.0)
+                        Knob::new(&mut release, min, max, "RELEASE")
+                            .default(default)
                             .format_ms(),
                     )
                     .changed()
                 {
-                    params.gate_release.set(release);
+                    bridge.set(slot, 2, release);
                 }
 
                 ui.add_space(16.0);
 
-                // Hold knob (0-500 ms)
-                let mut hold = params.gate_hold.get();
+                let desc = bridge.param_descriptor(slot, 3);
+                let (min, max, default) = desc
+                    .as_ref()
+                    .map_or((0.0, 500.0, 50.0), |d| (d.min, d.max, d.default));
+                let mut hold = bridge.get(slot, 3);
                 if ui
                     .add(
-                        Knob::new(&mut hold, 0.0, 500.0, "HOLD")
-                            .default(50.0)
+                        Knob::new(&mut hold, min, max, "HOLD")
+                            .default(default)
                             .format_ms(),
                     )
                     .changed()
                 {
-                    params.gate_hold.set(hold);
+                    bridge.set(slot, 3, hold);
                 }
             });
         });

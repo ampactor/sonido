@@ -1,10 +1,9 @@
 //! Effect chain visualization and reordering.
 
-use crate::audio_bridge::{EffectOrder, SharedParams};
+use crate::audio_bridge::EffectOrder;
 use crate::effects_ui::EffectType;
 use egui::{Color32, Response, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use sonido_gui_core::ParamBridge;
 
 /// Chain view state for drag-and-drop.
 pub struct ChainView {
@@ -36,7 +35,7 @@ impl ChainView {
     }
 
     /// Render the chain view.
-    pub fn ui(&mut self, ui: &mut Ui, params: &Arc<SharedParams>) -> Option<EffectType> {
+    pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge) -> Option<EffectType> {
         let order = self.effect_order.get();
         let effect_width = 70.0;
         let spacing = 8.0;
@@ -60,9 +59,9 @@ impl ChainView {
 
                 // Effect pedal button
                 let is_selected = self.selected == Some(effect_type);
-                let is_bypassed = self.is_effect_bypassed(effect_type, params);
+                let is_bypassed = bridge.is_bypassed(effect_type.index());
 
-                let response = self.effect_pedal(ui, effect_type, is_selected, is_bypassed, params);
+                let response = self.effect_pedal(ui, effect_type, is_selected, is_bypassed, bridge);
 
                 // Handle selection
                 if response.clicked() {
@@ -117,7 +116,7 @@ impl ChainView {
         effect_type: EffectType,
         is_selected: bool,
         is_bypassed: bool,
-        params: &Arc<SharedParams>,
+        bridge: &dyn ParamBridge,
     ) -> Response {
         let size = vec2(70.0, 50.0);
         let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
@@ -194,7 +193,8 @@ impl ChainView {
 
         // Double-click to toggle bypass
         if response.double_clicked() {
-            self.toggle_effect_bypass(effect_type, params);
+            let slot = effect_type.index();
+            bridge.set_bypassed(slot, !bridge.is_bypassed(slot));
         }
 
         response
@@ -230,96 +230,6 @@ impl ChainView {
                 [pos2(tip.x - back, tip.y + spread), tip],
                 Stroke::new(2.0, arrow_color),
             );
-        }
-    }
-
-    /// Check if an effect is bypassed.
-    fn is_effect_bypassed(&self, effect_type: EffectType, params: &Arc<SharedParams>) -> bool {
-        match effect_type {
-            EffectType::Preamp => params.bypass.preamp.load(Ordering::Relaxed),
-            EffectType::Distortion => params.bypass.distortion.load(Ordering::Relaxed),
-            EffectType::Compressor => params.bypass.compressor.load(Ordering::Relaxed),
-            EffectType::Gate => params.bypass.gate.load(Ordering::Relaxed),
-            EffectType::ParametricEq => params.bypass.eq.load(Ordering::Relaxed),
-            EffectType::Wah => params.bypass.wah.load(Ordering::Relaxed),
-            EffectType::Chorus => params.bypass.chorus.load(Ordering::Relaxed),
-            EffectType::Flanger => params.bypass.flanger.load(Ordering::Relaxed),
-            EffectType::Phaser => params.bypass.phaser.load(Ordering::Relaxed),
-            EffectType::Tremolo => params.bypass.tremolo.load(Ordering::Relaxed),
-            EffectType::Delay => params.bypass.delay.load(Ordering::Relaxed),
-            EffectType::Filter => params.bypass.filter.load(Ordering::Relaxed),
-            EffectType::MultiVibrato => params.bypass.multivibrato.load(Ordering::Relaxed),
-            EffectType::Tape => params.bypass.tape.load(Ordering::Relaxed),
-            EffectType::Reverb => params.bypass.reverb.load(Ordering::Relaxed),
-        }
-    }
-
-    /// Toggle an effect's bypass state.
-    fn toggle_effect_bypass(&self, effect_type: EffectType, params: &Arc<SharedParams>) {
-        match effect_type {
-            EffectType::Preamp => {
-                let current = params.bypass.preamp.load(Ordering::Relaxed);
-                params.bypass.preamp.store(!current, Ordering::Relaxed);
-            }
-            EffectType::Distortion => {
-                let current = params.bypass.distortion.load(Ordering::Relaxed);
-                params.bypass.distortion.store(!current, Ordering::Relaxed);
-            }
-            EffectType::Compressor => {
-                let current = params.bypass.compressor.load(Ordering::Relaxed);
-                params.bypass.compressor.store(!current, Ordering::Relaxed);
-            }
-            EffectType::Gate => {
-                let current = params.bypass.gate.load(Ordering::Relaxed);
-                params.bypass.gate.store(!current, Ordering::Relaxed);
-            }
-            EffectType::ParametricEq => {
-                let current = params.bypass.eq.load(Ordering::Relaxed);
-                params.bypass.eq.store(!current, Ordering::Relaxed);
-            }
-            EffectType::Wah => {
-                let current = params.bypass.wah.load(Ordering::Relaxed);
-                params.bypass.wah.store(!current, Ordering::Relaxed);
-            }
-            EffectType::Chorus => {
-                let current = params.bypass.chorus.load(Ordering::Relaxed);
-                params.bypass.chorus.store(!current, Ordering::Relaxed);
-            }
-            EffectType::Flanger => {
-                let current = params.bypass.flanger.load(Ordering::Relaxed);
-                params.bypass.flanger.store(!current, Ordering::Relaxed);
-            }
-            EffectType::Phaser => {
-                let current = params.bypass.phaser.load(Ordering::Relaxed);
-                params.bypass.phaser.store(!current, Ordering::Relaxed);
-            }
-            EffectType::Tremolo => {
-                let current = params.bypass.tremolo.load(Ordering::Relaxed);
-                params.bypass.tremolo.store(!current, Ordering::Relaxed);
-            }
-            EffectType::Delay => {
-                let current = params.bypass.delay.load(Ordering::Relaxed);
-                params.bypass.delay.store(!current, Ordering::Relaxed);
-            }
-            EffectType::Filter => {
-                let current = params.bypass.filter.load(Ordering::Relaxed);
-                params.bypass.filter.store(!current, Ordering::Relaxed);
-            }
-            EffectType::MultiVibrato => {
-                let current = params.bypass.multivibrato.load(Ordering::Relaxed);
-                params
-                    .bypass
-                    .multivibrato
-                    .store(!current, Ordering::Relaxed);
-            }
-            EffectType::Tape => {
-                let current = params.bypass.tape.load(Ordering::Relaxed);
-                params.bypass.tape.store(!current, Ordering::Relaxed);
-            }
-            EffectType::Reverb => {
-                let current = params.bypass.reverb.load(Ordering::Relaxed);
-                params.bypass.reverb.store(!current, Ordering::Relaxed);
-            }
         }
     }
 }
