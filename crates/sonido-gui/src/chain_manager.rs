@@ -6,6 +6,26 @@
 
 use sonido_registry::{EffectRegistry, EffectWithParams};
 
+/// A command to mutate the effect chain from the GUI thread.
+///
+/// Commands are sent over a lock-free channel and drained by the audio thread
+/// at the start of each buffer. This decouples GUI interaction from real-time
+/// processing.
+pub enum ChainCommand {
+    /// Add a new effect to the end of the chain.
+    Add {
+        /// Effect identifier (e.g., `"reverb"`, `"distortion"`).
+        id: &'static str,
+        /// Pre-created effect instance (constructed on the GUI thread).
+        effect: Box<dyn EffectWithParams + Send>,
+    },
+    /// Remove an effect slot from the chain.
+    Remove {
+        /// Slot index to remove.
+        slot: usize,
+    },
+}
+
 /// A single slot in the effect chain.
 ///
 /// Each slot owns one effect instance and tracks its bypass state.
@@ -124,6 +144,52 @@ impl ChainManager {
     pub fn effect_id(&self, slot: usize) -> &str {
         self.slots.get(slot).map_or("", |s| s.id)
     }
+
+    /// Appends an effect to the chain, returning its slot index.
+    ///
+    /// The new slot starts active (not bypassed) and is appended to the end
+    /// of the processing order.
+    pub fn add_effect(
+        &mut self,
+        id: &'static str,
+        effect: Box<dyn EffectWithParams + Send>,
+    ) -> usize {
+        let idx = self.slots.len();
+        self.slots.push(ChainSlot {
+            effect,
+            id,
+            bypassed: false,
+        });
+        self.order.push(idx);
+        idx
+    }
+
+    /// Removes an effect slot via swap-remove, returning the removed effect's ID.
+    ///
+    /// Returns `None` if `slot` is out of range. When `slot` is not the last
+    /// element, the last slot is moved into position `slot` and the processing
+    /// order is updated to reflect the move.
+    pub fn remove_effect(&mut self, slot: usize) -> Option<&'static str> {
+        if slot >= self.slots.len() {
+            return None;
+        }
+        let old_last = self.slots.len() - 1;
+        let removed = self.slots.swap_remove(slot);
+
+        // Remove `slot` from the order
+        self.order.retain(|&i| i != slot);
+
+        // If we swapped the last element into `slot`, update its references
+        if slot != old_last {
+            for idx in &mut self.order {
+                if *idx == old_last {
+                    *idx = slot;
+                }
+            }
+        }
+
+        Some(removed.id)
+    }
 }
 
 #[cfg(test)]
@@ -226,5 +292,64 @@ mod tests {
         assert!(chain.slot(0).is_none());
         assert!(!chain.is_bypassed(99));
         assert_eq!(chain.effect_id(99), "");
+    }
+
+    #[test]
+    fn add_effect_basic() {
+        let reg = registry();
+        let mut chain = ChainManager::new(&reg, &["distortion"], 48000.0);
+        assert_eq!(chain.slot_count(), 1);
+
+        let effect = reg.create("reverb", 48000.0).unwrap();
+        let idx = chain.add_effect("reverb", effect);
+        assert_eq!(idx, 1);
+        assert_eq!(chain.slot_count(), 2);
+        assert_eq!(chain.effect_id(1), "reverb");
+        assert_eq!(chain.order(), &[0, 1]);
+    }
+
+    #[test]
+    fn remove_effect_last_slot() {
+        let reg = registry();
+        let mut chain = ChainManager::new(&reg, &["distortion", "reverb"], 48000.0);
+        let removed = chain.remove_effect(1);
+        assert_eq!(removed, Some("reverb"));
+        assert_eq!(chain.slot_count(), 1);
+        assert_eq!(chain.effect_id(0), "distortion");
+        assert_eq!(chain.order(), &[0]);
+    }
+
+    #[test]
+    fn remove_effect_swap_semantics() {
+        let reg = registry();
+        let mut chain = ChainManager::new(&reg, &["distortion", "compressor", "reverb"], 48000.0);
+        // Remove slot 0 → "reverb" (last) swaps into position 0
+        let removed = chain.remove_effect(0);
+        assert_eq!(removed, Some("distortion"));
+        assert_eq!(chain.slot_count(), 2);
+        // Slot 0 is now what was slot 2 (reverb)
+        assert_eq!(chain.effect_id(0), "reverb");
+        // Slot 1 is still compressor
+        assert_eq!(chain.effect_id(1), "compressor");
+    }
+
+    #[test]
+    fn remove_effect_updates_order() {
+        let reg = registry();
+        let mut chain = ChainManager::new(&reg, &["distortion", "compressor", "reverb"], 48000.0);
+        // Order is [0, 1, 2]. Remove slot 0 → slot 2 moves to 0.
+        chain.remove_effect(0);
+        // Order should no longer contain 0 (the removed slot), and old index 2
+        // should be remapped to 0.
+        // Original order [0, 1, 2] → remove 0 → [1, 2] → remap 2→0 → [1, 0]
+        assert_eq!(chain.order(), &[1, 0]);
+    }
+
+    #[test]
+    fn remove_effect_out_of_range() {
+        let reg = registry();
+        let mut chain = ChainManager::new(&reg, &["distortion"], 48000.0);
+        assert_eq!(chain.remove_effect(5), None);
+        assert_eq!(chain.slot_count(), 1);
     }
 }
