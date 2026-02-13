@@ -6,23 +6,26 @@
     <title>Sonido — DSP Effect Processor</title>
     <style>
         html, body {
-            margin: 0;
-            padding: 0;
             overflow: hidden;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: 100%;
+            width: 100%;
             background: #1a1a24;
         }
         canvas {
+            margin-right: auto;
+            margin-left: auto;
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
             width: 100%;
-            height: 100vh;
+            height: 100%;
         }
     </style>
 </head>
 <body>
-    <canvas id="sonido_canvas" width="1280" height="720"></canvas>
-    <script>
-        const canvas = document.getElementById('sonido_canvas');
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-    </script>
+    <canvas id="sonido_canvas"></canvas>
 </body>
 </html>

@@ -8,7 +8,7 @@ authors.workspace = true
 
 [dependencies]
 sonido-core = { workspace = true, features = ["std"] }
-cpal = "0.15"
+cpal.workspace = true
 hound = "3.5"
 thiserror = "2.0"
 

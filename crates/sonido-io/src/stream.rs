@@ -2,9 +2,14 @@
 
 use crate::{Error, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{Device, Host, SampleRate, Stream};
+use cpal::{Device, Host, Stream};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Extract device name via `description()` (cpal 0.17+).
+fn device_name(device: &Device) -> std::result::Result<String, cpal::DeviceNameError> {
+    device.description().map(|d| d.name().to_string())
+}
 
 /// Audio device information.
 #[derive(Debug, Clone)]
@@ -51,10 +56,10 @@ pub fn list_devices() -> Result<Vec<AudioDevice>> {
     // Input devices
     if let Ok(inputs) = host.input_devices() {
         for device in inputs {
-            if let Ok(name) = device.name() {
+            if let Ok(name) = device_name(&device) {
                 let sample_rate = device
                     .default_input_config()
-                    .map(|c| c.sample_rate().0)
+                    .map(|c| c.sample_rate())
                     .unwrap_or(48000);
 
                 // Check if also an output
@@ -73,7 +78,7 @@ pub fn list_devices() -> Result<Vec<AudioDevice>> {
     // Output-only devices
     if let Ok(outputs) = host.output_devices() {
         for device in outputs {
-            if let Ok(name) = device.name() {
+            if let Ok(name) = device_name(&device) {
                 // Skip if already added as input
                 if devices.iter().any(|d| d.name == name) {
                     continue;
@@ -81,7 +86,7 @@ pub fn list_devices() -> Result<Vec<AudioDevice>> {
 
                 let sample_rate = device
                     .default_output_config()
-                    .map(|c| c.sample_rate().0)
+                    .map(|c| c.sample_rate())
                     .unwrap_or(48000);
 
                 devices.push(AudioDevice {
@@ -102,25 +107,25 @@ pub fn default_device() -> Result<(Option<AudioDevice>, Option<AudioDevice>)> {
     let host = cpal::default_host();
 
     let input = host.default_input_device().and_then(|d| {
-        d.name().ok().map(|name| AudioDevice {
+        device_name(&d).ok().map(|name| AudioDevice {
             name,
             is_input: true,
             is_output: false,
             default_sample_rate: d
                 .default_input_config()
-                .map(|c| c.sample_rate().0)
+                .map(|c| c.sample_rate())
                 .unwrap_or(48000),
         })
     });
 
     let output = host.default_output_device().and_then(|d| {
-        d.name().ok().map(|name| AudioDevice {
+        device_name(&d).ok().map(|name| AudioDevice {
             name,
             is_input: false,
             is_output: true,
             default_sample_rate: d
                 .default_output_config()
-                .map(|c| c.sample_rate().0)
+                .map(|c| c.sample_rate())
                 .unwrap_or(48000),
         })
     });
@@ -188,8 +193,6 @@ impl AudioStream {
         F: FnMut(&[f32], &mut [f32]) + Send + 'static,
     {
         use std::sync::mpsc;
-
-        let _sample_rate = SampleRate(self.config.sample_rate);
 
         // Get supported configs
         let input_config = self
@@ -557,7 +560,7 @@ fn find_device_from_list(devices: &[Device], name_or_index: &str, kind: &str) ->
 
     // Try exact match
     for device in devices {
-        if device.name().is_ok_and(|n| n == name_or_index) {
+        if device_name(device).is_ok_and(|n| n == name_or_index) {
             return Ok(device.clone());
         }
     }
@@ -567,7 +570,7 @@ fn find_device_from_list(devices: &[Device], name_or_index: &str, kind: &str) ->
     let mut matches: Vec<_> = devices
         .iter()
         .filter_map(|d| {
-            d.name().ok().and_then(|name| {
+            device_name(d).ok().and_then(|name| {
                 if name.to_lowercase().contains(&search_lower) {
                     Some((d.clone(), name))
                 } else {
