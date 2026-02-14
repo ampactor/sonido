@@ -15,6 +15,6 @@ pub mod param_bridge;
 pub mod theme;
 pub mod widgets;
 
-pub use param_bridge::ParamBridge;
+pub use param_bridge::{ParamBridge, ParamIndex, SlotIndex};
 pub use theme::Theme;
 pub use widgets::{BypassToggle, FootswitchToggle, GainReductionMeter, Knob, LevelMeter};

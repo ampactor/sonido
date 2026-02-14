@@ -146,10 +146,15 @@ The chain strip shows all 15 effects in processing order:
 | Tape | TAPE | Tape saturation |
 | Reverb | REV | Freeverb-style reverb |
 
+The chain strip is wrapped in a horizontal `ScrollArea` that activates when the chain overflows the available width. When the chain fits, it is centered.
+
 **Interactions:**
 - **Click**: Select effect to show its parameter panel below
 - **Double-click**: Toggle effect bypass (LED indicator: green = active, dim = bypassed)
 - **Drag**: Reorder effects in the chain (drag left/right)
+- **Right-click**: Context menu with "Remove Effect" and "Bypass"/"Enable" toggle
+- **Hover**: Tooltip showing effect short name (from registry descriptors)
+- **"+" button**: Opens a popup menu listing all registered effects for dynamic addition
 
 ### Effect Panels
 
@@ -322,13 +327,25 @@ Presets are stored as JSON files containing all effect parameters, bypass states
 
 ## Real-Time Parameter Changes
 
-The GUI uses a lock-free architecture for audio-safe parameter updates:
+### AtomicParamBridge with Dirty Flags
 
-- **AtomicParam**: Float parameters use atomic bit-cast operations
-- **AtomicBool**: Bypass states use atomic booleans
-- **No locks**: GUI and audio threads never block each other
+The `AtomicParamBridge` provides per-slot parameter sharing between GUI and audio threads. Each slot has a `dirty` flag (`AtomicBool`) that is set when the GUI writes any parameter. The audio thread checks this flag once per buffer and only pushes changed params to the effect chain when dirty, avoiding unnecessary iteration over all parameters on every buffer.
 
-Parameter changes are applied smoothly using the `SmoothedParam` system in the DSP code, avoiding clicks and pops.
+Individual parameter values use `AtomicU32` bit-cast (`f32::to_bits` / `f32::from_bits`), which is lock-free and wait-free. The slot collection uses `parking_lot::RwLock<Vec<SlotState>>`, which is acceptable because slot mutations (add/remove) are rare compared to per-buffer param reads.
+
+### Bypass Crossfade
+
+Bypass toggling uses `SmoothedParam::fast` (5ms exponential smoothing) per slot for click-free transitions. The crossfade level (`bypass_fade`) ranges from 0.0 (fully bypassed) to 1.0 (fully active). During the transition, the audio thread mixes dry and wet signals proportionally:
+
+- `fade < 1e-6`: Fully bypassed, skip processing entirely (optimization)
+- `fade > 1.0 - 1e-6`: Fully active, no crossfade math needed
+- Otherwise: `output = dry * (1 - fade) + wet * fade`
+
+When un-bypassing, all effect parameters are re-set to their current values so internal `SmoothedParam`s settle before audio reaches the effect.
+
+### Effect Order Caching
+
+The `EffectOrder` (shared between GUI and audio thread via `parking_lot::RwLock<Vec<usize>>`) has a dirty flag. The audio thread only reads and caches the order when the flag is set, using `clone_from` for heap reuse (avoids reallocation when the Vec capacity is sufficient). This prevents the audio thread from acquiring the RwLock on every buffer.
 
 ## Audio Thread Architecture
 
@@ -339,9 +356,27 @@ Parameter changes are applied smoothly using the `SmoothedParam` system in the D
                               [Metering Data] -> [GUI Thread]
 ```
 
-- Audio callback runs in a dedicated thread
-- Metering data is sent via bounded channel (drops old data if full)
-- Sample-by-sample processing through the effect chain
+### AudioProcessor
+
+The audio output callback delegates to `AudioProcessor`, a testable struct extracted from the monolithic closure. It encapsulates:
+
+- `process_commands()` — drains transport + chain commands
+- `process_buffer(data)` — parameter sync, effect processing, gain staging, metering
+
+The `AudioProcessor` owns the `ChainManager`, `AtomicParamBridge`, effect order cache, file playback state, and metering sender. This extraction enables unit testing of the audio path without a live audio stream.
+
+### Dynamic Effect Chain
+
+Effects are added and removed at runtime via `ChainCommand` messages sent through a `crossbeam_channel`. The `ChainManager` provides transactional operations:
+
+- `add_transactional(id, effect, bridge, order)` — atomically creates the slot, registers it in the param bridge, and appends to the effect order
+- `remove_transactional(slot, bridge, order)` — atomically removes the slot, deregisters from the bridge, and remaps the order indices
+
+These operations ensure the three structures (ChainManager slots, AtomicParamBridge slots, EffectOrder indices) stay consistent.
+
+### Widget Consolidation
+
+Toggle widgets (`BypassToggle`, `FootswitchToggle`) are defined in `sonido-gui-core` (the canonical source) and re-exported by `sonido-gui::widgets`. This prevents duplication between standalone and plugin UIs.
 
 ## Troubleshooting
 

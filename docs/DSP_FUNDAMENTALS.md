@@ -136,29 +136,38 @@ Oversampling solves this by temporarily increasing the sample rate before nonlin
 
 Sonido uses const generics to make the oversampling factor a compile-time parameter, enabling the compiler to optimize loops and eliminate branching.
 
-**Upsampling** (`oversample.rs:107-113`) uses linear interpolation between the previous and current input sample:
+**Upsampling** uses polyphase windowed-sinc interpolation with a Blackman-Harris window. An 8-sample input history is maintained as a circular buffer. For each output sub-sample, the corresponding polyphase kernel row is convolved with the input history:
 
 ```rust
 fn upsample(&mut self, input: f32) {
-    let step = 1.0 / FACTOR as f32;
-    for i in 0..FACTOR {
-        let t = (i as f32 + 1.0) * step;
-        self.work_buffer[i] = self.prev_sample + t * (input - self.prev_sample);
+    // Push new sample into circular history
+    self.input_history[self.history_pos] = input;
+    self.history_pos = (self.history_pos + 1) % UPSAMPLE_TAPS;
+
+    let kernel = self.get_upsample_kernel();
+    for p in 0..FACTOR {
+        let mut sum = 0.0;
+        for t in 0..UPSAMPLE_TAPS {
+            let idx = (self.history_pos + t) % UPSAMPLE_TAPS;
+            sum += self.input_history[idx] * kernel[p][t];
+        }
+        self.work_buffer[p] = sum * FACTOR as f32;
     }
-    self.prev_sample = input;
 }
 ```
 
-Linear interpolation is chosen for upsampling because the subsequent anti-aliasing filter in the downsampling stage handles spectral image rejection. Higher-order interpolation at this stage would add CPU cost with diminishing returns.
+The polyphase decomposition avoids zero-stuffing: instead of inserting zeros and running a full-rate filter, each sub-sample evaluates only the sinc kernel taps that correspond to its fractional offset. The Blackman-Harris window provides >92 dB sidelobe suppression, ensuring interpolation images are well below the noise floor.
 
-**Downsampling** (`oversample.rs:116-132`) applies a 16-tap FIR anti-aliasing filter followed by decimation. The filter runs on every upsampled sample, but only the final filtered value (at the decimation point) is output:
+This replaces the earlier linear interpolation approach, which suffered from HF rolloff proportional to `sinc(pi*f/fs)^2` — significant at high audio frequencies, especially with 2x oversampling where the image frequencies are close to the passband.
+
+**Downsampling** applies a 48-tap Kaiser-windowed sinc FIR anti-aliasing filter followed by decimation. All upsampled/processed samples are pushed through the FIR delay line, but the convolution sum is only computed at the decimation point:
 
 ```rust
 fn downsample(&mut self) -> f32 {
-    // ...
+    let coeffs = self.get_coefficients();
     for i in 0..FACTOR {
         // Shift delay line
-        // On last sample, compute filtered output
+        // On last sample (decimation point), compute filtered output
         if i == FACTOR - 1 {
             for (j, &coeff) in coeffs.iter().enumerate() {
                 output += self.downsample_state[j] * coeff;
@@ -169,24 +178,43 @@ fn downsample(&mut self) -> f32 {
 }
 ```
 
-### Filter Coefficients
+### Filter Design
 
-Three sets of windowed-sinc FIR coefficients are provided for 2x, 4x, and 8x oversampling. The cutoff frequencies are set to 0.4, 0.2, and 0.1 of the oversampled Nyquist respectively, providing adequate stopband rejection while preserving the passband.
+**Downsampling FIR (48-tap, Kaiser-windowed sinc, beta = 8.0):**
 
-The 2x filter (`COEFFS_2X`) has a notable structure: alternate coefficients are zero. This is characteristic of a half-band filter, an efficient design where roughly half the multiply-accumulate operations can be skipped.
+Three sets of coefficients are provided for 2x, 4x, and 8x oversampling. The cutoff frequencies are:
+
+| Factor | Normalized Cutoff | Stopband Attenuation |
+|--------|------------------|---------------------|
+| 2x | 0.45 x oversampled Nyquist | >80 dB |
+| 4x | 0.225 x oversampled Nyquist | >80 dB |
+| 8x | 0.1125 x oversampled Nyquist | >80 dB |
+
+The Kaiser window beta of 8.0 was chosen to achieve >80 dB stopband attenuation with 48 taps. The relationship between beta and attenuation follows Kaiser's empirical formula: `A = 2.285*(M-1)*pi*df + 7.95` where A is the stopband attenuation in dB. At beta=8.0 with M=48, the achieved attenuation exceeds the 80 dB target across all three coefficient sets. All coefficient sets are symmetric (linear phase), preserving waveform shape through the oversampling path.
+
+**Upsampling kernels (Blackman-Harris windowed sinc, 8 taps/phase):**
+
+Each kernel is a `[FACTOR][8]` array of polyphase sub-filters. The sinc function is centered between taps 3 and 4 (fractional center), and each phase evaluates at a different fractional offset. The last phase in each kernel is the identity (integer sample position). Each row is normalized to sum to `1/FACTOR`; the upsample function multiplies by FACTOR to restore unity DC gain.
 
 ### Latency
 
-The `Oversampled` wrapper reports its latency as the FIR filter's group delay plus the inner effect's latency (`oversample.rs:152-156`):
+The `Oversampled` wrapper reports its latency as the sum of FIR group delay, sinc interpolation delay, and the inner effect's latency:
 
 ```rust
 fn latency_samples(&self) -> usize {
-    let filter_latency = FILTER_ORDER / 2;  // Symmetric FIR group delay
-    filter_latency + self.effect.latency_samples()
+    let filter_latency = FILTER_ORDER / 2;   // 47/2 = 23 samples (symmetric FIR)
+    let upsample_latency = UPSAMPLE_TAPS / 2; // 8/2 = 4 samples (sinc kernel)
+    filter_latency + upsample_latency + self.effect.latency_samples()
 }
 ```
 
-For the 16-tap filter (order 15), this adds 7 samples of latency.
+For the 48-tap downsample filter and 8-tap upsample kernel, this adds 27 samples of latency.
+
+### References
+
+- A.V. Oppenheim & R.W. Schafer, "Discrete-Time Signal Processing", Ch. 4 & 7 (multirate signal processing)
+- J.F. Kaiser, "Nonrecursive Digital Filter Design Using the I0-sinh Window", Proc. IEEE Int. Symp. Circuits & Systems, 1974 (Kaiser window design)
+- F.J. Harris, "On the Use of Windows for Harmonic Analysis with the DFT", Proc. IEEE, 1978 (Blackman-Harris window)
 
 ---
 

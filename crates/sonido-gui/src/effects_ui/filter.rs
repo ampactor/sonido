@@ -2,7 +2,7 @@
 
 use crate::widgets::{BypassToggle, Knob};
 use egui::Ui;
-use sonido_gui_core::ParamBridge;
+use sonido_gui_core::{ParamBridge, ParamIndex, SlotIndex};
 
 /// UI panel for the low-pass filter effect.
 pub struct FilterPanel;
@@ -16,7 +16,7 @@ impl FilterPanel {
     /// Render the filter effect controls.
     ///
     /// Param indices: 0 = cutoff (Hz), 1 = resonance.
-    pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: usize) {
+    pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: SlotIndex) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
                 let mut active = !bridge.is_bypassed(slot);
@@ -29,11 +29,11 @@ impl FilterPanel {
 
             ui.horizontal(|ui| {
                 // Cutoff (param 0)
-                let desc = bridge.param_descriptor(slot, 0);
+                let desc = bridge.param_descriptor(slot, ParamIndex(0));
                 let (min, max, default) = desc
                     .as_ref()
                     .map_or((20.0, 20000.0, 5000.0), |d| (d.min, d.max, d.default));
-                let mut cutoff = bridge.get(slot, 0);
+                let mut cutoff = bridge.get(slot, ParamIndex(0));
                 if ui
                     .add(
                         Knob::new(&mut cutoff, min, max, "CUTOFF")
@@ -43,17 +43,17 @@ impl FilterPanel {
                     )
                     .changed()
                 {
-                    bridge.set(slot, 0, cutoff);
+                    bridge.set(slot, ParamIndex(0), cutoff);
                 }
 
                 ui.add_space(16.0);
 
                 // Resonance (param 1)
-                let desc = bridge.param_descriptor(slot, 1);
+                let desc = bridge.param_descriptor(slot, ParamIndex(1));
                 let (min, max, default) = desc
                     .as_ref()
                     .map_or((0.1, 10.0, 0.7), |d| (d.min, d.max, d.default));
-                let mut resonance = bridge.get(slot, 1);
+                let mut resonance = bridge.get(slot, ParamIndex(1));
                 if ui
                     .add(
                         Knob::new(&mut resonance, min, max, "RESO")
@@ -62,7 +62,7 @@ impl FilterPanel {
                     )
                     .changed()
                 {
-                    bridge.set(slot, 1, resonance);
+                    bridge.set(slot, ParamIndex(1), resonance);
                 }
             });
         });

@@ -14,7 +14,7 @@ use egui::{
     Align, CentralPanel, Color32, Context, Frame, Layout, Margin, Rect, TopBottomPanel, UiBuilder,
     pos2, vec2,
 };
-use sonido_gui_core::ParamBridge;
+use sonido_gui_core::{ParamBridge, SlotIndex};
 use sonido_registry::EffectRegistry;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -66,6 +66,14 @@ pub struct SonidoApp {
     file_player: FilePlayer,
     preset_manager: PresetManager,
 
+    /// Cached effect panel: (slot, effect_id, panel).
+    /// Avoids reconstructing the panel widget every frame.
+    cached_panel: Option<(
+        sonido_gui_core::SlotIndex,
+        String,
+        Box<dyn effects_ui::EffectPanel>,
+    )>,
+
     // Status
     sample_rate: f32,
     buffer_size: usize,
@@ -88,12 +96,12 @@ impl SonidoApp {
         let bridge = Arc::new(AtomicParamBridge::new(&registry, DEFAULT_CHAIN, 48000.0));
 
         // Effects that start bypassed
-        bridge.set_default_bypass(3, true); // gate
-        bridge.set_default_bypass(4, true); // eq
-        bridge.set_default_bypass(5, true); // wah
-        bridge.set_default_bypass(7, true); // flanger
-        bridge.set_default_bypass(8, true); // phaser
-        bridge.set_default_bypass(9, true); // tremolo
+        bridge.set_default_bypass(SlotIndex(3), true); // gate
+        bridge.set_default_bypass(SlotIndex(4), true); // eq
+        bridge.set_default_bypass(SlotIndex(5), true); // wah
+        bridge.set_default_bypass(SlotIndex(7), true); // flanger
+        bridge.set_default_bypass(SlotIndex(8), true); // phaser
+        bridge.set_default_bypass(SlotIndex(9), true); // tremolo
 
         let audio_bridge = AudioBridge::new();
         let transport_tx = audio_bridge.transport_sender();
@@ -110,6 +118,7 @@ impl SonidoApp {
             chain_view: ChainView::new(),
             file_player: FilePlayer::new(transport_tx),
             preset_manager: PresetManager::new(),
+            cached_panel: None,
             sample_rate: 48000.0,
             buffer_size: 512,
             cpu_usage: 0.0,
@@ -363,13 +372,26 @@ impl SonidoApp {
     }
 
     /// Render the effect panel for the selected slot.
-    fn render_effect_panel(&mut self, ui: &mut egui::Ui, slot: usize) {
+    ///
+    /// The panel widget is cached in `self.cached_panel` and only reconstructed
+    /// when the selected slot or effect type changes.
+    fn render_effect_panel(&mut self, ui: &mut egui::Ui, slot: sonido_gui_core::SlotIndex) {
         let effect_id = self.bridge.effect_id(slot);
         let panel_name = self
             .registry
             .descriptor(effect_id)
             .map(|d| d.name)
             .unwrap_or("Unknown");
+
+        // Populate cache if the slot or effect type changed
+        let cache_hit = self
+            .cached_panel
+            .as_ref()
+            .is_some_and(|(s, id, _)| *s == slot && id == effect_id);
+        if !cache_hit {
+            self.cached_panel =
+                effects_ui::create_panel(effect_id).map(|p| (slot, effect_id.to_owned(), p));
+        }
 
         let panel_frame = Frame::new()
             .fill(Color32::from_rgb(40, 40, 48))
@@ -386,8 +408,8 @@ impl SonidoApp {
                 ui.separator();
                 ui.add_space(12.0);
 
-                // Effect-specific controls via factory
-                if let Some(mut panel) = effects_ui::create_panel(effect_id) {
+                // Effect-specific controls from cache
+                if let Some((_, _, ref mut panel)) = self.cached_panel {
                     let bridge: &dyn ParamBridge = &*self.bridge;
                     panel.ui(ui, bridge, slot);
                 }
@@ -476,6 +498,7 @@ impl eframe::App for SonidoApp {
         if let Some(slot) = self.chain_view.take_pending_remove() {
             if self.chain_view.selected() == Some(slot) {
                 self.chain_view.clear_selection();
+                self.cached_panel = None;
             }
             self.audio_bridge
                 .send_command(ChainCommand::Remove { slot });

@@ -24,6 +24,7 @@ Architecture Decision Records (ADRs) for the Sonido DSP framework. Each record c
 - [ADR-018: Feedback-Adaptive Reverb Gain Compensation](#adr-018-feedback-adaptive-reverb-gain-compensation) *(superseded by ADR-019)*
 - [ADR-019: Generalized Feedback Compensation](#adr-019-generalized-feedback-compensation)
 - [ADR-020: Fast Math Approximations for Embedded DSP](#adr-020-fast-math-approximations-for-embedded-dsp)
+- [ADR-021: Block Processing Overrides](#adr-021-block-processing-overrides)
 
 ---
 
@@ -93,7 +94,7 @@ Core crates (`sonido-core`, `sonido-effects`, `sonido-synth`, `sonido-registry`,
 
 ## ADR-003: Const Generic Oversampling
 
-**Status:** Accepted
+**Status:** Accepted (updated Phase 5)
 **Source:** `crates/sonido-core/src/oversample.rs`
 
 ### Context
@@ -108,17 +109,34 @@ Use Rust const generics to make the oversampling factor a compile-time parameter
 pub struct Oversampled<const FACTOR: usize, E: Effect> { ... }
 ```
 
+### Filter Design (Updated Phase 5)
+
+The original implementation used linear interpolation for upsampling and a 16-tap FIR for downsampling, achieving roughly 40 dB stopband attenuation. This was upgraded to:
+
+**Upsampling: Polyphase Blackman-Harris windowed sinc (8 taps/phase)**
+
+Each oversampling factor has a precomputed `[FACTOR][8]` kernel array. Each row is one polyphase sub-filter for a fractional offset. The Blackman-Harris window provides >92 dB sidelobe suppression. This eliminates the HF rolloff inherent in linear interpolation (`sinc(pi*f/fs)^2`), which was audible as dullness with aggressive waveshaping at high frequencies.
+
+**Downsampling: 48-tap Kaiser-windowed sinc FIR (beta = 8.0)**
+
+The Kaiser beta of 8.0 was chosen via Kaiser's empirical formula to achieve >80 dB stopband attenuation with 48 taps. Three coefficient sets target different normalized cutoffs: 0.45 (2x), 0.225 (4x), 0.1125 (8x) of the oversampled Nyquist. All sets are symmetric (linear phase).
+
+**Why Kaiser beta = 8.0:** The Kaiser window provides a direct, well-characterized tradeoff between main-lobe width (transition bandwidth) and sidelobe level (stopband attenuation). At beta=8.0, sidelobe suppression exceeds 80 dB — sufficient to keep alias products inaudible even for aggressive waveshaping. Higher beta (e.g., 10.0) would improve rejection but widen the transition band, requiring more taps to maintain the same passband flatness.
+
+**Why polyphase decomposition for upsampling:** The textbook approach to upsampling (zero-stuff then filter) wastes computation multiplying zeros. Polyphase decomposition evaluates only the non-zero tap positions for each sub-sample, reducing work by a factor of FACTOR while producing identical results.
+
 ### Rationale
 
 - **Zero-cost abstraction**: The compiler can unroll loops and optimize for the specific factor. A `for i in 0..FACTOR` loop where `FACTOR` is known at compile time becomes straight-line code.
 - **Type safety**: `Oversampled<4, Distortion>` is a distinct type from `Oversampled<2, Distortion>`, preventing accidental factor changes
-- **Static coefficient selection**: The FIR filter coefficients are selected at compile time via a match on `FACTOR`, eliminating runtime branching in the hot path
+- **Static coefficient selection**: Both FIR downsample and polyphase upsample coefficients are selected at compile time via a match on `FACTOR`, eliminating runtime branching in the hot path
 - **Composable**: The `Oversampled` wrapper implements `Effect`, so it can be chained, wrapped in `Box<dyn Effect>`, or used anywhere an effect is expected
 
 ### Tradeoffs
 
 - The oversampling factor cannot be changed at runtime without creating a new instance
-- Three sets of FIR coefficients are compiled into the binary even if only one factor is used (though dead code elimination may remove unused ones)
+- Three sets of FIR downsample coefficients and three polyphase upsample kernels are compiled into the binary even if only one factor is used (though dead code elimination may remove unused ones)
+- The 48-tap FIR + 8-tap sinc kernel adds 27 samples of latency (up from 7 with the old 16-tap design)
 
 ---
 
@@ -718,3 +736,64 @@ Profiling identified transcendental calls as the dominant cost in: LFO tick, com
 - Effects using fast_math have slightly different output than libm versions (within documented error bounds)
 - Golden file regression tests use libm — fast_math output verified via dedicated unit tests with tolerance assertions
 - New effects targeting embedded should prefer fast_math for transcendental calls in per-sample loops
+
+---
+
+## ADR-021: Block Processing Overrides
+
+**Status:** Accepted
+**Source:** `crates/sonido-effects/src/distortion.rs`, `compressor.rs`, `chorus.rs`, `delay.rs`, `reverb.rs`
+
+### Context
+
+The `Effect` trait provides default `process_block_stereo` implementations that call `process_stereo` per sample. While correct, this prevents the compiler from optimizing across sample boundaries (loop hoisting, autovectorization) and forces per-sample virtual dispatch overhead for any branching logic.
+
+A technical debt audit identified block processing as the single largest performance gap — 4-8x potential improvement on the hot path for effects with branch-heavy per-sample logic.
+
+### Decision
+
+Override `process_block_stereo` on the 5 most performance-critical effects: Distortion, Compressor, Chorus, Delay, and Reverb. Each override must produce bit-identical output to the per-sample path.
+
+### Design Patterns
+
+**Monomorphized waveshaper dispatch (Distortion):**
+
+The per-sample `process_stereo` matches on `WaveShape` for every sample. The block override matches once at the top and calls a generic inner function:
+
+```rust
+fn process_block_stereo_inner<F: Fn(f32) -> f32>(
+    &mut self, left_in: &[f32], right_in: &[f32],
+    left_out: &mut [f32], right_out: &mut [f32],
+    waveshaper: F,
+) { ... }
+
+fn process_block_stereo(...) {
+    match self.wave_shape {
+        WaveShape::SoftClip => self.process_block_stereo_inner(..., soft_clip),
+        WaveShape::HardClip => self.process_block_stereo_inner(..., |x| x.clamp(-1.0, 1.0)),
+        // ...
+    }
+}
+```
+
+The generic `F` parameter is monomorphized: the compiler generates specialized code for each waveshaper, enabling inlining and autovectorization of the inner loop. The `match` executes once per block instead of once per sample.
+
+**Structural deduplication (Reverb):**
+
+The per-sample `process()` and `process_stereo()` shared significant copy-paste logic for parameter advancing and comb processing. The block override consolidates this into a single loop body that processes both channels, eliminating the duplication.
+
+### Bit-Identical Constraint
+
+All block overrides are verified to produce identical output to the per-sample path. This is enforced by the existing golden-file regression tests, which compare sample-by-sample against reference WAV files with MSE < 1e-6. The block overrides must not change the DSP algorithm — only the iteration structure.
+
+### Rationale
+
+- **Compiler optimization boundary**: Per-sample dispatch prevents the compiler from seeing across sample boundaries. Block processing exposes the full loop to the optimizer.
+- **Branch hoisting**: Match-once-per-block eliminates per-sample branching. For Distortion's 4 waveshaper modes, this removes 3 dead branches per sample.
+- **Autovectorization opportunity**: Tight inner loops over contiguous buffers are the ideal pattern for LLVM's autovectorizer. The `SmoothedParam::advance()` call per sample limits full vectorization but the gain/filter math benefits.
+- **Selective override**: Only 5 of 15 effects got overrides — those where profiling or structural analysis showed clear benefit. The remaining 10 effects are simple enough that the per-sample default is adequate.
+
+### Alternatives Considered
+
+- **SIMD intrinsics**: Explicit SIMD would provide guaranteed vectorization but requires `unsafe`, is platform-specific, and breaks `no_std` portability. Deferred until profiling shows autovectorization is insufficient.
+- **Overriding all 15 effects**: Diminishing returns for simple effects (Preamp, Gate, Filter) where the per-sample cost is already minimal. Maintenance burden outweighs benefit.

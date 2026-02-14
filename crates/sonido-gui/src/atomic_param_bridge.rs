@@ -10,7 +10,7 @@
 
 use parking_lot::RwLock;
 use sonido_core::ParamDescriptor;
-use sonido_gui_core::ParamBridge;
+use sonido_gui_core::{ParamBridge, ParamIndex, SlotIndex};
 use sonido_registry::EffectRegistry;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
@@ -87,9 +87,9 @@ impl AtomicParamBridge {
     /// Called after construction to configure which effects start bypassed.
     /// Uses a read lock because `AtomicBool::store` does not require exclusive
     /// access to the `Vec`.
-    pub fn set_default_bypass(&self, slot: usize, bypassed: bool) {
+    pub fn set_default_bypass(&self, slot: SlotIndex, bypassed: bool) {
         let slots = self.slots.read();
-        if let Some(s) = slots.get(slot) {
+        if let Some(s) = slots.get(slot.0) {
             s.bypassed.store(bypassed, Ordering::Relaxed);
         }
     }
@@ -100,17 +100,17 @@ impl AtomicParamBridge {
     /// into each effect via `set_param()`. Also syncs bypass states.
     pub fn sync_to_chain(&self, chain: &mut crate::chain_manager::ChainManager) {
         let slots = self.slots.read();
-        for (slot_idx, slot_state) in slots.iter().enumerate() {
+        for (slot_raw, slot_state) in slots.iter().enumerate() {
             // Bypass sync is unconditional — cheap and doesn't go through set()
-            chain.set_bypassed(slot_idx, slot_state.bypassed.load(Ordering::Relaxed));
+            chain.set_bypassed(slot_raw, slot_state.bypassed.load(Ordering::Relaxed));
 
             // Only push params for slots where the GUI changed something
             if slot_state.dirty.load(Ordering::Acquire) {
                 slot_state.dirty.store(false, Ordering::Release);
-                if let Some(chain_slot) = chain.slot_mut(slot_idx) {
-                    for (param_idx, atomic_val) in slot_state.values.iter().enumerate() {
+                if let Some(chain_slot) = chain.slot_mut(slot_raw) {
+                    for (param_raw, atomic_val) in slot_state.values.iter().enumerate() {
                         let val = f32::from_bits(atomic_val.load(Ordering::Relaxed));
-                        chain_slot.effect.effect_set_param(param_idx, val);
+                        chain_slot.effect.effect_set_param(param_raw, val);
                     }
                 }
             }
@@ -122,7 +122,7 @@ impl AtomicParamBridge {
     /// Called on the audio thread when processing a `ChainCommand::Add`.
     /// Acquires an exclusive write lock. Parameter values are initialized
     /// to each descriptor's default.
-    pub fn add_slot(&self, id: &'static str, descriptors: Vec<ParamDescriptor>) -> usize {
+    pub fn add_slot(&self, id: &'static str, descriptors: Vec<ParamDescriptor>) -> SlotIndex {
         let mut slots = self.slots.write();
         let values = descriptors
             .iter()
@@ -135,17 +135,17 @@ impl AtomicParamBridge {
             bypassed: AtomicBool::new(false),
             dirty: AtomicBool::new(true),
         });
-        slots.len() - 1
+        SlotIndex(slots.len() - 1)
     }
 
     /// Removes a slot via swap-remove.
     ///
     /// Called on the audio thread when processing a `ChainCommand::Remove`.
     /// Acquires an exclusive write lock.
-    pub(crate) fn remove_slot(&self, slot: usize) {
+    pub(crate) fn remove_slot(&self, slot: SlotIndex) {
         let mut slots = self.slots.write();
-        if slot < slots.len() {
-            slots.swap_remove(slot);
+        if slot.0 < slots.len() {
+            slots.swap_remove(slot.0);
         }
     }
 }
@@ -155,40 +155,40 @@ impl ParamBridge for AtomicParamBridge {
         self.slots.read().len()
     }
 
-    fn effect_id(&self, slot: usize) -> &str {
+    fn effect_id(&self, slot: SlotIndex) -> &str {
         // We can't return a reference into the RwLock guard, but effect_id
         // is &'static str so copying is fine.
-        self.slots.read().get(slot).map_or("", |s| s.effect_id)
+        self.slots.read().get(slot.0).map_or("", |s| s.effect_id)
     }
 
-    fn param_count(&self, slot: usize) -> usize {
+    fn param_count(&self, slot: SlotIndex) -> usize {
         self.slots
             .read()
-            .get(slot)
+            .get(slot.0)
             .map_or(0, |s| s.descriptors.len())
     }
 
-    fn param_descriptor(&self, slot: usize, param: usize) -> Option<ParamDescriptor> {
+    fn param_descriptor(&self, slot: SlotIndex, param: ParamIndex) -> Option<ParamDescriptor> {
         self.slots
             .read()
-            .get(slot)
-            .and_then(|s| s.descriptors.get(param))
+            .get(slot.0)
+            .and_then(|s| s.descriptors.get(param.0))
             .cloned()
     }
 
-    fn get(&self, slot: usize, param: usize) -> f32 {
+    fn get(&self, slot: SlotIndex, param: ParamIndex) -> f32 {
         self.slots
             .read()
-            .get(slot)
-            .and_then(|s| s.values.get(param))
+            .get(slot.0)
+            .and_then(|s| s.values.get(param.0))
             .map(|v| f32::from_bits(v.load(Ordering::Acquire)))
             .unwrap_or(0.0)
     }
 
-    fn set(&self, slot: usize, param: usize, value: f32) {
+    fn set(&self, slot: SlotIndex, param: ParamIndex, value: f32) {
         let slots = self.slots.read();
-        if let Some(s) = slots.get(slot)
-            && let Some((atomic, desc)) = s.values.get(param).zip(s.descriptors.get(param))
+        if let Some(s) = slots.get(slot.0)
+            && let Some((atomic, desc)) = s.values.get(param.0).zip(s.descriptors.get(param.0))
         {
             let clamped = value.clamp(desc.min, desc.max);
             atomic.store(clamped.to_bits(), Ordering::Release);
@@ -196,16 +196,16 @@ impl ParamBridge for AtomicParamBridge {
         }
     }
 
-    fn is_bypassed(&self, slot: usize) -> bool {
+    fn is_bypassed(&self, slot: SlotIndex) -> bool {
         self.slots
             .read()
-            .get(slot)
+            .get(slot.0)
             .is_some_and(|s| s.bypassed.load(Ordering::Acquire))
     }
 
-    fn set_bypassed(&self, slot: usize, bypassed: bool) {
+    fn set_bypassed(&self, slot: SlotIndex, bypassed: bool) {
         let slots = self.slots.read();
-        if let Some(s) = slots.get(slot) {
+        if let Some(s) = slots.get(slot.0) {
             s.bypassed.store(bypassed, Ordering::Release);
         }
     }
@@ -221,10 +221,10 @@ mod tests {
         let bridge = AtomicParamBridge::new(&registry, &["distortion", "reverb"], 48000.0);
 
         assert_eq!(bridge.slot_count(), 2);
-        assert_eq!(bridge.effect_id(0), "distortion");
-        assert_eq!(bridge.effect_id(1), "reverb");
-        assert!(bridge.param_count(0) > 0);
-        assert!(bridge.param_count(1) > 0);
+        assert_eq!(bridge.effect_id(SlotIndex(0)), "distortion");
+        assert_eq!(bridge.effect_id(SlotIndex(1)), "reverb");
+        assert!(bridge.param_count(SlotIndex(0)) > 0);
+        assert!(bridge.param_count(SlotIndex(1)) > 0);
     }
 
     #[test]
@@ -233,16 +233,18 @@ mod tests {
         let bridge = AtomicParamBridge::new(&registry, &["distortion"], 48000.0);
 
         // Read default
-        let desc = bridge.param_descriptor(0, 0).unwrap();
-        assert_eq!(bridge.get(0, 0), desc.default);
+        let desc = bridge
+            .param_descriptor(SlotIndex(0), ParamIndex(0))
+            .unwrap();
+        assert_eq!(bridge.get(SlotIndex(0), ParamIndex(0)), desc.default);
 
         // Set within range
-        bridge.set(0, 0, 10.0);
-        assert_eq!(bridge.get(0, 0), 10.0);
+        bridge.set(SlotIndex(0), ParamIndex(0), 10.0);
+        assert_eq!(bridge.get(SlotIndex(0), ParamIndex(0)), 10.0);
 
         // Clamp above max
-        bridge.set(0, 0, 999.0);
-        assert_eq!(bridge.get(0, 0), desc.max);
+        bridge.set(SlotIndex(0), ParamIndex(0), 999.0);
+        assert_eq!(bridge.get(SlotIndex(0), ParamIndex(0)), desc.max);
     }
 
     #[test]
@@ -250,12 +252,12 @@ mod tests {
         let registry = EffectRegistry::new();
         let bridge = AtomicParamBridge::new(&registry, &["chorus", "gate"], 48000.0);
 
-        assert!(!bridge.is_bypassed(0));
-        assert!(!bridge.is_bypassed(1));
+        assert!(!bridge.is_bypassed(SlotIndex(0)));
+        assert!(!bridge.is_bypassed(SlotIndex(1)));
 
-        bridge.set_bypassed(1, true);
-        assert!(!bridge.is_bypassed(0));
-        assert!(bridge.is_bypassed(1));
+        bridge.set_bypassed(SlotIndex(1), true);
+        assert!(!bridge.is_bypassed(SlotIndex(0)));
+        assert!(bridge.is_bypassed(SlotIndex(1)));
     }
 
     #[test]
@@ -263,14 +265,14 @@ mod tests {
         let registry = EffectRegistry::new();
         let bridge = AtomicParamBridge::new(&registry, &["distortion"], 48000.0);
 
-        assert_eq!(bridge.get(99, 0), 0.0);
-        assert_eq!(bridge.param_count(99), 0);
-        assert_eq!(bridge.effect_id(99), "");
-        assert!(!bridge.is_bypassed(99));
+        assert_eq!(bridge.get(SlotIndex(99), ParamIndex(0)), 0.0);
+        assert_eq!(bridge.param_count(SlotIndex(99)), 0);
+        assert_eq!(bridge.effect_id(SlotIndex(99)), "");
+        assert!(!bridge.is_bypassed(SlotIndex(99)));
 
         // These should not panic
-        bridge.set(99, 0, 1.0);
-        bridge.set_bypassed(99, true);
+        bridge.set(SlotIndex(99), ParamIndex(0), 1.0);
+        bridge.set_bypassed(SlotIndex(99), true);
     }
 
     #[test]
@@ -287,10 +289,10 @@ mod tests {
             .collect();
 
         let idx = bridge.add_slot("reverb", descs);
-        assert_eq!(idx, 1);
+        assert_eq!(idx, SlotIndex(1));
         assert_eq!(bridge.slot_count(), 2);
-        assert_eq!(bridge.effect_id(1), "reverb");
-        assert!(bridge.param_count(1) > 0);
+        assert_eq!(bridge.effect_id(SlotIndex(1)), "reverb");
+        assert!(bridge.param_count(SlotIndex(1)) > 0);
     }
 
     #[test]
@@ -301,9 +303,9 @@ mod tests {
         assert_eq!(bridge.slot_count(), 3);
 
         // Remove slot 0 → "reverb" (last) swaps into position 0
-        bridge.remove_slot(0);
+        bridge.remove_slot(SlotIndex(0));
         assert_eq!(bridge.slot_count(), 2);
-        assert_eq!(bridge.effect_id(0), "reverb");
-        assert_eq!(bridge.effect_id(1), "compressor");
+        assert_eq!(bridge.effect_id(SlotIndex(0)), "reverb");
+        assert_eq!(bridge.effect_id(SlotIndex(1)), "compressor");
     }
 }

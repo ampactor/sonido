@@ -409,7 +409,9 @@ mod tests {
             id: "distortion",
             effect,
         });
-        bridge.send_command(ChainCommand::Remove { slot: 0 });
+        bridge.send_command(ChainCommand::Remove {
+            slot: sonido_gui_core::SlotIndex(0),
+        });
 
         // Drain the channel
         let cmd1 = rx.try_recv().unwrap();
@@ -422,7 +424,10 @@ mod tests {
         ));
 
         let cmd2 = rx.try_recv().unwrap();
-        assert!(matches!(cmd2, ChainCommand::Remove { slot: 0 }));
+        assert!(matches!(
+            cmd2,
+            ChainCommand::Remove { slot } if slot == sonido_gui_core::SlotIndex(0)
+        ));
 
         assert!(rx.try_recv().is_err());
     }
