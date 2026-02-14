@@ -11,15 +11,32 @@ I/O, and the path from sonido's existing no_std crates to a running pedal.
 | Spec | Value |
 |------|-------|
 | MCU | STM32H750IBK6 (ARM Cortex-M7, single core) |
-| Clock | 480 MHz |
+| Clock | 480 MHz (libDaisy defaults to 400 MHz for thermal headroom) |
 | FPU | Single-precision hardware FPU (no double, no SIMD) |
-| On-board SDRAM | 64 MB (IS42S16400J) |
+| On-board SDRAM | 64 MB (IS42S16400J) — "65MB" variant |
 | On-board Flash | 8 MB QSPI (IS25LP064A) |
-| Audio Codec | AK4556 (rev 1.0), WM8731 (rev 1.1), PCM3060 (rev 1.2) |
+| Audio Codec | AK4556 (rev 4), WM8731 (rev 5), PCM3060 (rev 7) |
 | Audio | 24-bit stereo, up to 96 kHz |
 | GPIO | 31 configurable pins (12x 16-bit ADC, 2x 12-bit DAC) |
 | USB | Micro-USB (power, flashing, debug, serial) |
 | Price | ~$30 |
+
+### Board Revisions (Codec)
+
+| Revision | Audio Codec | daisy-embassy Feature | Notes |
+|----------|------------|----------------------|-------|
+| Rev 4 | AK4556 (AKM) | `seed` | Original. AKM factory fire (2020) ended supply. |
+| Rev 5 | WM8731 (Wolfson) | `seed_1_1` (default) | Interim replacement. |
+| Rev 7 | PCM3060 (TI) | `seed_1_2` | Current production. |
+
+**Rev 7 noise floor**: The PCM3060 revision has a measurably higher noise floor
+than earlier revisions (~15 dB worse in community measurements: 225 µVrms Rev 7
+vs 40 µVrms Rev 4). Contributing factors include higher analog voltage (3.6 Vpp
+vs 2.1 Vpp) and PCB ground plane design. The PCM3060 datasheet recommends
+external low-pass filtering for noise rejection. No official fix from Electrosmith.
+
+**If purchased in 2025-2026, you have Rev 7.** Use `--features=seed_1_2` with
+daisy-embassy.
 
 ### STM32H750 Memory Map
 
@@ -58,24 +75,82 @@ Codec ADC → SAI RX → DMA → SRAM buffer (ping)
 - **Sample rate**: 48 kHz default, 96 kHz optional (feature flag in `daisy` crate).
 - **Format**: 24-bit I2S, processed as f32 internally.
 
+## Getting Started
+
+### Prerequisites
+
+1. **Micro USB data cable** — NOT charge-only. Charge-only cables have only 2
+   wires (power); data cables have 4 (power + D+/D-). Test: if a cable can
+   transfer files to a phone, it's a data cable. Anker, Amazon Basics, and
+   CableCreation are reliable brands.
+
+2. **Linux udev rule** for DFU access without sudo:
+   ```bash
+   sudo tee /etc/udev/rules.d/50-daisy-stm-dfu.rules << 'EOF'
+   # STM32 DFU bootloader (Daisy Seed)
+   SUBSYSTEMS=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="df11", MODE="0666", GROUP="plugdev", TAG+="uaccess"
+   EOF
+   sudo udevadm control --reload-rules && sudo udevadm trigger
+   ```
+
+3. **dfu-util** for command-line flashing:
+   ```bash
+   sudo apt install dfu-util   # Ubuntu/Debian
+   sudo pacman -S dfu-util     # Arch
+   ```
+
+### Step 1: Flash Blink (validate hardware)
+
+This is the officially recommended first step from Electrosmith.
+
+1. Connect Daisy Seed via micro USB data cable
+2. Enter DFU mode: **hold BOOT → press/release RESET → release BOOT**
+3. Verify: `lsusb` shows `0483:df11 STMicroelectronics STM Device in DFU Mode`
+4. Open [flash.daisy.audio](https://flash.daisy.audio/) in **Chrome** (WebUSB, Chrome-only)
+5. Click Connect → select "DFU in FS Mode" → Flash Blink
+6. **Success**: LED blinks continuously
+
+### Step 2: Rust Toolchain
+
+```bash
+rustup target add thumbv7em-none-eabihf
+cargo install probe-rs-tools --locked
+```
+
+### Step 3: Audio Passthrough
+
+Flash the daisy-embassy passthrough example to verify codec + DMA. See
+Implementation Path below.
+
+### Step 4: Single Sonido Effect
+
+Import `sonido-effects` (no_std) and process audio through a single effect.
+
+### Power
+
+The Seed runs on USB power alone for development. External VIN (5–17 V DC)
+is only needed inside the Hothouse enclosure or custom PCB. Both USB and VIN
+can be connected simultaneously.
+
 ## Rust Ecosystem for Daisy Seed
 
-### Option A: `daisy-embassy` (recommended for new projects)
+### Chosen Framework: `daisy-embassy`
 
 | | |
 |---|---|
 | Crate | [`daisy-embassy`](https://crates.io/crates/daisy-embassy) v0.2.3 |
 | Repo | https://github.com/daisy-embassy/daisy-embassy |
-| Framework | [Embassy](https://embassy.dev/) (async/await) |
+| Framework | [Embassy](https://embassy.dev/) v0.5.0 (async/await on `embassy-stm32`) |
 | License | MIT |
-| Status | Active development (last update: Feb 2026) |
+| Status | Active development (last update: Feb 2026, 6 contributors) |
 
-Embassy provides async tasks, timers, and peripheral drivers. `daisy-embassy`
-handles SAI + DMA + codec initialization automatically via builder macros.
-Audio callback is an async task.
+Embassy is where embedded Rust is converging. `embassy-stm32` (345k downloads,
+backed by Akiles) provides the HAL with SAI driver and DMA support.
+`daisy-embassy` wraps it into Daisy-specific builders handling codec
+initialization, clock configuration, and audio DMA automatically.
 
 ```rust
-// Simplified daisy-embassy audio passthrough pattern
+// daisy-embassy audio passthrough (simplified)
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let config = daisy_embassy::default_rcc();
@@ -92,28 +167,22 @@ async fn main(spawner: Spawner) {
 }
 ```
 
-### Option B: `daisy` by Zlosynth (production-proven)
+**Known limitation**: Embassy's DMA double-buffering for audio uses a
+circular-buffer workaround, not the hardware M0AR/M1AR double-buffer
+registers (embassy-rs/embassy#702, open since 2022). daisy-embassy handles
+this at the BSP level — it works, but it's not the ideal solution. Monitor
+this issue for improvements.
 
-| | |
-|---|---|
-| Crate | [`daisy`](https://crates.io/crates/daisy) v0.11.0 |
-| Repo | https://github.com/zlosynth/daisy |
-| Framework | Bare-metal with interrupt handlers (compatible with RTIC) |
-| License | MIT |
-| Status | Production — ships in commercial Eurorack modules |
+### Why Not `daisy` by Zlosynth?
 
-Zlosynth's [`Kaseta`](https://github.com/zlosynth/kaseta) is a saturating tape
-delay Eurorack module built entirely in Rust on Daisy Patch SM. This proves
-the pattern works at commercial quality. Their architecture:
+Zlosynth's [`daisy`](https://crates.io/crates/daisy) crate (v0.11.0) is
+production-proven — their [`Kaseta`](https://github.com/zlosynth/kaseta)
+Eurorack module ships with it. However, it's built on `stm32h7xx-hal`
+(v0.16.0, last updated Mar 2024) which is stale. Embassy-stm32 is actively
+maintained and has broader ecosystem support. The Kaseta architecture (thin
+firmware crate over no_std DSP library) maps directly to sonido's structure
+and influenced our crate design:
 
-```
-kaseta/            (workspace root)
-├── dsp/           (no_std DSP crate — pure algorithms, no hardware)
-├── firmware/      (Daisy-specific binary — thin wrapper)
-└── control/       (parameter mapping, no_std)
-```
-
-This maps directly to sonido's structure:
 ```
 sonido-core      → dsp/       (no_std primitives)
 sonido-effects   → dsp/       (no_std effects)
@@ -121,34 +190,49 @@ sonido-platform  → control/   (hardware abstraction)
 new: sonido-daisy → firmware/  (Daisy-specific binary)
 ```
 
-Supported codec variants: AK4556 (Seed 1.0), WM8731 (Seed 1.1), PCM3060
-(Seed 1.2, Patch SM). Default: 48 kHz, 32-sample blocks.
-
-### Foundation Crates
+### Foundation Crates (Embassy Path)
 
 | Crate | Version | Purpose |
 |-------|---------|---------|
-| `stm32h7xx-hal` | 0.16.0 | Hardware abstraction layer for STM32H7 |
+| `embassy-stm32` | 0.5.0 | Async HAL for STM32 (SAI, DMA, GPIO, ADC, I2C) |
+| `embassy-executor` | — | Async task executor for Cortex-M |
+| `daisy-embassy` | 0.2.3 | Daisy Seed BSP (codec init, audio interface builder) |
 | `cortex-m` | — | Low-level Cortex-M access (NVIC, SCB, MPU) |
 | `cortex-m-rt` | — | Runtime (vector table, entry point, linker script) |
-| `embedded-hal` | — | Hardware abstraction traits |
+| `embedded-alloc` | — | Global allocator for heap on AXI SRAM |
 | `defmt` | — | Efficient embedded logging (zero-cost when disabled) |
 | `probe-rs` | — | Flashing and debugging via SWD/JTAG |
 
-### Build Toolchain
+### Build & Flash
 
 ```bash
 # Install target
 rustup target add thumbv7em-none-eabihf
 
 # Install probe-rs for flashing/debugging
-cargo install probe-rs-tools
+cargo install probe-rs-tools --locked
 
 # Build for Daisy Seed
-cargo build --target thumbv7em-none-eabihf --release
+cargo build -p sonido-daisy --target thumbv7em-none-eabihf --release
 
-# Flash
+# Flash via DFU (USB, no debug probe needed)
+dfu-util -a 0 -s 0x08000000:leave -D target/thumbv7em-none-eabihf/release/sonido-daisy.bin
+
+# Flash via SWD probe (ST-Link V3 Mini, supports debugging + defmt)
 probe-rs run --chip STM32H750IBKx target/thumbv7em-none-eabihf/release/sonido-daisy
+```
+
+### Debug Probe (Optional, Recommended)
+
+An **ST-Link V3 Mini** (~$12) connects to the Seed's SWD header and enables
+breakpoints, variable inspection, and `defmt` RTT logging via `probe-rs`.
+Not needed for initial DFU-based development, but essential for serious
+firmware debugging.
+
+Linux udev rules for probe-rs:
+```bash
+curl -L https://probe.rs/files/69-probe-rs.rules | sudo tee /etc/udev/rules.d/69-probe-rs.rules
+sudo udevadm control --reload && sudo udevadm trigger
 ```
 
 ## Memory Budget
@@ -254,33 +338,42 @@ indicate state.
 
 ## Implementation Path
 
-### Phase 1: Audio Passthrough
+### Hardware Available
 
-1. Create `crates/sonido-daisy/` binary crate
-2. Add `daisy-embassy` (or zlosynth `daisy`) dependency
-3. Initialize board, codec, SAI + DMA
-4. Audio callback: copy input → output (verify hardware works)
-5. Flash and test with headphones
+- **Daisy Seed** (65 MB, Rev 7 / PCM3060) — acquired Feb 2026
+- **Hothouse kit** (Cleveland Music Co.) — ordered, arriving separately
 
-### Phase 2: Single Effect
+Phases 1-2 can be done on the bare Seed with USB audio or breadboard wiring.
+Phase 3+ requires the Hothouse enclosure for proper control surface testing.
 
-1. Import `sonido-effects` (no_std)
-2. Instantiate one effect (e.g., `Distortion`) in static memory
-3. Process audio through effect in callback
-4. Wire one knob to drive parameter via ADC
-5. Verify: real-time audio, no glitches, knob responds
+### Phase 1: Audio Passthrough (bare Seed)
 
-### Phase 3: Effect Chain + Controls
+1. Create `crates/sonido-daisy/` binary crate with `daisy-embassy` dependency
+2. Configure Embassy executor, clock (`default_rcc()`), and audio interface
+3. Audio callback: copy input → output (verify codec + DMA)
+4. Flash via DFU (`dfu-util`) and test
+5. **Success**: clean passthrough with no audible artifacts
 
-1. Implement `PlatformController` for Hothouse pin layout
-2. Wire `ControlMapper` to route knobs → effect parameters
+### Phase 2: Single Effect (bare Seed)
+
+1. Import `sonido-effects` (no_std, no-default-features)
+2. Configure `embedded-alloc` global allocator on AXI SRAM
+3. Instantiate one effect (e.g., `Distortion`) — test with static allocation first
+4. Process audio through effect in callback
+5. Wire one ADC pin to drive parameter (breadboard pot or fixed resistor)
+6. **Success**: real-time audio, no glitches, parameter changes audible
+
+### Phase 3: Effect Chain + Controls (Hothouse)
+
+1. Implement `PlatformController` for Hothouse pin layout (ADC, GPIO)
+2. Wire `ControlMapper` to route 6 knobs → effect parameters
 3. Build a fixed effect chain (e.g., Preamp → Distortion → Chorus → Delay)
-4. Toggle-based preset selection (27 configurations)
-5. Footswitch bypass
+4. Toggle-based preset selection (27 configurations via 3 three-way toggles)
+5. Footswitch bypass with LED feedback
 
-### Phase 4: Dynamic Chains
+### Phase 4: Dynamic Chains (Hothouse)
 
-1. Allocate effect chain from heap (AXI SRAM)
+1. Allocate effect chain from heap (AXI SRAM, SDRAM for large buffers)
 2. Toggle combinations select different chains
 3. Memory-aware chain builder (refuse chains that exceed budget)
 4. CPU usage monitoring (DWT cycle counter)
@@ -289,22 +382,24 @@ indicate state.
 
 ### What sonido already handles
 
-- All core crates compile no_std (`sonido-core`, `sonido-effects`, `sonido-synth`,
-  `sonido-registry`, `sonido-platform`)
+- All 5 no_std crates compile and pass tests with `--no-default-features`
+- All 5 no_std crates cross-compile for `thumbv7em-none-eabihf` (verified Feb 2026)
 - `Effect` trait is hardware-agnostic
 - `process_block()` and `process_block_stereo()` match DMA callback pattern
 - `ParameterInfo` enables runtime parameter discovery for control mapping
 - `libm` used everywhere (no `f32::sin()` in no_std crates)
+- `alloc` support: delay buffers use `alloc::vec::Vec` with conditional
+  `extern crate alloc` — works with any global allocator
 
 ### What needs work
 
-- **no_std Vec allocation**: Effects use `alloc::vec::Vec` for delay buffers.
-  On Cortex-M7, need a global allocator pointing at AXI SRAM. The
-  [`embedded-alloc`](https://crates.io/crates/embedded-alloc) crate provides this.
-- **Memory placement**: Large buffers (reverb, delay) should live in AXI SRAM
-  or SDRAM, not DTCM. May need custom allocator or static buffers.
-- **Pre-existing no_std test failure**: `cargo test --no-default-features -p sonido-core`
-  currently fails with `cannot find type Vec` — must be fixed before firmware.
+- **Global allocator for firmware**: The `sonido-daisy` binary crate must
+  configure [`embedded-alloc`](https://crates.io/crates/embedded-alloc)
+  pointing at AXI SRAM (512 KB) for heap allocation. Effects that use
+  `InterpolatedDelay` (Vec-backed) require this.
+- **Memory placement**: Large buffers (reverb ~110 KB, delay >188 KB) should
+  live in AXI SRAM or SDRAM. May need custom allocator regions or linker
+  section attributes for SDRAM-backed delay lines.
 - **No `process_block()` in core primitives**: Some primitives (Biquad, SVF) only
   have per-sample `process()`. Block processing would improve cache behavior on CM7.
 - **SmoothedParam no short-circuit**: When settled, still computes exponential
@@ -312,12 +407,32 @@ indicate state.
 
 ## References
 
-- [Electrosmith Daisy Seed](https://electro-smith.com/products/daisy-seed)
-- [Daisy Seed Datasheet](https://daisy.nyc3.cdn.digitaloceanspaces.com/products/seed/Daisy_Seed_datasheet_v1-1-5.pdf)
-- [STM32H750 Product Page](https://www.st.com/en/microcontrollers-microprocessors/stm32h750-value-line.html)
-- [daisy-embassy crate](https://crates.io/crates/daisy-embassy)
-- [zlosynth/daisy crate](https://github.com/zlosynth/daisy)
-- [zlosynth/kaseta](https://github.com/zlosynth/kaseta) — Production Rust DSP on Daisy
+### Electrosmith Official
+- [Daisy Seed Product Page](https://electro-smith.com/products/daisy-seed)
+- [Daisy Seed Datasheet v1.1.5](https://daisy.nyc3.cdn.digitaloceanspaces.com/products/seed/Daisy_Seed_datasheet_v1-1-5.pdf)
+- [Memory Variant Comparison](https://electro-smith.com/pages/memory-what-is-the-difference)
+- [Web Programmer](https://flash.daisy.audio/) — browser-based firmware flashing
+- [Web Programmer Tutorial](https://daisy.audio/tutorials/web-programmer/)
+- [Getting Started Forum Post](https://forum.electro-smith.com/t/welcome-to-daisy-get-started-here/15)
+- [Troubleshooting](https://daisy.audio/troubleshooting/)
 - [libDaisy (C++)](https://github.com/electro-smith/libDaisy)
+- [STM32H750 Product Page](https://www.st.com/en/microcontrollers-microprocessors/stm32h750-value-line.html)
+
+### Rust Ecosystem
+- [daisy-embassy crate](https://crates.io/crates/daisy-embassy) — Chosen BSP
+- [daisy-embassy repo](https://github.com/daisy-embassy/daisy-embassy)
+- [Embassy STM32H750XB docs](https://docs.embassy.dev/embassy-stm32/git/stm32h750xb/index.html)
+- [Embassy DMA double-buffer issue](https://github.com/embassy-rs/embassy/issues/702)
+- [zlosynth/daisy crate](https://github.com/zlosynth/daisy) — Alternative BSP
+- [zlosynth/kaseta](https://github.com/zlosynth/kaseta) — Production Rust DSP on Daisy
+- [probe-rs Installation](https://probe.rs/docs/getting-started/installation/)
+- [probe-rs Probe Setup](https://probe.rs/docs/getting-started/probe-setup/)
+
+### Community
+- [Daisy Forum: Rust development](https://forum.electro-smith.com/t/rust-starter-for-daisy-seed/684)
+- [Daisy Forum: Rev 7 noise floor](https://forum.electro-smith.com/t/rev-7-noise-floor-vs-rev-4/4943)
+- [Daisy Forum: Rev 7 detection bug](https://forum.electro-smith.com/t/rev-7-seed-is-detected-as-rev-4/4876)
+
+### Sonido Internal
 - [Hothouse Hardware Reference](HARDWARE.md)
 - [Sonido Benchmarks & Cortex-M7 Estimates](BENCHMARKS.md)
