@@ -2,8 +2,6 @@
 
 mod knob;
 mod meter;
-mod toggle;
-
 pub use knob::Knob;
 pub use meter::{GainReductionMeter, LevelMeter};
-pub use toggle::{BypassToggle, FootswitchToggle};
+pub use sonido_gui_core::{BypassToggle, FootswitchToggle};

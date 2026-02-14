@@ -23,7 +23,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(not(target_arch = "wasm32"))]
 use std::thread;
 #[cfg(not(target_arch = "wasm32"))]
-use std::time::Instant;
+use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
@@ -550,6 +550,9 @@ impl eframe::App for SonidoApp {
                 .send_command(ChainCommand::Add { id, effect });
         }
         if let Some(slot) = self.chain_view.take_pending_remove() {
+            if self.chain_view.selected() == Some(slot) {
+                self.chain_view.clear_selection();
+            }
             self.audio_bridge
                 .send_command(ChainCommand::Remove { slot });
         }
@@ -570,7 +573,7 @@ impl eframe::App for SonidoApp {
         #[cfg(target_arch = "wasm32")]
         ctx.request_repaint_after(std::time::Duration::from_millis(33)); // 30fps
         #[cfg(not(target_arch = "wasm32"))]
-        ctx.request_repaint(); // native: full speed
+        ctx.request_repaint_after(Duration::from_millis(16)); // ~60fps cap
 
         // Header
         TopBottomPanel::top("header").show(ctx, |ui| {
@@ -934,8 +937,8 @@ fn build_audio_streams(
                 // Global gain levels
                 let input_gain_db = input_gain.get();
                 let master_vol_db = master_volume.get();
-                let ig = 10.0_f32.powf(input_gain_db / 20.0);
-                let mv = 10.0_f32.powf(master_vol_db / 20.0);
+                let ig = sonido_core::db_to_linear(input_gain_db);
+                let mv = sonido_core::db_to_linear(master_vol_db);
 
                 // Sync bridge → effect parameters and bypass states
                 bridge.sync_to_chain(&mut chain);

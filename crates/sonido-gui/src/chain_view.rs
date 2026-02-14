@@ -6,7 +6,7 @@
 
 use crate::audio_bridge::EffectOrder;
 use crate::effects_ui::EffectType;
-use egui::{Color32, Response, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
+use egui::{Color32, Response, ScrollArea, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
 use sonido_gui_core::ParamBridge;
 use sonido_registry::EffectRegistry;
 
@@ -43,6 +43,11 @@ impl ChainView {
     /// Get the currently selected slot index.
     pub fn selected(&self) -> Option<usize> {
         self.selected
+    }
+
+    /// Clear the current selection.
+    pub fn clear_selection(&mut self) {
+        self.selected = None;
     }
 
     /// Take the pending add request (if any), clearing it.
@@ -91,77 +96,98 @@ impl ChainView {
                 + add_button_width
         };
 
-        ui.horizontal(|ui| {
-            // Center the chain
-            let available = ui.available_width();
-            if available > total_width {
-                ui.add_space((available - total_width) / 2.0);
-            }
+        // Scroll horizontally when the chain overflows the available width
+        let available_width = ui.available_width();
+        let needs_scroll = total_width > available_width;
 
-            for (pos, &slot_idx) in visible.iter().enumerate() {
-                let effect_id = bridge.effect_id(slot_idx);
-                let short_name = EffectType::from_id(effect_id)
-                    .map(|t| t.short_name())
-                    .unwrap_or("???");
-
-                let is_selected = self.selected == Some(slot_idx);
-                let is_bypassed = bridge.is_bypassed(slot_idx);
-
-                let response =
-                    self.effect_pedal(ui, short_name, is_selected, is_bypassed, slot_idx, bridge);
-
-                // Click → select
-                if response.clicked() {
-                    self.selected = Some(slot_idx);
-                }
-
-                // Right-click → context menu
-                response.context_menu(|ui| {
-                    if ui.button("Remove Effect").clicked() {
-                        self.pending_remove = Some(slot_idx);
-                        ui.close_menu();
-                    }
-                });
-
-                // Handle drag start
-                if response.drag_started() {
-                    self.dragging = Some(pos);
-                }
-
-                // Handle drag
-                if self.dragging == Some(pos) && response.dragged() {
-                    let delta = response.drag_delta().x;
-                    self.drag_offset += delta;
-
-                    let swap_threshold = effect_width / 2.0 + spacing;
-                    if self.drag_offset > swap_threshold && pos < visible.len() - 1 {
-                        self.effect_order.move_effect(pos, pos + 1);
-                        self.dragging = Some(pos + 1);
-                        self.drag_offset = 0.0;
-                    } else if self.drag_offset < -swap_threshold && pos > 0 {
-                        self.effect_order.move_effect(pos, pos - 1);
-                        self.dragging = Some(pos - 1);
-                        self.drag_offset = 0.0;
+        ScrollArea::horizontal().auto_shrink(true).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                // Center the chain when it fits
+                if !needs_scroll {
+                    let available = ui.available_width();
+                    if available > total_width {
+                        ui.add_space((available - total_width) / 2.0);
                     }
                 }
 
-                // Handle drag end
-                if response.drag_stopped() {
-                    self.dragging = None;
-                    self.drag_offset = 0.0;
+                for (pos, &slot_idx) in visible.iter().enumerate() {
+                    let effect_id = bridge.effect_id(slot_idx);
+                    let short_name = EffectType::from_id(effect_id)
+                        .map(|t| t.short_name())
+                        .unwrap_or("???");
+
+                    let is_selected = self.selected == Some(slot_idx);
+                    let is_bypassed = bridge.is_bypassed(slot_idx);
+
+                    let response = self.effect_pedal(
+                        ui,
+                        short_name,
+                        is_selected,
+                        is_bypassed,
+                        slot_idx,
+                        bridge,
+                    );
+
+                    // Click → select
+                    if response.clicked() {
+                        self.selected = Some(slot_idx);
+                    }
+
+                    // Right-click → context menu
+                    response.context_menu(|ui| {
+                        if ui.button("Remove Effect").clicked() {
+                            self.pending_remove = Some(slot_idx);
+                            ui.close_menu();
+                        }
+                        if ui
+                            .button(if is_bypassed { "Enable" } else { "Bypass" })
+                            .clicked()
+                        {
+                            bridge.set_bypassed(slot_idx, !is_bypassed);
+                            ui.close_menu();
+                        }
+                    });
+
+                    // Handle drag start
+                    if response.drag_started() {
+                        self.dragging = Some(pos);
+                    }
+
+                    // Handle drag
+                    if self.dragging == Some(pos) && response.dragged() {
+                        let delta = response.drag_delta().x;
+                        self.drag_offset += delta;
+
+                        let swap_threshold = effect_width / 2.0 + spacing;
+                        if self.drag_offset > swap_threshold && pos < visible.len() - 1 {
+                            self.effect_order.move_effect(pos, pos + 1);
+                            self.dragging = Some(pos + 1);
+                            self.drag_offset = 0.0;
+                        } else if self.drag_offset < -swap_threshold && pos > 0 {
+                            self.effect_order.move_effect(pos, pos - 1);
+                            self.dragging = Some(pos - 1);
+                            self.drag_offset = 0.0;
+                        }
+                    }
+
+                    // Handle drag end
+                    if response.drag_stopped() {
+                        self.dragging = None;
+                        self.drag_offset = 0.0;
+                    }
+
+                    // Arrow between effects (except last)
+                    if pos < visible.len() - 1 {
+                        ui.add_space(spacing / 2.0);
+                        self.draw_arrow(ui, arrow_width);
+                        ui.add_space(spacing / 2.0);
+                    }
                 }
 
-                // Arrow between effects (except last)
-                if pos < visible.len() - 1 {
-                    ui.add_space(spacing / 2.0);
-                    self.draw_arrow(ui, arrow_width);
-                    ui.add_space(spacing / 2.0);
-                }
-            }
-
-            // "+" button to add new effects
-            ui.add_space(spacing);
-            self.add_button(ui, registry, add_button_width);
+                // "+" button to add new effects
+                ui.add_space(spacing);
+                self.add_button(ui, registry, add_button_width);
+            });
         });
 
         self.selected
@@ -255,7 +281,7 @@ impl ChainView {
             bridge.set_bypassed(slot_idx, !bridge.is_bypassed(slot_idx));
         }
 
-        response
+        response.on_hover_text("Click: select | Double-click: bypass | Right-click: menu")
     }
 
     /// Draw the "+" button and its popup menu for adding effects.
