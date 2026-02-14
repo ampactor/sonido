@@ -21,7 +21,9 @@ workspace = true
 
 [dev-dependencies]
 criterion = { workspace = true }
+proptest = "1"
 sonido-analysis = { workspace = true }
+sonido-registry = { workspace = true }
 
 [[bench]]
 name = "effects_bench"

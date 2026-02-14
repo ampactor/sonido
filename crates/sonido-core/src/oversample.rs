@@ -4,9 +4,9 @@
 //! that can exceed Nyquist and alias back into the audible range. Oversampling
 //! mitigates this by:
 //!
-//! 1. **Upsampling**: Increase sample rate by factor N (interpolation)
+//! 1. **Upsampling**: Increase sample rate by factor N (windowed-sinc interpolation)
 //! 2. **Processing**: Run the effect at N× sample rate (harmonics stay below Nyquist)
-//! 3. **Downsampling**: Return to original rate (filter + decimation)
+//! 3. **Downsampling**: Return to original rate (FIR lowpass + decimation)
 //!
 //! ## Usage
 //!
@@ -36,10 +36,18 @@ use crate::Effect;
 pub const MAX_OVERSAMPLE_FACTOR: usize = 8;
 
 /// FIR filter order for anti-aliasing (taps = ORDER + 1).
-const FILTER_ORDER: usize = 15;
+///
+/// Increased from 15 to 47 for >80 dB stopband attenuation. The 48-tap
+/// symmetric FIR provides sufficient transition-band steepness to keep
+/// alias products inaudible even for aggressive waveshaping.
+const FILTER_ORDER: usize = 47;
 
 /// Number of filter taps.
 const FILTER_TAPS: usize = FILTER_ORDER + 1;
+
+/// Number of history samples needed for the upsampling sinc kernel.
+/// The kernel spans UPSAMPLE_TAPS input samples centered on the interpolation point.
+const UPSAMPLE_TAPS: usize = 8;
 
 /// Oversampling wrapper for any effect.
 ///
@@ -63,17 +71,17 @@ const FILTER_TAPS: usize = FILTER_ORDER + 1;
 /// # Signal Path
 ///
 /// ```text
-/// Input → Linear Interpolation (upsample) → Effect at N×fs → FIR Lowpass → Decimation → Output
+/// Input → Windowed-Sinc Interpolation (upsample) → Effect at N×fs → FIR Lowpass → Decimation → Output
 /// ```
 ///
-/// The upsampling uses simple linear interpolation between the previous and
-/// current input sample. While linear interpolation introduces slight HF
-/// rolloff, this is acceptable because the subsequent anti-aliasing filter
-/// attenuates those frequencies anyway.
+/// The upsampling uses windowed-sinc interpolation with a Blackman-Harris window
+/// over an 8-sample kernel for each polyphase sub-filter. This eliminates the
+/// HF rolloff inherent in linear interpolation and provides clean interpolation
+/// with >90 dB sidelobe suppression from the window.
 ///
-/// The downsampling uses a 16-tap windowed-sinc FIR filter (Kaiser window)
-/// with cutoff frequencies tuned per oversampling factor (0.4×, 0.2×, 0.1×
-/// Nyquist for 2×, 4×, 8× respectively).
+/// The downsampling uses a 48-tap Kaiser-windowed sinc FIR filter (beta ≈ 8.0)
+/// with cutoff frequencies tuned per oversampling factor (0.45×, 0.22×, 0.11×
+/// Nyquist for 2×, 4×, 8× respectively). Stopband attenuation exceeds 80 dB.
 ///
 /// # Type Parameters
 ///
@@ -83,16 +91,25 @@ const FILTER_TAPS: usize = FILTER_ORDER + 1;
 /// # Memory Usage
 ///
 /// Uses fixed-size arrays for filter state, suitable for `no_std`:
-/// - Previous sample for interpolation: 4 bytes
-/// - Downsample FIR filter state: `FILTER_TAPS` × `f32` = 64 bytes
+/// - Input history for sinc interpolation: `UPSAMPLE_TAPS` × `f32` = 32 bytes
+/// - Downsample FIR filter state: `FILTER_TAPS` × `f32` = 192 bytes
 /// - Upsample work buffer: `MAX_OVERSAMPLE_FACTOR` × `f32` = 32 bytes
+///
+/// # References
+///
+/// - A.V. Oppenheim & R.W. Schafer, "Discrete-Time Signal Processing", Ch. 4 & 7
+/// - F.J. Harris, "On the Use of Windows for Harmonic Analysis with the DFT",
+///   Proc. IEEE, 1978 (window functions and sidelobe behavior)
 pub struct Oversampled<const FACTOR: usize, E: Effect> {
     /// The wrapped effect
     effect: E,
     /// Base sample rate (before oversampling)
     sample_rate: f32,
-    /// Previous input sample for linear interpolation
-    prev_sample: f32,
+    /// Input sample history for windowed-sinc upsampling.
+    /// Stores the last UPSAMPLE_TAPS input samples as a circular buffer.
+    input_history: [f32; UPSAMPLE_TAPS],
+    /// Write position in the input history circular buffer.
+    history_pos: usize,
     /// Downsampling filter state (delay line)
     downsample_state: [f32; FILTER_TAPS],
     /// Buffer for upsampled/processed signal
@@ -120,7 +137,8 @@ impl<const FACTOR: usize, E: Effect> Oversampled<FACTOR, E> {
         Self {
             effect,
             sample_rate,
-            prev_sample: 0.0,
+            input_history: [0.0; UPSAMPLE_TAPS],
+            history_pos: 0,
             downsample_state: [0.0; FILTER_TAPS],
             work_buffer: [0.0; MAX_OVERSAMPLE_FACTOR],
         }
@@ -148,11 +166,14 @@ impl<const FACTOR: usize, E: Effect> Oversampled<FACTOR, E> {
 
     /// Get anti-aliasing FIR filter coefficients for the current oversampling factor.
     ///
-    /// The coefficients are pre-computed windowed-sinc values with Kaiser window,
-    /// stored as static arrays. Each factor has a different cutoff frequency:
-    /// - 2×: cutoff at 0.4 × Nyquist (half-band filter with transition band)
-    /// - 4×: cutoff at 0.2 × Nyquist
-    /// - 8×: cutoff at 0.1 × Nyquist
+    /// The coefficients are pre-computed Kaiser-windowed sinc values (beta ≈ 8.0),
+    /// stored as static arrays. Each factor has a different cutoff frequency
+    /// corresponding to the Nyquist of the original (non-oversampled) sample rate:
+    /// - 2×: cutoff at 0.45 × oversampled Nyquist (slight transition band margin)
+    /// - 4×: cutoff at 0.22 × oversampled Nyquist
+    /// - 8×: cutoff at 0.11 × oversampled Nyquist
+    ///
+    /// All coefficient sets achieve >80 dB stopband attenuation.
     #[inline]
     fn get_coefficients(&self) -> &'static [f32; FILTER_TAPS] {
         match FACTOR {
@@ -163,20 +184,49 @@ impl<const FACTOR: usize, E: Effect> Oversampled<FACTOR, E> {
         }
     }
 
-    /// Upsample using linear interpolation between the previous and current sample.
+    /// Get the polyphase upsampling kernel for the current factor.
     ///
-    /// For FACTOR=4, this generates 4 equally-spaced samples between `prev_sample`
-    /// and `input`. Linear interpolation is simple and efficient but introduces a
-    /// sin(x)/x rolloff in the frequency response -- this is acceptable since the
-    /// downsample filter will remove HF content anyway.
+    /// Returns a reference to a `[FACTOR][UPSAMPLE_TAPS]` array of precomputed
+    /// windowed-sinc values. Each row is one polyphase sub-filter corresponding
+    /// to a fractional phase offset `(p+1)/FACTOR` for sub-sample `p`.
+    #[inline]
+    fn get_upsample_kernel(&self) -> &'static [[f32; UPSAMPLE_TAPS]] {
+        match FACTOR {
+            2 => &UPSAMPLE_KERNEL_2X,
+            4 => &UPSAMPLE_KERNEL_4X,
+            8 => &UPSAMPLE_KERNEL_8X,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Upsample using windowed-sinc interpolation.
+    ///
+    /// For each output sub-sample, convolves the input history with the
+    /// appropriate polyphase component of the sinc kernel. This provides
+    /// band-limited interpolation superior to linear interpolation, with
+    /// >90 dB sidelobe suppression from the Blackman-Harris window.
+    ///
+    /// The polyphase decomposition avoids computing zeros: instead of
+    /// zero-stuffing and filtering, we directly evaluate the sinc kernel
+    /// at the required fractional offsets.
     #[inline]
     fn upsample(&mut self, input: f32) {
-        let step = 1.0 / FACTOR as f32;
-        for i in 0..FACTOR {
-            let t = (i as f32 + 1.0) * step;
-            self.work_buffer[i] = self.prev_sample + t * (input - self.prev_sample);
+        // Push new sample into history
+        self.input_history[self.history_pos] = input;
+        self.history_pos = (self.history_pos + 1) % UPSAMPLE_TAPS;
+
+        let kernel = self.get_upsample_kernel();
+
+        for p in 0..FACTOR {
+            let mut sum = 0.0;
+            let k = &kernel[p];
+            for t in 0..UPSAMPLE_TAPS {
+                // Read from history in correct order (oldest to newest)
+                let idx = (self.history_pos + t) % UPSAMPLE_TAPS;
+                sum += self.input_history[idx] * k[t];
+            }
+            self.work_buffer[p] = sum * FACTOR as f32;
         }
-        self.prev_sample = input;
     }
 
     /// Downsample with FIR anti-aliasing filter and decimation.
@@ -212,7 +262,7 @@ impl<const FACTOR: usize, E: Effect> Oversampled<FACTOR, E> {
 
 impl<const FACTOR: usize, E: Effect> Effect for Oversampled<FACTOR, E> {
     fn process(&mut self, input: f32) -> f32 {
-        // Upsample via linear interpolation
+        // Upsample via windowed-sinc interpolation
         self.upsample(input);
 
         // Process each upsampled sample through the effect
@@ -238,7 +288,8 @@ impl<const FACTOR: usize, E: Effect> Effect for Oversampled<FACTOR, E> {
     }
 
     fn reset(&mut self) {
-        self.prev_sample = 0.0;
+        self.input_history = [0.0; UPSAMPLE_TAPS];
+        self.history_pos = 0;
         self.downsample_state = [0.0; FILTER_TAPS];
         self.work_buffer = [0.0; MAX_OVERSAMPLE_FACTOR];
         self.effect.reset();
@@ -247,85 +298,193 @@ impl<const FACTOR: usize, E: Effect> Effect for Oversampled<FACTOR, E> {
     fn latency_samples(&self) -> usize {
         // Filter latency (group delay) + inner effect latency
         // FIR filter group delay = (taps - 1) / 2 for symmetric filter
+        // Plus sinc interpolation latency = UPSAMPLE_TAPS / 2
         let filter_latency = FILTER_ORDER / 2;
-        filter_latency + self.effect.latency_samples()
+        let upsample_latency = UPSAMPLE_TAPS / 2;
+        filter_latency + upsample_latency + self.effect.latency_samples()
     }
 }
 
 // ============================================================================
-// Filter Coefficients
+// Downsample Filter Coefficients (48-tap Kaiser-windowed sinc, beta ≈ 8.0)
 // ============================================================================
 //
 // Lowpass FIR filter coefficients for anti-aliasing during downsampling.
 //
-// Design method: Windowed-sinc with Kaiser window (beta chosen for ~60 dB
-// stopband attenuation). The 16-tap (order 15) symmetric FIR provides
-// linear phase, which preserves waveform shape through the oversampling path.
+// Design method: Kaiser-windowed sinc with beta = 8.0 for >80 dB stopband
+// attenuation. The 48-tap symmetric FIR provides linear phase, preserving
+// waveform shape through the oversampling path.
 //
-// Each coefficient set targets a different normalized cutoff frequency
-// corresponding to the Nyquist of the original (non-oversampled) sample rate:
-//   - 2×: cutoff at 0.4 × oversampled Nyquist (slight transition band margin)
-//   - 4×: cutoff at 0.2 × oversampled Nyquist
-//   - 8×: cutoff at 0.1 × oversampled Nyquist
+// Each coefficient set targets a different normalized cutoff frequency:
+//   - 2×: cutoff at 0.45 × oversampled Nyquist
+//   - 4×: cutoff at 0.22 × oversampled Nyquist
+//   - 8×: cutoff at 0.11 × oversampled Nyquist
 //
-// The coefficients are symmetric (linear phase), so the group delay is
-// constant at (FILTER_ORDER / 2) = 7.5 samples at the oversampled rate.
+// The coefficients are symmetric (linear phase), so group delay is
+// constant at (FILTER_ORDER / 2) = 23.5 samples at the oversampled rate.
 //
-// Precision: f32 values are stored with extra decimal digits to minimize
-// quantization error. The coefficient sums are normalized to ~1.0 for
-// unity passband gain.
+// Coefficients computed via: h[n] = sinc(2*fc*(n - M/2)) * w_kaiser[n]
+// where M = FILTER_ORDER, fc = normalized cutoff, and w_kaiser is the
+// Kaiser window with the specified beta.
 //
 // Reference: A.V. Oppenheim & R.W. Schafer, "Discrete-Time Signal Processing",
 // Chapter 7 (FIR filter design using the window method).
+// J.F. Kaiser, "Nonrecursive Digital Filter Design Using the I0-sinh Window",
+// Proc. IEEE Int. Symp. Circuits & Systems, 1974.
 
-/// 2× oversampling filter coefficients.
+/// 2× oversampling downsample filter coefficients.
 ///
-/// Half-band lowpass FIR with cutoff at 0.4 × oversampled Nyquist.
-/// Design: windowed-sinc (Kaiser window, beta ~5.6, ~60 dB stopband attenuation).
-/// Note the alternating zero coefficients characteristic of a half-band filter,
-/// which means every other tap is zero (except the center tap). This structure
-/// arises because the cutoff is at exactly half the oversampled Nyquist.
-/// Passband ripple: < 0.05 dB. Stopband attenuation: ~60 dB.
+/// Half-band lowpass FIR with cutoff at 0.45 × oversampled Nyquist.
+/// Design: Kaiser-windowed sinc, beta = 8.0, >80 dB stopband attenuation.
+/// 48 taps, symmetric (linear phase). Coefficient sum = 1.0 (unity DC gain).
 #[allow(clippy::excessive_precision)]
 #[rustfmt::skip]
 static COEFFS_2X: [f32; FILTER_TAPS] = [
-    -0.00152541,  0.00000000,  0.01309369,  0.00000000,
-    -0.05738920,  0.00000000,  0.29581875,  0.50000434,
-     0.29581875,  0.00000000, -0.05738920,  0.00000000,
-     0.01309369,  0.00000000, -0.00152541,  0.00000000,
+     0.000_030_805,  0.000_036_066, -0.000_173_870, -0.000_246_921,
+     0.000_420_167,  0.000_880_584, -0.000_601_289, -0.002_237_806,
+     0.000_256_421,  0.004_509_578,  0.001_430_439, -0.007_530_765,
+    -0.005_580_807,  0.010_513_124,  0.013_481_583, -0.011_805_484,
+    -0.026_534_781,  0.008_541_637,  0.046_881_021,  0.004_832_767,
+    -0.081_356_477, -0.046_700_191,  0.178_198_253,  0.412_755_947,
+     0.412_755_947,  0.178_198_253, -0.046_700_191, -0.081_356_477,
+     0.004_832_767,  0.046_881_021,  0.008_541_637, -0.026_534_781,
+    -0.011_805_484,  0.013_481_583,  0.010_513_124, -0.005_580_807,
+    -0.007_530_765,  0.001_430_439,  0.004_509_578,  0.000_256_421,
+    -0.002_237_806, -0.000_601_289,  0.000_880_584,  0.000_420_167,
+    -0.000_246_921, -0.000_173_870,  0.000_036_066,  0.000_030_805,
 ];
 
-/// 4× oversampling filter coefficients.
+/// 4× oversampling downsample filter coefficients.
 ///
-/// Lowpass FIR with cutoff at 0.2 × oversampled Nyquist.
-/// Design: windowed-sinc (Kaiser window, beta ~5.6, ~60 dB stopband attenuation).
-/// All taps are non-zero; the symmetric shape is characteristic of a
-/// windowed-sinc design. Coefficient sum ≈ 1.0 for unity DC gain.
-/// Passband ripple: < 0.05 dB. Stopband attenuation: ~55 dB.
+/// Lowpass FIR with cutoff at 0.225 × oversampled Nyquist.
+/// Design: Kaiser-windowed sinc, beta = 8.0, >80 dB stopband attenuation.
+/// 48 taps, symmetric (linear phase). Coefficient sum = 1.0 (unity DC gain).
 #[allow(clippy::excessive_precision)]
 #[rustfmt::skip]
 static COEFFS_4X: [f32; FILTER_TAPS] = [
-    0.0018645282, 0.0068257641, 0.0172712655, 0.0342604001,
-    0.0571166576, 0.0830896230, 0.1078345458, 0.1260221675,
-    0.1332946246, 0.1260221675, 0.1078345458, 0.0830896230,
-    0.0571166576, 0.0342604001, 0.0172712655, 0.0068257641,
+    -0.000_024_878, -0.000_018_386,  0.000_099_637,  0.000_356_694,
+     0.000_606_960,  0.000_504_624, -0.000_306_528, -0.001_807_286,
+    -0.003_265_620, -0.003_321_654, -0.000_720_197,  0.004_528_492,
+     0.010_279_768,  0.012_555_426,  0.007_422_453, -0.006_132_875,
+    -0.023_880_170, -0.036_335_063, -0.031_920_603, -0.002_418_197,
+     0.051_797_410,  0.119_686_124,  0.182_344_206,  0.219_969_664,
+     0.219_969_664,  0.182_344_206,  0.119_686_124,  0.051_797_410,
+    -0.002_418_197, -0.031_920_603, -0.036_335_063, -0.023_880_170,
+    -0.006_132_875,  0.007_422_453,  0.012_555_426,  0.010_279_768,
+     0.004_528_492, -0.000_720_197, -0.003_321_654, -0.003_265_620,
+    -0.001_807_286, -0.000_306_528,  0.000_504_624,  0.000_606_960,
+     0.000_356_694,  0.000_099_637, -0.000_018_386, -0.000_024_878,
 ];
 
-/// 8× oversampling filter coefficients.
+/// 8× oversampling downsample filter coefficients.
 ///
-/// Lowpass FIR with cutoff at 0.1 × oversampled Nyquist.
-/// Design: windowed-sinc (Kaiser window, beta ~5.6, ~60 dB stopband attenuation).
-/// The narrower passband (relative to 2× and 4×) provides stronger alias
-/// suppression at the cost of slightly more HF rolloff within the original
-/// audio band. Coefficient sum ≈ 1.0 for unity DC gain.
-/// Passband ripple: < 0.05 dB. Stopband attenuation: ~50 dB.
+/// Lowpass FIR with cutoff at 0.1125 × oversampled Nyquist.
+/// Design: Kaiser-windowed sinc, beta = 8.0, >80 dB stopband attenuation.
+/// 48 taps, symmetric (linear phase). Coefficient sum = 1.0 (unity DC gain).
 #[allow(clippy::excessive_precision)]
 #[rustfmt::skip]
 static COEFFS_8X: [f32; FILTER_TAPS] = [
-    0.0048323092, 0.0131400047, 0.0264623493, 0.0438249658,
-    0.0634416395, 0.0828886958, 0.0994801510, 0.1107812341,
-    0.1151296104, 0.1107812341, 0.0994801510, 0.0828886958,
-    0.0634416395, 0.0438249658, 0.0264623493, 0.0131400047,
+     0.000_028_500,  0.000_093_778,  0.000_197_285,  0.000_311_875,
+     0.000_369_874,  0.000_260_731, -0.000_153_988, -0.001_004_212,
+    -0.002_355_577, -0.004_143_828, -0.006_116_044, -0.007_799_182,
+    -0.008_515_014, -0.007_452_927, -0.003_799_063,  0.003_095_272,
+     0.013_537_148,  0.027_347_166,  0.043_785_295,  0.061_575_686,
+     0.079_039_414,  0.094_320_218,  0.105_665_797,  0.111_711_797,
+     0.111_711_797,  0.105_665_797,  0.094_320_218,  0.079_039_414,
+     0.061_575_686,  0.043_785_295,  0.027_347_166,  0.013_537_148,
+     0.003_095_272, -0.003_799_063, -0.007_452_927, -0.008_515_014,
+    -0.007_799_182, -0.006_116_044, -0.004_143_828, -0.002_355_577,
+    -0.001_004_212, -0.000_153_988,  0.000_260_731,  0.000_369_874,
+     0.000_311_875,  0.000_197_285,  0.000_093_778,  0.000_028_500,
+];
+
+// ============================================================================
+// Upsampling Polyphase Sinc Kernels (Blackman-Harris windowed)
+// ============================================================================
+//
+// Each kernel is a 2D array [FACTOR][UPSAMPLE_TAPS] representing polyphase
+// sub-filters for windowed-sinc interpolation. The sinc is centered at
+// index (UPSAMPLE_TAPS - 1) / 2 = 3.5 (between taps 3 and 4).
+//
+// For each output sub-sample p (0..FACTOR), the fractional offset from center
+// is d = -0.5 + (p + 1) / FACTOR. The kernel evaluates:
+//   h[p][t] = sinc(t - center - d) * blackman_harris(t, UPSAMPLE_TAPS)
+//
+// The Blackman-Harris window provides >92 dB sidelobe suppression, ensuring
+// that interpolation images are well below the noise floor.
+//
+// Each row is normalized to sum to 1/FACTOR. The upsample function multiplies
+// by FACTOR to compensate, yielding unity DC gain overall.
+//
+// Reference: F.J. Harris, "On the Use of Windows for Harmonic Analysis with
+// the DFT", Proc. IEEE, 1978.
+
+/// Polyphase upsampling kernel for 2× oversampling.
+///
+/// 2 phases × 8 taps. Blackman-Harris windowed sinc.
+/// Phase 0: symmetric sinc centered between taps 3 and 4.
+/// Phase 1: sinc peaked at tap 4 (integer sample position).
+#[allow(clippy::excessive_precision)]
+#[rustfmt::skip]
+static UPSAMPLE_KERNEL_2X: [[f32; UPSAMPLE_TAPS]; 2] = [
+    // Phase 0: offset +0.0 from center (symmetric half-sample interpolation)
+    [ -0.000_002_729,  0.002_126_604, -0.035_328_366,  0.283_204_492,
+       0.283_204_492, -0.035_328_366,  0.002_126_604, -0.000_002_729 ],
+    // Phase 1: offset +0.5 from center (integer sample, identity-like)
+    [  0.000_000_000,  0.000_000_000,  0.000_000_000,  0.000_000_000,
+       0.500_000_000,  0.000_000_000,  0.000_000_000,  0.000_000_000 ],
+];
+
+/// Polyphase upsampling kernel for 4× oversampling.
+///
+/// 4 phases × 8 taps. Blackman-Harris windowed sinc.
+#[allow(clippy::excessive_precision)]
+#[rustfmt::skip]
+static UPSAMPLE_KERNEL_4X: [[f32; UPSAMPLE_TAPS]; 4] = [
+    // Phase 0: offset -0.25 from center
+    [ -0.000_001_070,  0.000_860_076, -0.015_431_116,  0.206_168_674,
+       0.068_722_891, -0.011_022_226,  0.000_703_698, -0.000_000_927 ],
+    // Phase 1: offset +0.0 from center (symmetric)
+    [ -0.000_001_365,  0.001_063_302, -0.017_664_183,  0.141_602_246,
+       0.141_602_246, -0.017_664_183,  0.001_063_302, -0.000_001_365 ],
+    // Phase 2: offset +0.25 from center
+    [ -0.000_000_927,  0.000_703_698, -0.011_022_226,  0.068_722_891,
+       0.206_168_674, -0.015_431_116,  0.000_860_076, -0.000_001_070 ],
+    // Phase 3: offset +0.5 from center (integer sample, identity-like)
+    [  0.000_000_000,  0.000_000_000,  0.000_000_000,  0.000_000_000,
+       0.250_000_000,  0.000_000_000,  0.000_000_000,  0.000_000_000 ],
+];
+
+/// Polyphase upsampling kernel for 8× oversampling.
+///
+/// 8 phases × 8 taps. Blackman-Harris windowed sinc.
+#[allow(clippy::excessive_precision)]
+#[rustfmt::skip]
+static UPSAMPLE_KERNEL_8X: [[f32; UPSAMPLE_TAPS]; 8] = [
+    // Phase 0: offset -0.375 from center
+    [ -0.000_000_312,  0.000_255_581, -0.004_811_972,  0.115_723_327,
+       0.016_531_904, -0.002_887_183,  0.000_188_908, -0.000_000_252 ],
+    // Phase 1: offset -0.25 from center
+    [ -0.000_000_535,  0.000_430_038, -0.007_715_558,  0.103_084_337,
+       0.034_361_446, -0.005_511_113,  0.000_351_849, -0.000_000_464 ],
+    // Phase 2: offset -0.125 from center
+    [ -0.000_000_659,  0.000_520_804, -0.008_966_517,  0.087_851_770,
+       0.052_711_062, -0.007_587_053,  0.000_471_204, -0.000_000_613 ],
+    // Phase 3: offset +0.0 from center (symmetric)
+    [ -0.000_000_682,  0.000_531_651, -0.008_832_092,  0.070_801_123,
+       0.070_801_123, -0.008_832_092,  0.000_531_651, -0.000_000_682 ],
+    // Phase 4: offset +0.125 from center
+    [ -0.000_000_613,  0.000_471_204, -0.007_587_053,  0.052_711_062,
+       0.087_851_770, -0.008_966_517,  0.000_520_804, -0.000_000_659 ],
+    // Phase 5: offset +0.25 from center
+    [ -0.000_000_464,  0.000_351_849, -0.005_511_113,  0.034_361_446,
+       0.103_084_337, -0.007_715_558,  0.000_430_038, -0.000_000_535 ],
+    // Phase 6: offset +0.375 from center
+    [ -0.000_000_252,  0.000_188_908, -0.002_887_183,  0.016_531_904,
+       0.115_723_327, -0.004_811_972,  0.000_255_581, -0.000_000_312 ],
+    // Phase 7: offset +0.5 from center (integer sample, identity-like)
+    [  0.000_000_000,  0.000_000_000,  0.000_000_000,  0.000_000_000,
+       0.125_000_000,  0.000_000_000,  0.000_000_000,  0.000_000_000 ],
 ];
 
 #[cfg(test)]
@@ -361,7 +520,7 @@ mod tests {
         let mut oversampled = Oversampled::<4, _>::new(Passthrough, SAMPLE_RATE);
 
         // Let filter settle with DC signal
-        for _ in 0..200 {
+        for _ in 0..500 {
             oversampled.process(1.0);
         }
 
@@ -379,7 +538,7 @@ mod tests {
         let mut oversampled = Oversampled::<4, _>::new(Gain(0.5), SAMPLE_RATE);
 
         // Let filter settle
-        for _ in 0..200 {
+        for _ in 0..500 {
             oversampled.process(1.0);
         }
 
@@ -414,7 +573,7 @@ mod tests {
 
         // Process zeros - output should trend toward zero
         let mut output = 0.0;
-        for _ in 0..50 {
+        for _ in 0..100 {
             output = oversampled.process(0.0);
         }
         assert!(
@@ -429,7 +588,7 @@ mod tests {
         let mut oversampled = Oversampled::<2, _>::new(Passthrough, SAMPLE_RATE);
         assert_eq!(oversampled.factor(), 2);
 
-        for _ in 0..200 {
+        for _ in 0..500 {
             oversampled.process(1.0);
         }
         let output = oversampled.process(1.0);
@@ -445,7 +604,7 @@ mod tests {
         let mut oversampled = Oversampled::<8, _>::new(Passthrough, SAMPLE_RATE);
         assert_eq!(oversampled.factor(), 8);
 
-        for _ in 0..200 {
+        for _ in 0..500 {
             oversampled.process(1.0);
         }
         let output = oversampled.process(1.0);
