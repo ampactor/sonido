@@ -219,6 +219,7 @@ impl Default for AudioBridge {
 #[derive(Debug, Clone)]
 pub struct EffectOrder {
     order: Arc<parking_lot::RwLock<Vec<usize>>>,
+    dirty: Arc<AtomicBool>,
 }
 
 impl Default for EffectOrder {
@@ -232,6 +233,7 @@ impl EffectOrder {
     pub fn new(len: usize) -> Self {
         Self {
             order: Arc::new(parking_lot::RwLock::new((0..len).collect())),
+            dirty: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -243,6 +245,7 @@ impl EffectOrder {
     /// Set effect order.
     pub fn set(&self, order: Vec<usize>) {
         *self.order.write() = order;
+        self.dirty.store(true, Ordering::Release);
     }
 
     /// Move effect from one position to another.
@@ -251,6 +254,8 @@ impl EffectOrder {
         if from < order.len() && to < order.len() && from != to {
             let effect = order.remove(from);
             order.insert(to, effect);
+            drop(order);
+            self.dirty.store(true, Ordering::Release);
         }
     }
 
@@ -262,6 +267,8 @@ impl EffectOrder {
         let mut order = self.order.write();
         let idx = order.len();
         order.push(idx);
+        drop(order);
+        self.dirty.store(true, Ordering::Release);
         idx
     }
 
@@ -283,6 +290,8 @@ impl EffectOrder {
                 }
             }
         }
+        drop(order);
+        self.dirty.store(true, Ordering::Release);
     }
 
     /// Returns the number of entries in the order.
@@ -293,6 +302,16 @@ impl EffectOrder {
     /// Returns `true` if the order is empty.
     pub fn is_empty(&self) -> bool {
         self.order.read().is_empty()
+    }
+
+    /// Returns `true` if the order has been mutated since the last `clear_dirty()`.
+    pub fn is_dirty(&self) -> bool {
+        self.dirty.load(Ordering::Acquire)
+    }
+
+    /// Clear the dirty flag (audio thread calls this after caching the order).
+    pub fn clear_dirty(&self) {
+        self.dirty.store(false, Ordering::Release);
     }
 }
 

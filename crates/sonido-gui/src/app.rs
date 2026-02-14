@@ -692,6 +692,8 @@ struct AudioProcessor {
     chain: ChainManager,
     bridge: Arc<AtomicParamBridge>,
     effect_order: EffectOrder,
+    /// Cached copy of the effect order; only refreshed when `effect_order` is dirty.
+    cached_order: Vec<usize>,
     input_gain: Arc<crate::audio_bridge::AtomicParam>,
     master_volume: Arc<crate::audio_bridge::AtomicParam>,
     command_rx: Receiver<ChainCommand>,
@@ -780,9 +782,12 @@ impl AudioProcessor {
         // Sync bridge -> effect parameters and bypass states
         self.bridge.sync_to_chain(&mut self.chain);
 
-        // Sync effect order from GUI
-        let order = self.effect_order.get();
-        self.chain.reorder(order);
+        // Sync effect order from GUI (only when changed)
+        if self.effect_order.is_dirty() {
+            self.cached_order.clone_from(&self.effect_order.get());
+            self.chain.reorder(self.cached_order.clone());
+            self.effect_order.clear_dirty();
+        }
 
         let mut input_peak = 0.0_f32;
         let mut input_rms_sum = 0.0_f32;
@@ -975,6 +980,7 @@ fn build_audio_streams(
         chain,
         bridge,
         effect_order,
+        cached_order: Vec::new(),
         input_gain,
         master_volume,
         command_rx,
