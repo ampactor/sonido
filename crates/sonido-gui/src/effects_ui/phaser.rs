@@ -2,7 +2,7 @@
 
 use crate::widgets::{BypassToggle, Knob};
 use egui::Ui;
-use sonido_gui_core::ParamBridge;
+use sonido_gui_core::{ParamBridge, ParamIndex, SlotIndex};
 
 /// UI panel for the phaser effect.
 pub struct PhaserPanel;
@@ -17,7 +17,7 @@ impl PhaserPanel {
     ///
     /// Param indices: 0 = rate (Hz), 1 = depth (%), 2 = stages (enum),
     /// 3 = feedback (%), 4 = mix (%).
-    pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: usize) {
+    pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: SlotIndex) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
                 let mut active = !bridge.is_bypassed(slot);
@@ -29,7 +29,7 @@ impl PhaserPanel {
 
                 // Stages selector (param 2)
                 ui.label("Stages:");
-                let current_stages = bridge.get(slot, 2) as usize;
+                let current_stages = bridge.get(slot, ParamIndex(2)) as usize;
                 egui::ComboBox::from_id_salt("phaser_stages")
                     .selected_text(format!("{current_stages}"))
                     .show_ui(ui, |ui| {
@@ -38,7 +38,7 @@ impl PhaserPanel {
                                 .selectable_label(stages == current_stages, format!("{stages}"))
                                 .clicked()
                             {
-                                bridge.set(slot, 2, stages as f32);
+                                bridge.set(slot, ParamIndex(2), stages as f32);
                             }
                         }
                     });
@@ -48,11 +48,11 @@ impl PhaserPanel {
 
             ui.horizontal(|ui| {
                 // Rate (param 0)
-                let desc = bridge.param_descriptor(slot, 0);
+                let desc = bridge.param_descriptor(slot, ParamIndex(0));
                 let (min, max, default) = desc
                     .as_ref()
                     .map_or((0.05, 5.0, 0.3), |d| (d.min, d.max, d.default));
-                let mut rate = bridge.get(slot, 0);
+                let mut rate = bridge.get(slot, ParamIndex(0));
                 if ui
                     .add(
                         Knob::new(&mut rate, min, max, "RATE")
@@ -61,17 +61,17 @@ impl PhaserPanel {
                     )
                     .changed()
                 {
-                    bridge.set(slot, 0, rate);
+                    bridge.set(slot, ParamIndex(0), rate);
                 }
 
                 ui.add_space(16.0);
 
                 // Depth (param 1) — percent (0–100)
-                let desc = bridge.param_descriptor(slot, 1);
+                let desc = bridge.param_descriptor(slot, ParamIndex(1));
                 let (min, max, default) = desc
                     .as_ref()
                     .map_or((0.0, 100.0, 50.0), |d| (d.min, d.max, d.default));
-                let mut depth = bridge.get(slot, 1);
+                let mut depth = bridge.get(slot, ParamIndex(1));
                 if ui
                     .add(
                         Knob::new(&mut depth, min, max, "DEPTH")
@@ -80,17 +80,17 @@ impl PhaserPanel {
                     )
                     .changed()
                 {
-                    bridge.set(slot, 1, depth);
+                    bridge.set(slot, ParamIndex(1), depth);
                 }
 
                 ui.add_space(16.0);
 
                 // Feedback (param 3) — percent (0–95)
-                let desc = bridge.param_descriptor(slot, 3);
+                let desc = bridge.param_descriptor(slot, ParamIndex(3));
                 let (min, max, default) = desc
                     .as_ref()
                     .map_or((0.0, 95.0, 50.0), |d| (d.min, d.max, d.default));
-                let mut feedback = bridge.get(slot, 3);
+                let mut feedback = bridge.get(slot, ParamIndex(3));
                 if ui
                     .add(
                         Knob::new(&mut feedback, min, max, "FDBK")
@@ -99,17 +99,17 @@ impl PhaserPanel {
                     )
                     .changed()
                 {
-                    bridge.set(slot, 3, feedback);
+                    bridge.set(slot, ParamIndex(3), feedback);
                 }
 
                 ui.add_space(16.0);
 
                 // Mix (param 4) — percent (0–100)
-                let desc = bridge.param_descriptor(slot, 4);
+                let desc = bridge.param_descriptor(slot, ParamIndex(4));
                 let (min, max, default) = desc
                     .as_ref()
                     .map_or((0.0, 100.0, 50.0), |d| (d.min, d.max, d.default));
-                let mut mix = bridge.get(slot, 4);
+                let mut mix = bridge.get(slot, ParamIndex(4));
                 if ui
                     .add(
                         Knob::new(&mut mix, min, max, "MIX")
@@ -118,7 +118,7 @@ impl PhaserPanel {
                     )
                     .changed()
                 {
-                    bridge.set(slot, 4, mix);
+                    bridge.set(slot, ParamIndex(4), mix);
                 }
             });
         });

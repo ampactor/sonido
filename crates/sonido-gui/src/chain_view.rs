@@ -6,7 +6,7 @@
 
 use crate::audio_bridge::EffectOrder;
 use egui::{Color32, Response, ScrollArea, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
-use sonido_gui_core::ParamBridge;
+use sonido_gui_core::{ParamBridge, SlotIndex};
 use sonido_registry::EffectRegistry;
 
 /// Chain view state for drag-and-drop, selection, and pending commands.
@@ -14,11 +14,11 @@ pub struct ChainView {
     effect_order: EffectOrder,
     dragging: Option<usize>,
     drag_offset: f32,
-    selected: Option<usize>,
+    selected: Option<SlotIndex>,
     /// Effect ID to add (set by "+" menu, polled by app).
     pending_add: Option<&'static str>,
     /// Slot index to remove (set by context menu, polled by app).
-    pending_remove: Option<usize>,
+    pending_remove: Option<SlotIndex>,
 }
 
 impl ChainView {
@@ -40,7 +40,7 @@ impl ChainView {
     }
 
     /// Get the currently selected slot index.
-    pub fn selected(&self) -> Option<usize> {
+    pub fn selected(&self) -> Option<SlotIndex> {
         self.selected
     }
 
@@ -55,7 +55,7 @@ impl ChainView {
     }
 
     /// Take the pending remove request (if any), clearing it.
-    pub fn take_pending_remove(&mut self) -> Option<usize> {
+    pub fn take_pending_remove(&mut self) -> Option<SlotIndex> {
         self.pending_remove.take()
     }
 
@@ -69,13 +69,13 @@ impl ChainView {
         ui: &mut Ui,
         bridge: &dyn ParamBridge,
         registry: &EffectRegistry,
-    ) -> Option<usize> {
+    ) -> Option<SlotIndex> {
         let order = self.effect_order.get();
         let slot_count = bridge.slot_count();
 
         // Clear selection if the selected slot was removed
         if let Some(sel) = self.selected
-            && sel >= slot_count
+            && sel.0 >= slot_count
         {
             self.selected = None;
         }
@@ -109,7 +109,8 @@ impl ChainView {
                     }
                 }
 
-                for (pos, &slot_idx) in visible.iter().enumerate() {
+                for (pos, &slot_raw) in visible.iter().enumerate() {
+                    let slot_idx = SlotIndex(slot_raw);
                     let effect_id = bridge.effect_id(slot_idx);
                     let short_name = registry
                         .descriptor(effect_id)
@@ -200,7 +201,7 @@ impl ChainView {
         short_name: &str,
         is_selected: bool,
         is_bypassed: bool,
-        slot_idx: usize,
+        slot_idx: SlotIndex,
         bridge: &dyn ParamBridge,
     ) -> Response {
         let size = vec2(70.0, 50.0);

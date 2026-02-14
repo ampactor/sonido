@@ -38,7 +38,7 @@ pub use tremolo::TremoloPanel;
 pub use wah::WahPanel;
 
 use egui::Ui;
-use sonido_gui_core::ParamBridge;
+use sonido_gui_core::{ParamBridge, SlotIndex};
 
 /// Trait for effect UI panels.
 ///
@@ -53,11 +53,11 @@ pub trait EffectPanel {
     fn short_name(&self) -> &'static str;
 
     /// Render the effect's controls.
-    fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: usize);
+    fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: SlotIndex);
 }
 
 /// Implement [`EffectPanel`] for a panel struct that already has an inherent
-/// `ui(&mut self, &mut Ui, &dyn ParamBridge, usize)` method.
+/// `ui(&mut self, &mut Ui, &dyn ParamBridge, SlotIndex)` method.
 macro_rules! impl_effect_panel {
     ($panel:ty, $name:expr, $short:expr) => {
         impl EffectPanel for $panel {
@@ -67,7 +67,7 @@ macro_rules! impl_effect_panel {
             fn short_name(&self) -> &'static str {
                 $short
             }
-            fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: usize) {
+            fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: SlotIndex) {
                 <$panel>::ui(self, ui, bridge, slot);
             }
         }

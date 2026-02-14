@@ -2,7 +2,7 @@
 
 use crate::widgets::{BypassToggle, Knob};
 use egui::Ui;
-use sonido_gui_core::ParamBridge;
+use sonido_gui_core::{ParamBridge, ParamIndex, SlotIndex};
 
 /// UI panel for the 3-band parametric EQ effect.
 pub struct ParametricEqPanel;
@@ -18,7 +18,7 @@ impl ParametricEqPanel {
     /// Param indices: 0 = low_freq (Hz), 1 = low_gain (dB), 2 = low_q,
     /// 3 = mid_freq (Hz), 4 = mid_gain (dB), 5 = mid_q,
     /// 6 = high_freq (Hz), 7 = high_gain (dB), 8 = high_q.
-    pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: usize) {
+    pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: SlotIndex) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
                 let mut active = !bridge.is_bypassed(slot);
@@ -30,13 +30,37 @@ impl ParametricEqPanel {
             ui.add_space(12.0);
 
             // Low band (params 0, 1, 2)
-            Self::render_band(ui, bridge, slot, "LOW", 0, 1, 2);
+            Self::render_band(
+                ui,
+                bridge,
+                slot,
+                "LOW",
+                ParamIndex(0),
+                ParamIndex(1),
+                ParamIndex(2),
+            );
             ui.add_space(4.0);
             // Mid band (params 3, 4, 5)
-            Self::render_band(ui, bridge, slot, "MID", 3, 4, 5);
+            Self::render_band(
+                ui,
+                bridge,
+                slot,
+                "MID",
+                ParamIndex(3),
+                ParamIndex(4),
+                ParamIndex(5),
+            );
             ui.add_space(4.0);
             // High band (params 6, 7, 8)
-            Self::render_band(ui, bridge, slot, "HIGH", 6, 7, 8);
+            Self::render_band(
+                ui,
+                bridge,
+                slot,
+                "HIGH",
+                ParamIndex(6),
+                ParamIndex(7),
+                ParamIndex(8),
+            );
         });
     }
 
@@ -44,11 +68,11 @@ impl ParametricEqPanel {
     fn render_band(
         ui: &mut Ui,
         bridge: &dyn ParamBridge,
-        slot: usize,
+        slot: SlotIndex,
         label: &str,
-        freq_idx: usize,
-        gain_idx: usize,
-        q_idx: usize,
+        freq_idx: ParamIndex,
+        gain_idx: ParamIndex,
+        q_idx: ParamIndex,
     ) {
         ui.horizontal(|ui| {
             ui.label(

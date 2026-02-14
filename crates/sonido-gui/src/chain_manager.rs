@@ -7,6 +7,7 @@
 use crate::atomic_param_bridge::AtomicParamBridge;
 use crate::audio_bridge::EffectOrder;
 use sonido_core::{ParamDescriptor, SmoothedParam};
+use sonido_gui_core::SlotIndex;
 use sonido_registry::{EffectRegistry, EffectWithParams};
 
 /// A command to mutate the effect chain from the GUI thread.
@@ -25,7 +26,7 @@ pub enum ChainCommand {
     /// Remove an effect slot from the chain.
     Remove {
         /// Slot index to remove.
-        slot: usize,
+        slot: SlotIndex,
     },
 }
 
@@ -269,13 +270,13 @@ impl ChainManager {
     /// Returns the removed effect's ID, or `None` if `slot` was out of range.
     pub fn remove_transactional(
         &mut self,
-        slot: usize,
+        slot: SlotIndex,
         bridge: &AtomicParamBridge,
         order: &EffectOrder,
     ) -> Option<&'static str> {
-        let removed_id = self.remove_effect(slot)?;
+        let removed_id = self.remove_effect(slot.0)?;
         bridge.remove_slot(slot);
-        order.swap_remove(slot);
+        order.swap_remove(slot.0);
         Some(removed_id)
     }
 }

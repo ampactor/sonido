@@ -2,7 +2,7 @@
 
 use crate::widgets::{BypassToggle, Knob};
 use egui::Ui;
-use sonido_gui_core::ParamBridge;
+use sonido_gui_core::{ParamBridge, ParamIndex, SlotIndex};
 
 /// Waveshape types matching `sonido_effects::WaveShape`.
 const WAVESHAPES: &[&str] = &["Soft Clip", "Hard Clip", "Foldback", "Asymmetric"];
@@ -19,7 +19,7 @@ impl DistortionPanel {
     /// Render the distortion effect controls.
     ///
     /// Param indices: 0 = drive (dB), 1 = tone (Hz), 2 = level (dB), 3 = waveshape (enum).
-    pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: usize) {
+    pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: SlotIndex) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
                 let mut active = !bridge.is_bypassed(slot);
@@ -31,14 +31,14 @@ impl DistortionPanel {
 
                 // Waveshape selector (param 3)
                 ui.label("Type:");
-                let current = bridge.get(slot, 3) as u32 as usize;
+                let current = bridge.get(slot, ParamIndex(3)) as u32 as usize;
                 let selected = WAVESHAPES.get(current).unwrap_or(&"Soft Clip");
                 egui::ComboBox::from_id_salt("waveshape")
                     .selected_text(*selected)
                     .show_ui(ui, |ui| {
                         for (i, name) in WAVESHAPES.iter().enumerate() {
                             if ui.selectable_label(i == current, *name).clicked() {
-                                bridge.set(slot, 3, i as f32);
+                                bridge.set(slot, ParamIndex(3), i as f32);
                             }
                         }
                     });
@@ -48,11 +48,11 @@ impl DistortionPanel {
 
             ui.horizontal(|ui| {
                 // Drive (param 0)
-                let desc = bridge.param_descriptor(slot, 0);
+                let desc = bridge.param_descriptor(slot, ParamIndex(0));
                 let (min, max, default) = desc
                     .as_ref()
                     .map_or((0.0, 40.0, 0.0), |d| (d.min, d.max, d.default));
-                let mut drive = bridge.get(slot, 0);
+                let mut drive = bridge.get(slot, ParamIndex(0));
                 if ui
                     .add(
                         Knob::new(&mut drive, min, max, "DRIVE")
@@ -61,17 +61,17 @@ impl DistortionPanel {
                     )
                     .changed()
                 {
-                    bridge.set(slot, 0, drive);
+                    bridge.set(slot, ParamIndex(0), drive);
                 }
 
                 ui.add_space(16.0);
 
                 // Tone (param 1)
-                let desc = bridge.param_descriptor(slot, 1);
+                let desc = bridge.param_descriptor(slot, ParamIndex(1));
                 let (min, max, default) = desc
                     .as_ref()
                     .map_or((500.0, 10000.0, 8000.0), |d| (d.min, d.max, d.default));
-                let mut tone = bridge.get(slot, 1);
+                let mut tone = bridge.get(slot, ParamIndex(1));
                 if ui
                     .add(
                         Knob::new(&mut tone, min, max, "TONE")
@@ -80,17 +80,17 @@ impl DistortionPanel {
                     )
                     .changed()
                 {
-                    bridge.set(slot, 1, tone);
+                    bridge.set(slot, ParamIndex(1), tone);
                 }
 
                 ui.add_space(16.0);
 
                 // Level (param 2)
-                let desc = bridge.param_descriptor(slot, 2);
+                let desc = bridge.param_descriptor(slot, ParamIndex(2));
                 let (min, max, default) = desc
                     .as_ref()
                     .map_or((-20.0, 0.0, 0.0), |d| (d.min, d.max, d.default));
-                let mut level = bridge.get(slot, 2);
+                let mut level = bridge.get(slot, ParamIndex(2));
                 if ui
                     .add(
                         Knob::new(&mut level, min, max, "LEVEL")
@@ -99,7 +99,7 @@ impl DistortionPanel {
                     )
                     .changed()
                 {
-                    bridge.set(slot, 2, level);
+                    bridge.set(slot, ParamIndex(2), level);
                 }
             });
         });

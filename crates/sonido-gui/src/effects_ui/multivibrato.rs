@@ -2,7 +2,7 @@
 
 use crate::widgets::{BypassToggle, Knob};
 use egui::Ui;
-use sonido_gui_core::ParamBridge;
+use sonido_gui_core::{ParamBridge, ParamIndex, SlotIndex};
 
 /// UI panel for the MultiVibrato effect.
 pub struct MultiVibratoPanel;
@@ -16,7 +16,7 @@ impl MultiVibratoPanel {
     /// Render the multi-vibrato effect controls.
     ///
     /// Param indices: 0 = depth (%).
-    pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: usize) {
+    pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: SlotIndex) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
                 let mut active = !bridge.is_bypassed(slot);
@@ -29,11 +29,11 @@ impl MultiVibratoPanel {
 
             ui.horizontal(|ui| {
                 // Depth (param 0) — percent (0–100)
-                let desc = bridge.param_descriptor(slot, 0);
+                let desc = bridge.param_descriptor(slot, ParamIndex(0));
                 let (min, max, default) = desc
                     .as_ref()
                     .map_or((0.0, 100.0, 50.0), |d| (d.min, d.max, d.default));
-                let mut depth = bridge.get(slot, 0);
+                let mut depth = bridge.get(slot, ParamIndex(0));
                 if ui
                     .add(
                         Knob::new(&mut depth, min, max, "DEPTH")
@@ -42,7 +42,7 @@ impl MultiVibratoPanel {
                     )
                     .changed()
                 {
-                    bridge.set(slot, 0, depth);
+                    bridge.set(slot, ParamIndex(0), depth);
                 }
             });
 

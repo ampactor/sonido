@@ -8,7 +8,7 @@
 #[cfg(not(target_arch = "wasm32"))]
 use sonido_config::paths::{ensure_user_presets_dir, list_user_presets, user_presets_dir};
 use sonido_config::{EffectConfig, Preset, factory_presets};
-use sonido_gui_core::ParamBridge;
+use sonido_gui_core::{ParamBridge, ParamIndex, SlotIndex};
 use std::path::PathBuf;
 
 /// Convert bridge parameters to a sonido_config::Preset.
@@ -23,11 +23,13 @@ pub fn params_to_preset(name: &str, description: Option<&str>, bridge: &dyn Para
         preset = preset.with_description(desc);
     }
 
-    for slot in 0..bridge.slot_count() {
+    for slot_raw in 0..bridge.slot_count() {
+        let slot = SlotIndex(slot_raw);
         let effect_id = bridge.effect_id(slot);
         let mut config = EffectConfig::new(effect_id).with_bypass(bridge.is_bypassed(slot));
 
-        for p in 0..bridge.param_count(slot) {
+        for p_raw in 0..bridge.param_count(slot) {
+            let p = ParamIndex(p_raw);
             if let Some(desc) = bridge.param_descriptor(slot, p) {
                 config =
                     config.with_param(to_snake_case(desc.name), format!("{}", bridge.get(slot, p)));
@@ -50,7 +52,8 @@ pub fn params_to_preset(name: &str, description: Option<&str>, bridge: &dyn Para
 /// match the same parameter. Legacy aliases (intensity→Depth, warmth→Saturation)
 /// are tried when a direct match fails.
 pub fn preset_to_params(preset: &Preset, bridge: &dyn ParamBridge) {
-    for slot in 0..bridge.slot_count() {
+    for slot_raw in 0..bridge.slot_count() {
+        let slot = SlotIndex(slot_raw);
         let effect_id = bridge.effect_id(slot);
         let config = preset
             .effects
@@ -60,7 +63,8 @@ pub fn preset_to_params(preset: &Preset, bridge: &dyn ParamBridge) {
         if let Some(config) = config {
             bridge.set_bypassed(slot, config.bypassed);
 
-            for p in 0..bridge.param_count(slot) {
+            for p_raw in 0..bridge.param_count(slot) {
+                let p = ParamIndex(p_raw);
                 if let Some(desc) = bridge.param_descriptor(slot, p)
                     && let Some(v) = find_param_in_config(config, desc.name)
                 {
@@ -433,11 +437,13 @@ mod tests {
     use sonido_registry::EffectRegistry;
 
     /// Find a parameter index by descriptor name within a bridge slot.
-    fn find_param(bridge: &AtomicParamBridge, slot: usize, name: &str) -> Option<usize> {
-        (0..bridge.param_count(slot)).find(|&i| {
+    fn find_param(bridge: &AtomicParamBridge, slot: SlotIndex, name: &str) -> Option<ParamIndex> {
+        (0..bridge.param_count(slot)).find_map(|i| {
+            let p = ParamIndex(i);
             bridge
-                .param_descriptor(slot, i)
+                .param_descriptor(slot, p)
                 .is_some_and(|d| d.name == name)
+                .then_some(p)
         })
     }
 
@@ -453,12 +459,12 @@ mod tests {
         let registry = EffectRegistry::new();
         let bridge = AtomicParamBridge::new(&registry, &["distortion", "reverb"], 48000.0);
 
-        let dist_drive = find_param(&bridge, 0, "Drive").unwrap();
-        let reverb_decay = find_param(&bridge, 1, "Decay").unwrap();
+        let dist_drive = find_param(&bridge, SlotIndex(0), "Drive").unwrap();
+        let reverb_decay = find_param(&bridge, SlotIndex(1), "Decay").unwrap();
 
-        bridge.set(0, dist_drive, 20.0);
-        bridge.set(1, reverb_decay, 0.7);
-        bridge.set_bypassed(1, true);
+        bridge.set(SlotIndex(0), dist_drive, 20.0);
+        bridge.set(SlotIndex(1), reverb_decay, 0.7);
+        bridge.set_bypassed(SlotIndex(1), true);
 
         // Convert to preset and apply to fresh bridge
         let preset = params_to_preset("Test", Some("Test preset"), &bridge);
@@ -466,10 +472,10 @@ mod tests {
         let bridge2 = AtomicParamBridge::new(&registry, &["distortion", "reverb"], 48000.0);
         preset_to_params(&preset, &bridge2);
 
-        assert!((bridge2.get(0, dist_drive) - 20.0).abs() < 0.01);
-        assert!((bridge2.get(1, reverb_decay) - 0.7).abs() < 0.01);
-        assert!(bridge2.is_bypassed(1));
-        assert!(!bridge2.is_bypassed(0));
+        assert!((bridge2.get(SlotIndex(0), dist_drive) - 20.0).abs() < 0.01);
+        assert!((bridge2.get(SlotIndex(1), reverb_decay) - 0.7).abs() < 0.01);
+        assert!(bridge2.is_bypassed(SlotIndex(1)));
+        assert!(!bridge2.is_bypassed(SlotIndex(0)));
     }
 
     #[test]
@@ -485,8 +491,8 @@ mod tests {
         // Should not panic — unknown effect silently skipped
         preset_to_params(&preset, &bridge);
 
-        let drive_idx = find_param(&bridge, 0, "Drive").unwrap();
-        assert!((bridge.get(0, drive_idx) - 15.0).abs() < 0.01);
+        let drive_idx = find_param(&bridge, SlotIndex(0), "Drive").unwrap();
+        assert!((bridge.get(SlotIndex(0), drive_idx) - 15.0).abs() < 0.01);
     }
 
     #[test]
@@ -500,8 +506,8 @@ mod tests {
 
         preset_to_params(&preset, &bridge);
 
-        if let Some(idx) = find_param(&bridge, 0, "Depth") {
-            assert!((bridge.get(0, idx) - 80.0).abs() < 0.01);
+        if let Some(idx) = find_param(&bridge, SlotIndex(0), "Depth") {
+            assert!((bridge.get(SlotIndex(0), idx) - 80.0).abs() < 0.01);
         }
     }
 
@@ -515,7 +521,7 @@ mod tests {
             .with_effect(EffectConfig::new("parametriceq").with_bypass(true));
 
         preset_to_params(&preset, &bridge);
-        assert!(bridge.is_bypassed(0));
+        assert!(bridge.is_bypassed(SlotIndex(0)));
     }
 
     #[test]
@@ -532,11 +538,11 @@ mod tests {
 
         preset_to_params(&preset, &bridge);
 
-        if let Some(idx) = find_param(&bridge, 0, "Room Size") {
-            assert!((bridge.get(0, idx) - 0.9).abs() < 0.01);
+        if let Some(idx) = find_param(&bridge, SlotIndex(0), "Room Size") {
+            assert!((bridge.get(SlotIndex(0), idx) - 0.9).abs() < 0.01);
         }
-        if let Some(idx) = find_param(&bridge, 0, "Pre-Delay") {
-            assert!((bridge.get(0, idx) - 25.0).abs() < 0.01);
+        if let Some(idx) = find_param(&bridge, SlotIndex(0), "Pre-Delay") {
+            assert!((bridge.get(SlotIndex(0), idx) - 25.0).abs() < 0.01);
         }
     }
 

@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Architecture Tightening (Phases 1-5)
+
+#### Phase 5: Integration & Property Tests (c46871b)
+- 81 integration tests across sonido-core, sonido-synth, and sonido-analysis
+- 7 property-based tests (proptest) for effect output finiteness and bounded gain
+- Oversampler upgraded: polyphase Blackman-Harris windowed sinc upsampling (8 taps/phase), 48-tap Kaiser-windowed sinc FIR downsampling (beta=8.0), stopband attenuation >80 dB (was ~40 dB with linear interpolation + 16-tap FIR)
+
+#### Phase 4: Block Processing (bb7710b)
+- `process_block_stereo` overrides on 5 effects: Distortion, Compressor, Chorus, Delay, Reverb
+- Distortion: monomorphized waveshaper dispatch — match once per block, not per sample
+- Reverb: structural deduplication — shared comb/allpass processing eliminates stereo copy-paste
+
+#### Phase 3: Audio Thread Optimization (392da0d)
+- Bypass crossfade using `SmoothedParam::fast` (5ms) for click-free bypass toggling
+- Dirty-flag parameter sync: `AtomicParamBridge` only pushes changed params per buffer
+- Effect order caching with dirty flag and `clone_from` for heap reuse
+
+#### Phase 2: GUI Architecture Cleanup (1caea8d)
+- `AudioProcessor` struct extracted from monolithic audio output callback (~160 lines)
+- `EffectType` enum deleted — single `EffectRegistry` is the only source of effect identity
+- Input/output audio streams unified under shared `AudioProcessor`
+- Transactional slot operations: `add_transactional`, `remove_transactional` on `ChainManager`
+- Dynamic add/remove effects via `ChainCommand` channel
+
+#### Phase 1: GUI Bug Fixes (a6e1f36)
+- Repaint cap to prevent excessive redraws
+- Toggle widget fix (gui-core is canonical source, gui re-exports)
+- Selection cleared on effect removal
+- Fixed `db_to_linear` import (use sonido-core, not local copy)
+
+### Removed
+
+- `docs/TECHNICAL_DEBT.md` — all items addressed by Phases 1-5
+
+---
+
 ### Added
 
 #### sonido-core
