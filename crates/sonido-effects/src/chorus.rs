@@ -155,6 +155,62 @@ impl Effect for Chorus {
         (out_l * output_gain, out_r * output_gain)
     }
 
+    /// Optimized block processing for stereo chorus.
+    ///
+    /// Processes all samples in a tight loop, advancing `SmoothedParam`s and
+    /// LFOs per sample, computing modulated delay times for both voices, and
+    /// applying stereo panning. Produces bit-identical output to calling
+    /// `process_stereo()` per sample.
+    fn process_block_stereo(
+        &mut self,
+        left_in: &[f32],
+        right_in: &[f32],
+        left_out: &mut [f32],
+        right_out: &mut [f32],
+    ) {
+        debug_assert_eq!(left_in.len(), right_in.len());
+        debug_assert_eq!(left_in.len(), left_out.len());
+        debug_assert_eq!(left_out.len(), right_out.len());
+
+        for i in 0..left_in.len() {
+            let left = left_in[i];
+            let right = right_in[i];
+
+            // Advance smoothed params (same order as process_stereo)
+            let rate = self.rate.advance();
+            let depth = self.depth.advance();
+            let mix = self.mix.advance();
+            let output_gain = self.output_level.advance();
+
+            self.lfo1.set_frequency(rate);
+            self.lfo2.set_frequency(rate);
+
+            let mod1 = self.lfo1.advance();
+            let mod2 = self.lfo2.advance();
+
+            let delay_time1 = self.base_delay_samples + (mod1 * depth * self.max_mod_samples);
+            let delay_time2 = self.base_delay_samples + (mod2 * depth * self.max_mod_samples);
+
+            // Read delayed signals
+            let wet1 = self.delay1.read(delay_time1);
+            let wet2 = self.delay2.read(delay_time2);
+
+            // Write mono sum to both delay lines for stereo input
+            let mono_in = (left + right) * 0.5;
+            self.delay1.write(mono_in);
+            self.delay2.write(mono_in);
+
+            // Pan voices for stereo spread: voice1 mostly left, voice2 mostly right
+            let wet_l = wet1 * 0.8 + wet2 * 0.2;
+            let wet_r = wet2 * 0.8 + wet1 * 0.2;
+
+            let (out_l, out_r) = wet_dry_mix_stereo(left, right, wet_l, wet_r, mix);
+
+            left_out[i] = out_l * output_gain;
+            right_out[i] = out_r * output_gain;
+        }
+    }
+
     fn is_true_stereo(&self) -> bool {
         true
     }

@@ -159,6 +159,39 @@ impl Distortion {
             WaveShape::Asymmetric => asymmetric_clip(x),
         }
     }
+
+    /// Inner block-processing loop, generic over the waveshaping function.
+    ///
+    /// Monomorphization produces a specialized loop per waveshape variant,
+    /// eliminating per-sample branching and enabling autovectorization.
+    /// The operation order matches [`process_stereo`](Effect::process_stereo)
+    /// exactly: advance drive, advance level, then process L then R.
+    #[inline]
+    fn process_block_stereo_inner<F: Fn(f32) -> f32>(
+        &mut self,
+        left_in: &[f32],
+        right_in: &[f32],
+        left_out: &mut [f32],
+        right_out: &mut [f32],
+        shaper: F,
+    ) {
+        for i in 0..left_in.len() {
+            let drive = self.drive.advance();
+            let level = self.level.advance();
+
+            // Left channel
+            let driven_l = left_in[i] * drive;
+            let shaped_l = shaper(driven_l);
+            let filtered_l = self.tone_filter.process(shaped_l);
+            left_out[i] = filtered_l * level;
+
+            // Right channel (separate filter state)
+            let driven_r = right_in[i] * drive;
+            let shaped_r = shaper(driven_r);
+            let filtered_r = self.tone_filter_r.process(shaped_r);
+            right_out[i] = filtered_r * level;
+        }
+    }
 }
 
 impl Effect for Distortion {
@@ -193,6 +226,55 @@ impl Effect for Distortion {
         let out_r = filtered_r * level;
 
         (out_l, out_r)
+    }
+
+    /// Process a block of stereo samples with optimized waveshaper dispatch.
+    ///
+    /// Resolves the waveshaping function once at block start, eliminating
+    /// per-sample branching. The output is bit-identical to calling
+    /// [`process_stereo`](Effect::process_stereo) per sample.
+    ///
+    /// Both channels share drive/level parameters (dual-mono), so
+    /// `SmoothedParam::advance()` is called once per sample pair.
+    fn process_block_stereo(
+        &mut self,
+        left_in: &[f32],
+        right_in: &[f32],
+        left_out: &mut [f32],
+        right_out: &mut [f32],
+    ) {
+        debug_assert_eq!(left_in.len(), right_in.len());
+        debug_assert_eq!(left_in.len(), left_out.len());
+        debug_assert_eq!(left_out.len(), right_out.len());
+
+        // Resolve waveshaper once at block start — avoids per-sample match.
+        // Each variant gets a monomorphized loop via the generic helper,
+        // enabling autovectorization of the waveshaping arithmetic.
+        let threshold = self.foldback_threshold;
+        match self.waveshape {
+            WaveShape::SoftClip => {
+                self.process_block_stereo_inner(left_in, right_in, left_out, right_out, soft_clip);
+            }
+            WaveShape::HardClip => {
+                self.process_block_stereo_inner(left_in, right_in, left_out, right_out, |x| {
+                    hard_clip(x, 1.0)
+                });
+            }
+            WaveShape::Foldback => {
+                self.process_block_stereo_inner(left_in, right_in, left_out, right_out, |x| {
+                    foldback(x, threshold)
+                });
+            }
+            WaveShape::Asymmetric => {
+                self.process_block_stereo_inner(
+                    left_in,
+                    right_in,
+                    left_out,
+                    right_out,
+                    asymmetric_clip,
+                );
+            }
+        }
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
