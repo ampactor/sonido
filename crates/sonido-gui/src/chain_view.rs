@@ -5,7 +5,6 @@
 //! and press "+" to add new effects.
 
 use crate::audio_bridge::EffectOrder;
-use crate::effects_ui::EffectType;
 use egui::{Color32, Response, ScrollArea, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
 use sonido_gui_core::ParamBridge;
 use sonido_registry::EffectRegistry;
@@ -112,8 +111,9 @@ impl ChainView {
 
                 for (pos, &slot_idx) in visible.iter().enumerate() {
                     let effect_id = bridge.effect_id(slot_idx);
-                    let short_name = EffectType::from_id(effect_id)
-                        .map(|t| t.short_name())
+                    let short_name = registry
+                        .descriptor(effect_id)
+                        .map(|d| d.short_name)
                         .unwrap_or("???");
 
                     let is_selected = self.selected == Some(slot_idx);

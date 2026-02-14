@@ -115,6 +115,8 @@ pub struct EffectDescriptor {
     pub id: &'static str,
     /// Human-readable name.
     pub name: &'static str,
+    /// Short display name for compact UI (e.g. "DIST", "COMP").
+    pub short_name: &'static str,
     /// Brief description of the effect.
     pub description: &'static str,
     /// Category for organization.
@@ -150,7 +152,7 @@ impl EffectRegistry {
     /// Create a new registry with all built-in effects registered.
     pub fn new() -> Self {
         let mut registry = Self {
-            entries: Vec::with_capacity(9),
+            entries: Vec::with_capacity(15),
         };
         registry.register_builtin_effects();
         registry
@@ -163,6 +165,7 @@ impl EffectRegistry {
             EffectDescriptor {
                 id: "distortion",
                 name: "Distortion",
+                short_name: "DIST",
                 description: "Waveshaping distortion with multiple algorithms",
                 category: EffectCategory::Distortion,
                 param_count: 4,
@@ -175,6 +178,7 @@ impl EffectRegistry {
             EffectDescriptor {
                 id: "compressor",
                 name: "Compressor",
+                short_name: "COMP",
                 description: "Dynamics compressor with soft knee",
                 category: EffectCategory::Dynamics,
                 param_count: 6,
@@ -187,6 +191,7 @@ impl EffectRegistry {
             EffectDescriptor {
                 id: "chorus",
                 name: "Chorus",
+                short_name: "CHOR",
                 description: "Dual-voice modulated delay chorus",
                 category: EffectCategory::Modulation,
                 param_count: 4,
@@ -199,6 +204,7 @@ impl EffectRegistry {
             EffectDescriptor {
                 id: "flanger",
                 name: "Flanger",
+                short_name: "FLNG",
                 description: "Classic flanger with modulated short delay",
                 category: EffectCategory::Modulation,
                 param_count: 5,
@@ -211,6 +217,7 @@ impl EffectRegistry {
             EffectDescriptor {
                 id: "phaser",
                 name: "Phaser",
+                short_name: "PHAS",
                 description: "Multi-stage allpass phaser with LFO",
                 category: EffectCategory::Modulation,
                 param_count: 6,
@@ -223,6 +230,7 @@ impl EffectRegistry {
             EffectDescriptor {
                 id: "delay",
                 name: "Delay",
+                short_name: "DLY",
                 description: "Tape-style feedback delay",
                 category: EffectCategory::TimeBased,
                 param_count: 5,
@@ -235,6 +243,7 @@ impl EffectRegistry {
             EffectDescriptor {
                 id: "filter",
                 name: "Low Pass Filter",
+                short_name: "FILT",
                 description: "Resonant biquad lowpass filter",
                 category: EffectCategory::Filter,
                 param_count: 3,
@@ -247,6 +256,7 @@ impl EffectRegistry {
             EffectDescriptor {
                 id: "multivibrato",
                 name: "Multi Vibrato",
+                short_name: "MVIB",
                 description: "10-unit tape wow/flutter simulation",
                 category: EffectCategory::Modulation,
                 param_count: 3,
@@ -259,6 +269,7 @@ impl EffectRegistry {
             EffectDescriptor {
                 id: "tape",
                 name: "Tape Saturation",
+                short_name: "TAPE",
                 description: "Analog tape warmth with HF rolloff",
                 category: EffectCategory::Distortion,
                 param_count: 5,
@@ -271,6 +282,7 @@ impl EffectRegistry {
             EffectDescriptor {
                 id: "preamp",
                 name: "Clean Preamp",
+                short_name: "PRE",
                 description: "High-headroom gain stage",
                 category: EffectCategory::Utility,
                 param_count: 3,
@@ -283,6 +295,7 @@ impl EffectRegistry {
             EffectDescriptor {
                 id: "reverb",
                 name: "Reverb",
+                short_name: "VERB",
                 description: "Freeverb-style algorithmic reverb",
                 category: EffectCategory::TimeBased,
                 param_count: 8,
@@ -295,6 +308,7 @@ impl EffectRegistry {
             EffectDescriptor {
                 id: "tremolo",
                 name: "Tremolo",
+                short_name: "TREM",
                 description: "Amplitude modulation with multiple waveforms",
                 category: EffectCategory::Modulation,
                 param_count: 4,
@@ -307,6 +321,7 @@ impl EffectRegistry {
             EffectDescriptor {
                 id: "gate",
                 name: "Noise Gate",
+                short_name: "GATE",
                 description: "Noise gate with threshold and hold",
                 category: EffectCategory::Dynamics,
                 param_count: 5,
@@ -319,6 +334,7 @@ impl EffectRegistry {
             EffectDescriptor {
                 id: "wah",
                 name: "Wah",
+                short_name: "WAH",
                 description: "Auto-wah and manual wah with envelope follower",
                 category: EffectCategory::Filter,
                 param_count: 5,
@@ -331,6 +347,7 @@ impl EffectRegistry {
             EffectDescriptor {
                 id: "eq",
                 name: "Parametric EQ",
+                short_name: "PEQ",
                 description: "3-band parametric equalizer with frequency, gain, and Q",
                 category: EffectCategory::Filter,
                 param_count: 10,
@@ -367,6 +384,14 @@ impl EffectRegistry {
             .iter()
             .find(|e| e.descriptor.id == id)
             .map(|e| &e.descriptor)
+    }
+
+    /// Look up an effect descriptor by ID.
+    ///
+    /// Alias for [`get()`](Self::get) — provides semantically explicit access
+    /// to the full descriptor including `short_name` and other metadata.
+    pub fn descriptor(&self, id: &str) -> Option<&EffectDescriptor> {
+        self.get(id)
     }
 
     /// Create an effect instance by ID.
@@ -521,8 +546,31 @@ mod tests {
         let reverb = registry.get("reverb").unwrap();
         assert_eq!(reverb.id, "reverb");
         assert_eq!(reverb.name, "Reverb");
+        assert_eq!(reverb.short_name, "VERB");
         assert_eq!(reverb.category, EffectCategory::TimeBased);
         assert_eq!(reverb.param_count, 8);
+    }
+
+    #[test]
+    fn test_descriptor_lookup() {
+        let registry = EffectRegistry::new();
+        let dist = registry.descriptor("distortion").unwrap();
+        assert_eq!(dist.short_name, "DIST");
+        let comp = registry.descriptor("compressor").unwrap();
+        assert_eq!(comp.short_name, "COMP");
+        assert!(registry.descriptor("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_all_effects_have_short_names() {
+        let registry = EffectRegistry::new();
+        for desc in registry.all_effects() {
+            assert!(
+                !desc.short_name.is_empty(),
+                "Effect {} has empty short_name",
+                desc.id
+            );
+        }
     }
 
     #[test]

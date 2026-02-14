@@ -133,7 +133,7 @@ impl AtomicParamBridge {
     ///
     /// Called on the audio thread when processing a `ChainCommand::Remove`.
     /// Acquires an exclusive write lock.
-    pub fn remove_slot(&self, slot: usize) {
+    pub(crate) fn remove_slot(&self, slot: usize) {
         let mut slots = self.slots.write();
         if slot < slots.len() {
             slots.swap_remove(slot);

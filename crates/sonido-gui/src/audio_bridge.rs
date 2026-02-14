@@ -272,7 +272,7 @@ impl EffectOrder {
     /// element that was at the last position is now at `slot`. This method
     /// removes `slot` from the order vector and replaces any occurrence of
     /// the old last index with `slot`.
-    pub fn swap_remove(&self, slot: usize) {
+    pub(crate) fn swap_remove(&self, slot: usize) {
         let mut order = self.order.write();
         let old_last = order.len().saturating_sub(1);
         order.retain(|&i| i != slot);
