@@ -188,6 +188,65 @@ impl Effect for Compressor {
         (left * gain, right * gain)
     }
 
+    /// Process a block of stereo samples with linked stereo detection.
+    ///
+    /// Optimized block override that eliminates vtable dispatch overhead and
+    /// enables compiler inlining of the full processing chain. Produces
+    /// bit-identical output to calling [`process_stereo`](Effect::process_stereo)
+    /// per sample.
+    ///
+    /// The envelope is derived from the mid signal `(L + R) / 2` so that
+    /// both channels receive identical gain reduction, preventing stereo
+    /// image shift.
+    fn process_block_stereo(
+        &mut self,
+        left_in: &[f32],
+        right_in: &[f32],
+        left_out: &mut [f32],
+        right_out: &mut [f32],
+    ) {
+        debug_assert_eq!(left_in.len(), right_in.len());
+        debug_assert_eq!(left_in.len(), left_out.len());
+        debug_assert_eq!(left_out.len(), right_out.len());
+
+        // Hoist gain computer constants out of the loop
+        let threshold_db = self.gain_computer.threshold_db;
+        let ratio = self.gain_computer.ratio;
+        let knee_db = self.gain_computer.knee_db;
+        let half_knee = knee_db / 2.0;
+        let inv_ratio_complement = 1.0 - 1.0 / ratio;
+
+        for i in 0..left_in.len() {
+            let left = left_in[i];
+            let right = right_in[i];
+
+            // Linked stereo detection: envelope from mid signal
+            let sum = (left + right) * 0.5;
+            let envelope = self.envelope_follower.process(sum);
+
+            // Gain computer (inlined from GainComputer::compute_gain_db)
+            let envelope_db = fast_linear_to_db(envelope);
+            let overshoot = envelope_db - threshold_db;
+
+            let gain_reduction_db = if overshoot <= -half_knee {
+                0.0
+            } else if overshoot > half_knee {
+                -(overshoot * inv_ratio_complement)
+            } else {
+                let knee_factor = (overshoot + half_knee) / knee_db;
+                -(knee_factor * knee_factor * overshoot * inv_ratio_complement)
+            };
+
+            self.last_gain_reduction_db = gain_reduction_db;
+            let gain_linear = fast_db_to_linear(gain_reduction_db);
+            let makeup = self.makeup_gain.advance();
+
+            let gain = gain_linear * makeup;
+            left_out[i] = left * gain;
+            right_out[i] = right * gain;
+        }
+    }
+
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
         self.envelope_follower.set_sample_rate(sample_rate);
@@ -303,6 +362,59 @@ mod tests {
         for _ in 0..100 {
             let output = comp.process(0.1);
             assert!(output.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_compressor_block_stereo_matches_per_sample() {
+        let sample_rate = 48000.0;
+
+        // Build two identical compressors
+        let mut comp_ref = Compressor::new(sample_rate);
+        comp_ref.set_threshold_db(-12.0);
+        comp_ref.set_ratio(6.0);
+        comp_ref.set_attack_ms(5.0);
+        comp_ref.set_release_ms(80.0);
+        comp_ref.set_makeup_gain_db(3.0);
+        comp_ref.set_knee_db(4.0);
+
+        let mut comp_block = comp_ref.clone();
+
+        // Generate test signal: stereo sine-ish sweep with asymmetric levels
+        let n = 512;
+        let left_in: Vec<f32> = (0..n).map(|i| libm::sinf(i as f32 * 0.05) * 0.8).collect();
+        let right_in: Vec<f32> = (0..n).map(|i| libm::cosf(i as f32 * 0.07) * 0.6).collect();
+
+        // Per-sample reference
+        let mut left_ref = vec![0.0f32; n];
+        let mut right_ref = vec![0.0f32; n];
+        for i in 0..n {
+            let (l, r) = comp_ref.process_stereo(left_in[i], right_in[i]);
+            left_ref[i] = l;
+            right_ref[i] = r;
+        }
+
+        // Block processing
+        let mut left_out = vec![0.0f32; n];
+        let mut right_out = vec![0.0f32; n];
+        comp_block.process_block_stereo(&left_in, &right_in, &mut left_out, &mut right_out);
+
+        // Must be bit-identical
+        for i in 0..n {
+            assert_eq!(
+                left_out[i].to_bits(),
+                left_ref[i].to_bits(),
+                "Left mismatch at sample {i}: block={} ref={}",
+                left_out[i],
+                left_ref[i],
+            );
+            assert_eq!(
+                right_out[i].to_bits(),
+                right_ref[i].to_bits(),
+                "Right mismatch at sample {i}: block={} ref={}",
+                right_out[i],
+                right_ref[i],
+            );
         }
     }
 

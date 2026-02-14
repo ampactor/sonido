@@ -155,6 +155,58 @@ impl Effect for Delay {
         (out_l * output_gain, out_r * output_gain)
     }
 
+    /// Optimized block processing for stereo delay.
+    ///
+    /// Processes all samples in a tight loop, advancing `SmoothedParam`s
+    /// per sample and handling ping-pong cross-channel feedback when enabled.
+    /// Produces bit-identical output to calling `process_stereo()` per sample.
+    fn process_block_stereo(
+        &mut self,
+        left_in: &[f32],
+        right_in: &[f32],
+        left_out: &mut [f32],
+        right_out: &mut [f32],
+    ) {
+        debug_assert_eq!(left_in.len(), right_in.len());
+        debug_assert_eq!(left_in.len(), left_out.len());
+        debug_assert_eq!(left_out.len(), right_out.len());
+
+        for i in 0..left_in.len() {
+            let left = left_in[i];
+            let right = right_in[i];
+
+            let delay_samples = self.delay_time.advance();
+            let feedback = self.feedback.advance();
+            let mix = self.mix.advance();
+            let output_gain = self.output_level.advance();
+
+            // Read from both delay lines
+            let delayed_l = self.delay_line.read(delay_samples);
+            let delayed_r = self.delay_line_r.read(delay_samples);
+
+            if self.ping_pong {
+                // Ping-pong: feedback crosses channels
+                let feedback_l = flush_denormal(left + (delayed_r * feedback));
+                let feedback_r = flush_denormal(right + (delayed_l * feedback));
+                self.delay_line.write(feedback_l);
+                self.delay_line_r.write(feedback_r);
+            } else {
+                // Standard stereo: independent delay lines
+                let feedback_l = flush_denormal(left + (delayed_l * feedback));
+                let feedback_r = flush_denormal(right + (delayed_r * feedback));
+                self.delay_line.write(feedback_l);
+                self.delay_line_r.write(feedback_r);
+            }
+
+            let comp = sonido_core::gain::feedback_wet_compensation(feedback);
+            let (out_l, out_r) =
+                wet_dry_mix_stereo(left, right, delayed_l * comp, delayed_r * comp, mix);
+
+            left_out[i] = out_l * output_gain;
+            right_out[i] = out_r * output_gain;
+        }
+    }
+
     fn is_true_stereo(&self) -> bool {
         self.ping_pong
     }

@@ -283,6 +283,65 @@ impl Reverb {
         self.reverb_type
     }
 
+    /// Advance all smoothed parameters by one sample.
+    ///
+    /// Returns `(predelay_samples, mix, output_gain)` — the per-sample values
+    /// needed by the comb/allpass processing stages. Also updates comb filter
+    /// coefficients if room/decay/damping have changed.
+    #[inline]
+    fn advance_params(&mut self) -> (f32, f32, f32) {
+        self.room_size.advance();
+        self.decay.advance();
+        self.damping.advance();
+        let predelay = self.predelay_samples.advance();
+        let mix = self.mix.advance();
+        let output_gain = self.output_level.advance();
+
+        self.update_comb_params();
+
+        (predelay, mix, output_gain)
+    }
+
+    /// Process input through a pre-delay line.
+    ///
+    /// If `predelay` exceeds 0.5 samples, reads the delayed signal while writing
+    /// the new input. Otherwise writes input and passes it through directly.
+    #[inline]
+    fn apply_predelay(line: &mut InterpolatedDelay, input: f32, predelay: f32) -> f32 {
+        if predelay > 0.5 {
+            line.read_write(input, predelay)
+        } else {
+            line.write(input);
+            input
+        }
+    }
+
+    /// Process a pre-delayed signal through one reverb tank (8 parallel combs + 4 series allpasses).
+    ///
+    /// This is the core Freeverb algorithm: parallel comb filters sum to create
+    /// the dense reflections, then series allpass filters add diffusion.
+    /// The comb sum is scaled by 1/8 (parallel averaging) and the feedback-adaptive
+    /// compensation factor.
+    #[inline]
+    fn process_tank(
+        combs: &mut [CombFilter; 8],
+        allpasses: &mut [AllpassFilter; 4],
+        input: f32,
+        comb_compensation: f32,
+    ) -> f32 {
+        let mut comb_sum = 0.0f32;
+        for comb in combs.iter_mut() {
+            comb_sum += comb.process(input);
+        }
+        comb_sum *= 0.125 * comb_compensation;
+
+        let mut diffused = comb_sum;
+        for allpass in allpasses.iter_mut() {
+            diffused = allpass.process(diffused);
+        }
+        diffused
+    }
+
     /// Update comb filter parameters based on room/decay/damping.
     fn update_comb_params(&mut self) {
         let room = self.room_size.get();
@@ -325,90 +384,39 @@ impl Reverb {
 
 impl Effect for Reverb {
     fn process(&mut self, input: f32) -> f32 {
-        // Advance smoothed parameters
-        self.room_size.advance();
-        self.decay.advance();
-        self.damping.advance();
-        let predelay = self.predelay_samples.advance();
-        let mix = self.mix.advance();
-        let output_gain = self.output_level.advance();
+        let (predelay, mix, output_gain) = self.advance_params();
 
-        // Update comb filter coefficients if needed
-        self.update_comb_params();
-
-        // Apply pre-delay
-        let predelayed = if predelay > 0.5 {
-            self.predelay_line.read_write(input, predelay)
-        } else {
-            self.predelay_line.write(input);
-            input
-        };
-
-        // Process through parallel comb filters
-        let mut comb_sum = 0.0f32;
-        for comb in &mut self.combs {
-            comb_sum += comb.process(predelayed);
-        }
-        comb_sum *= 0.125 * self.comb_compensation;
-
-        // Process through series allpass filters
-        let mut diffused = comb_sum;
-        for allpass in &mut self.allpasses {
-            diffused = allpass.process(diffused);
-        }
+        let predelayed = Self::apply_predelay(&mut self.predelay_line, input, predelay);
+        let diffused = Self::process_tank(
+            &mut self.combs,
+            &mut self.allpasses,
+            predelayed,
+            self.comb_compensation,
+        );
 
         wet_dry_mix(input, diffused, mix) * output_gain
     }
 
     fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
-        // True stereo: separate reverb tanks for L/R with stereo width control
-        self.room_size.advance();
-        self.decay.advance();
-        self.damping.advance();
-        let predelay = self.predelay_samples.advance();
-        let mix = self.mix.advance();
-        let output_gain = self.output_level.advance();
-
-        self.update_comb_params();
+        let (predelay, mix, output_gain) = self.advance_params();
 
         // Apply pre-delay (stereo)
-        let predelayed_l = if predelay > 0.5 {
-            self.predelay_line.read_write(left, predelay)
-        } else {
-            self.predelay_line.write(left);
-            left
-        };
+        let predelayed_l = Self::apply_predelay(&mut self.predelay_line, left, predelay);
+        let predelayed_r = Self::apply_predelay(&mut self.predelay_line_r, right, predelay);
 
-        let predelayed_r = if predelay > 0.5 {
-            self.predelay_line_r.read_write(right, predelay)
-        } else {
-            self.predelay_line_r.write(right);
-            right
-        };
-
-        // Process left channel through its tank
-        let mut comb_sum_l = 0.0f32;
-        for comb in &mut self.combs {
-            comb_sum_l += comb.process(predelayed_l);
-        }
-        comb_sum_l *= 0.125 * self.comb_compensation;
-
-        let mut diffused_l = comb_sum_l;
-        for allpass in &mut self.allpasses {
-            diffused_l = allpass.process(diffused_l);
-        }
-
-        // Process right channel through its tank
-        let mut comb_sum_r = 0.0f32;
-        for comb in &mut self.combs_r {
-            comb_sum_r += comb.process(predelayed_r);
-        }
-        comb_sum_r *= 0.125 * self.comb_compensation;
-
-        let mut diffused_r = comb_sum_r;
-        for allpass in &mut self.allpasses_r {
-            diffused_r = allpass.process(diffused_r);
-        }
+        // Process each channel through its own reverb tank
+        let diffused_l = Self::process_tank(
+            &mut self.combs,
+            &mut self.allpasses,
+            predelayed_l,
+            self.comb_compensation,
+        );
+        let diffused_r = Self::process_tank(
+            &mut self.combs_r,
+            &mut self.allpasses_r,
+            predelayed_r,
+            self.comb_compensation,
+        );
 
         // Apply stereo width (0 = mono, 1 = full stereo)
         // At width=0, both channels get the average
@@ -427,9 +435,47 @@ impl Effect for Reverb {
         true
     }
 
-    fn process_block(&mut self, input: &[f32], output: &mut [f32]) {
-        for (inp, out) in input.iter().zip(output.iter_mut()) {
-            *out = self.process(*inp);
+    fn process_block_stereo(
+        &mut self,
+        left_in: &[f32],
+        right_in: &[f32],
+        left_out: &mut [f32],
+        right_out: &mut [f32],
+    ) {
+        debug_assert_eq!(left_in.len(), right_in.len());
+        debug_assert_eq!(left_in.len(), left_out.len());
+        debug_assert_eq!(left_out.len(), right_out.len());
+
+        for i in 0..left_in.len() {
+            let (predelay, mix, output_gain) = self.advance_params();
+
+            let predelayed_l = Self::apply_predelay(&mut self.predelay_line, left_in[i], predelay);
+            let predelayed_r =
+                Self::apply_predelay(&mut self.predelay_line_r, right_in[i], predelay);
+
+            let diffused_l = Self::process_tank(
+                &mut self.combs,
+                &mut self.allpasses,
+                predelayed_l,
+                self.comb_compensation,
+            );
+            let diffused_r = Self::process_tank(
+                &mut self.combs_r,
+                &mut self.allpasses_r,
+                predelayed_r,
+                self.comb_compensation,
+            );
+
+            // Stereo width
+            let mid = (diffused_l + diffused_r) * 0.5;
+            let side = (diffused_l - diffused_r) * 0.5;
+            let wet_l = mid + side * self.stereo_width;
+            let wet_r = mid - side * self.stereo_width;
+
+            let (out_l, out_r) = wet_dry_mix_stereo(left_in[i], right_in[i], wet_l, wet_r, mix);
+
+            left_out[i] = out_l * output_gain;
+            right_out[i] = out_r * output_gain;
         }
     }
 
