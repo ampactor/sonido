@@ -4,7 +4,7 @@ use crate::atomic_param_bridge::AtomicParamBridge;
 use crate::audio_bridge::{AudioBridge, EffectOrder, MeteringData};
 use crate::chain_manager::{ChainCommand, ChainManager};
 use crate::chain_view::ChainView;
-use crate::effects_ui::{self, EffectType};
+use crate::effects_ui;
 use crate::file_player::FilePlayer;
 use crate::preset_manager::PresetManager;
 use crate::theme::Theme;
@@ -19,9 +19,6 @@ use sonido_registry::EffectRegistry;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-// Platform-specific imports
-#[cfg(not(target_arch = "wasm32"))]
-use std::thread;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
@@ -46,20 +43,11 @@ const DEFAULT_CHAIN: &[&str] = &[
     "reverb",       // 14
 ];
 
-/// Audio processing thread state (native only).
-#[cfg(not(target_arch = "wasm32"))]
-struct AudioThread {
-    handle: Option<thread::JoinHandle<()>>,
-    running: Arc<AtomicBool>,
-}
-
 /// Main application state.
 pub struct SonidoApp {
     // Audio
     audio_bridge: AudioBridge,
-    #[cfg(not(target_arch = "wasm32"))]
-    audio_thread: Option<AudioThread>,
-    #[cfg(target_arch = "wasm32")]
+    /// Live cpal streams -- dropped to stop audio.
     _audio_streams: Vec<cpal::Stream>,
     /// Whether we've re-called play() after a user gesture (wasm autoplay policy).
     #[cfg(target_arch = "wasm32")]
@@ -112,9 +100,6 @@ impl SonidoApp {
 
         let mut app = Self {
             audio_bridge,
-            #[cfg(not(target_arch = "wasm32"))]
-            audio_thread: None,
-            #[cfg(target_arch = "wasm32")]
             _audio_streams: Vec::new(),
             #[cfg(target_arch = "wasm32")]
             audio_resumed: false,
@@ -153,8 +138,10 @@ impl SonidoApp {
         app
     }
 
-    /// Start the audio processing thread (native: spawns thread, wasm: creates streams directly).
-    #[cfg(not(target_arch = "wasm32"))]
+    /// Build cpal streams and start audio processing.
+    ///
+    /// Streams are stored in `_audio_streams` and stay alive until dropped.
+    /// Works identically on native and wasm -- cpal handles threading internally.
     fn start_audio(&mut self) -> Result<(), String> {
         // Query actual device sample rate for GUI display and effect init
         {
@@ -167,59 +154,7 @@ impl SonidoApp {
         }
 
         let bridge = Arc::clone(&self.bridge);
-        let input_gain = self.audio_bridge.input_gain();
-        let master_volume = self.audio_bridge.master_volume();
-        let running = self.audio_bridge.running();
-        let metering_tx = self.audio_bridge.metering_sender();
-        let effect_order = self.chain_view.effect_order().clone();
-        let command_rx = self.audio_bridge.command_receiver();
-        let transport_rx = self.audio_bridge.transport_receiver();
-
-        running.store(true, Ordering::SeqCst);
-
-        let sample_rate = self.sample_rate;
-        let buffer_size = self.buffer_size;
-
-        let handle = thread::spawn(move || {
-            if let Err(e) = run_audio_thread(
-                bridge,
-                input_gain,
-                master_volume,
-                running.clone(),
-                metering_tx,
-                effect_order,
-                command_rx,
-                transport_rx,
-                sample_rate,
-                buffer_size,
-            ) {
-                log::error!("Audio thread error: {}", e);
-            }
-            running.store(false, Ordering::SeqCst);
-        });
-
-        self.audio_thread = Some(AudioThread {
-            handle: Some(handle),
-            running: self.audio_bridge.running(),
-        });
-
-        Ok(())
-    }
-
-    /// Start audio streams directly (wasm — no threads, cpal uses Web Audio callbacks).
-    #[cfg(target_arch = "wasm32")]
-    fn start_audio(&mut self) -> Result<(), String> {
-        // Query actual device sample rate for GUI display and effect init
-        {
-            use cpal::traits::{DeviceTrait, HostTrait};
-            if let Some(device) = cpal::default_host().default_output_device()
-                && let Ok(config) = device.default_output_config()
-            {
-                self.sample_rate = config.sample_rate() as f32;
-            }
-        }
-
-        let bridge = Arc::clone(&self.bridge);
+        let registry = Arc::clone(&self.registry);
         let input_gain = self.audio_bridge.input_gain();
         let master_volume = self.audio_bridge.master_volume();
         let running = self.audio_bridge.running();
@@ -232,6 +167,7 @@ impl SonidoApp {
 
         let streams = build_audio_streams(
             bridge,
+            &registry,
             input_gain,
             master_volume,
             running,
@@ -247,21 +183,7 @@ impl SonidoApp {
         Ok(())
     }
 
-    /// Stop the audio processing thread.
-    #[cfg(not(target_arch = "wasm32"))]
-    fn stop_audio(&mut self) {
-        if let Some(ref audio) = self.audio_thread {
-            audio.running.store(false, Ordering::SeqCst);
-        }
-        if let Some(mut audio) = self.audio_thread.take()
-            && let Some(handle) = audio.handle.take()
-        {
-            let _ = handle.join();
-        }
-    }
-
-    /// Stop audio streams (wasm — drop stream handles).
-    #[cfg(target_arch = "wasm32")]
+    /// Stop audio by dropping stream handles.
     fn stop_audio(&mut self) {
         self.audio_bridge.running().store(false, Ordering::SeqCst);
         self._audio_streams.clear();
@@ -443,8 +365,10 @@ impl SonidoApp {
     /// Render the effect panel for the selected slot.
     fn render_effect_panel(&mut self, ui: &mut egui::Ui, slot: usize) {
         let effect_id = self.bridge.effect_id(slot);
-        let panel_name = EffectType::from_id(effect_id)
-            .map(|t| t.name())
+        let panel_name = self
+            .registry
+            .descriptor(effect_id)
+            .map(|d| d.name)
             .unwrap_or("Unknown");
 
         let panel_frame = Frame::new()
@@ -704,7 +628,7 @@ impl eframe::App for SonidoApp {
     }
 }
 
-/// File playback state owned by the audio callback closure.
+/// File playback state owned by [`AudioProcessor`].
 struct FilePlayback {
     left: Vec<f32>,
     right: Vec<f32>,
@@ -758,14 +682,201 @@ impl FilePlayback {
     }
 }
 
+/// All state needed by the audio output callback.
+///
+/// Constructed inside [`build_audio_streams`] and moved into the cpal output
+/// closure. Encapsulates effect chain processing, file playback, parameter
+/// sync, gain staging, and metering -- everything the callback previously
+/// captured as loose variables.
+struct AudioProcessor {
+    chain: ChainManager,
+    bridge: Arc<AtomicParamBridge>,
+    effect_order: EffectOrder,
+    input_gain: Arc<crate::audio_bridge::AtomicParam>,
+    master_volume: Arc<crate::audio_bridge::AtomicParam>,
+    command_rx: Receiver<ChainCommand>,
+    transport_rx: Receiver<crate::file_player::TransportCommand>,
+    metering_tx: Sender<MeteringData>,
+    /// Receiver for mic input samples from the input stream.
+    input_rx: Receiver<f32>,
+    file_pb: FilePlayback,
+    out_ch: usize,
+    in_ch: usize,
+    buffer_time_secs: f64,
+}
+
+impl AudioProcessor {
+    /// Process one output buffer: drain commands, sync params, run effects,
+    /// apply gain, write interleaved output, send metering.
+    fn process_buffer(&mut self, data: &mut [f32]) {
+        use crate::file_player::TransportCommand;
+
+        let process_start = Instant::now();
+
+        // Drain transport commands
+        while let Ok(cmd) = self.transport_rx.try_recv() {
+            match cmd {
+                TransportCommand::LoadFile {
+                    left,
+                    right,
+                    sample_rate: sr,
+                } => {
+                    self.file_pb.left = left;
+                    self.file_pb.right = right;
+                    self.file_pb.file_sample_rate = sr;
+                    self.file_pb.position = 0;
+                    self.file_pb.playing = false;
+                }
+                TransportCommand::UnloadFile => {
+                    self.file_pb.left.clear();
+                    self.file_pb.right.clear();
+                    self.file_pb.position = 0;
+                    self.file_pb.playing = false;
+                }
+                TransportCommand::Play => self.file_pb.playing = true,
+                TransportCommand::Pause => self.file_pb.playing = false,
+                TransportCommand::Stop => {
+                    self.file_pb.playing = false;
+                    self.file_pb.position = 0;
+                }
+                TransportCommand::Seek(secs) => {
+                    self.file_pb.position = (secs * self.file_pb.file_sample_rate) as usize;
+                    if self.file_pb.position >= self.file_pb.left.len() {
+                        self.file_pb.position = self.file_pb.left.len().saturating_sub(1);
+                    }
+                }
+                TransportCommand::SetLoop(v) => self.file_pb.looping = v,
+                TransportCommand::SetFileMode(v) => self.file_pb.file_mode = v,
+            }
+        }
+
+        // Drain dynamic chain commands (transactional add/remove)
+        while let Ok(cmd) = self.command_rx.try_recv() {
+            match cmd {
+                ChainCommand::Add { id, effect } => {
+                    let count = effect.effect_param_count();
+                    let descriptors: Vec<_> = (0..count)
+                        .filter_map(|i| effect.effect_param_info(i))
+                        .collect();
+                    self.chain.add_transactional(
+                        id,
+                        effect,
+                        &self.bridge,
+                        &self.effect_order,
+                        descriptors,
+                    );
+                }
+                ChainCommand::Remove { slot } => {
+                    self.chain
+                        .remove_transactional(slot, &self.bridge, &self.effect_order);
+                }
+            }
+        }
+
+        // Global gain levels
+        let ig = sonido_core::db_to_linear(self.input_gain.get());
+        let mv = sonido_core::db_to_linear(self.master_volume.get());
+
+        // Sync bridge -> effect parameters and bypass states
+        self.bridge.sync_to_chain(&mut self.chain);
+
+        // Sync effect order from GUI
+        let order = self.effect_order.get();
+        self.chain.reorder(order);
+
+        let mut input_peak = 0.0_f32;
+        let mut input_rms_sum = 0.0_f32;
+        let mut output_peak = 0.0_f32;
+        let mut output_rms_sum = 0.0_f32;
+
+        let frames = data.len() / self.out_ch;
+        let use_file = self.file_pb.file_mode && !self.file_pb.left.is_empty();
+
+        for i in 0..frames {
+            let (in_l, in_r) = if use_file {
+                // Drain mic input to keep the ring buffer from overflowing
+                for _ in 0..self.in_ch {
+                    let _ = self.input_rx.try_recv();
+                }
+                self.file_pb.next_frame()
+            } else {
+                // Deinterleave mic input (mono: duplicate, stereo: take L/R)
+                if self.in_ch >= 2 {
+                    let l = self.input_rx.try_recv().unwrap_or(0.0);
+                    let r = self.input_rx.try_recv().unwrap_or(0.0);
+                    for _ in 2..self.in_ch {
+                        let _ = self.input_rx.try_recv();
+                    }
+                    (l, r)
+                } else {
+                    let s = self.input_rx.try_recv().unwrap_or(0.0);
+                    (s, s)
+                }
+            };
+
+            let mut l = in_l * ig;
+            let mut r = in_r * ig;
+
+            let mono_in = (l + r) * 0.5;
+            input_peak = input_peak.max(mono_in.abs());
+            input_rms_sum += mono_in * mono_in;
+
+            // Process through effect chain (order + bypass handled by ChainManager)
+            (l, r) = self.chain.process_stereo(l, r);
+
+            // Apply master volume
+            l *= mv;
+            r *= mv;
+
+            let mono_out = (l + r) * 0.5;
+            output_peak = output_peak.max(mono_out.abs());
+            output_rms_sum += mono_out * mono_out;
+
+            // Interleave output
+            let idx = i * self.out_ch;
+            match self.out_ch {
+                1 => data[idx] = (l + r) * 0.5,
+                2 => {
+                    data[idx] = l;
+                    data[idx + 1] = r;
+                }
+                _ => {
+                    data[idx] = l;
+                    data[idx + 1] = r;
+                    for c in 2..self.out_ch {
+                        data[idx + c] = 0.0;
+                    }
+                }
+            }
+        }
+
+        // CPU usage measurement
+        let elapsed = process_start.elapsed().as_secs_f64();
+        let cpu_pct = (elapsed / self.buffer_time_secs * 100.0) as f32;
+
+        // Send metering data (non-blocking)
+        let count = frames.max(1) as f32;
+        let _ = self.metering_tx.try_send(MeteringData {
+            input_peak,
+            input_rms: (input_rms_sum / count).sqrt(),
+            output_peak,
+            output_rms: (output_rms_sum / count).sqrt(),
+            gain_reduction: 0.0,
+            cpu_usage: cpu_pct,
+            playback_position_secs: self.file_pb.position_secs(),
+        });
+    }
+}
+
 /// Build and start cpal audio streams.
 ///
 /// Creates an output stream (always) and an input stream (if a mic is available).
-/// Returns the stream handles — caller must keep them alive for audio to continue.
+/// Returns the stream handles -- caller must keep them alive for audio to continue.
 /// Input is optional so the app works without mic permission (e.g., wasm, headless).
 #[allow(clippy::too_many_arguments)]
 fn build_audio_streams(
     bridge: Arc<AtomicParamBridge>,
+    registry: &EffectRegistry,
     input_gain: Arc<crate::audio_bridge::AtomicParam>,
     master_volume: Arc<crate::audio_bridge::AtomicParam>,
     running: Arc<AtomicBool>,
@@ -776,7 +887,6 @@ fn build_audio_streams(
     sample_rate: f32,
     buffer_size: usize,
 ) -> Result<Vec<cpal::Stream>, String> {
-    use crate::file_player::TransportCommand;
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
     let host = cpal::default_host();
@@ -799,9 +909,8 @@ fn build_audio_streams(
         buffer_size: cpal::BufferSize::Fixed(buffer_size as u32),
     };
 
-    // Create effect chain from registry
-    let registry = EffectRegistry::new();
-    let mut chain = ChainManager::new(&registry, DEFAULT_CHAIN, sample_rate);
+    // Create effect chain from shared registry
+    let chain = ChainManager::new(registry, DEFAULT_CHAIN, sample_rate);
 
     // Stereo audio buffer (interleaved L, R pairs)
     let (tx, rx) = crossbeam_channel::bounded::<f32>(16384);
@@ -850,7 +959,7 @@ fn build_audio_streams(
 
         input_channels as usize
     } else {
-        log::warn!("No input device available — mic input disabled");
+        log::warn!("No input device available -- mic input disabled");
         // Pre-fill silence so output callback doesn't block
         for _ in 0..2048 {
             let _ = tx.try_send(0.0);
@@ -862,10 +971,23 @@ fn build_audio_streams(
     let out_ch = output_channels as usize;
     let buffer_time_secs = buffer_size as f64 / sample_rate as f64;
 
-    // File playback state
-    let mut file_pb = FilePlayback::new();
+    let mut processor = AudioProcessor {
+        chain,
+        bridge,
+        effect_order,
+        input_gain,
+        master_volume,
+        command_rx,
+        transport_rx,
+        metering_tx,
+        input_rx: rx,
+        file_pb: FilePlayback::new(),
+        out_ch,
+        in_ch,
+        buffer_time_secs,
+    };
 
-    // Output stream — process and output in stereo
+    // Output stream -- delegates to AudioProcessor
     let output_stream = output_device
         .build_output_stream(
             &output_config,
@@ -874,160 +996,7 @@ fn build_audio_streams(
                     data.fill(0.0);
                     return;
                 }
-
-                let process_start = Instant::now();
-
-                // Drain transport commands
-                while let Ok(cmd) = transport_rx.try_recv() {
-                    match cmd {
-                        TransportCommand::LoadFile {
-                            left,
-                            right,
-                            sample_rate: sr,
-                        } => {
-                            file_pb.left = left;
-                            file_pb.right = right;
-                            file_pb.file_sample_rate = sr;
-                            file_pb.position = 0;
-                            file_pb.playing = false;
-                        }
-                        TransportCommand::UnloadFile => {
-                            file_pb.left.clear();
-                            file_pb.right.clear();
-                            file_pb.position = 0;
-                            file_pb.playing = false;
-                        }
-                        TransportCommand::Play => file_pb.playing = true,
-                        TransportCommand::Pause => file_pb.playing = false,
-                        TransportCommand::Stop => {
-                            file_pb.playing = false;
-                            file_pb.position = 0;
-                        }
-                        TransportCommand::Seek(secs) => {
-                            file_pb.position = (secs * file_pb.file_sample_rate) as usize;
-                            if file_pb.position >= file_pb.left.len() {
-                                file_pb.position = file_pb.left.len().saturating_sub(1);
-                            }
-                        }
-                        TransportCommand::SetLoop(v) => file_pb.looping = v,
-                        TransportCommand::SetFileMode(v) => file_pb.file_mode = v,
-                    }
-                }
-
-                // Drain dynamic chain commands before processing
-                while let Ok(cmd) = command_rx.try_recv() {
-                    match cmd {
-                        ChainCommand::Add { id, effect } => {
-                            let count = effect.effect_param_count();
-                            let descriptors: Vec<_> = (0..count)
-                                .filter_map(|i| effect.effect_param_info(i))
-                                .collect();
-                            chain.add_effect(id, effect);
-                            bridge.add_slot(id, descriptors);
-                            effect_order.push();
-                        }
-                        ChainCommand::Remove { slot } => {
-                            chain.remove_effect(slot);
-                            bridge.remove_slot(slot);
-                            effect_order.swap_remove(slot);
-                        }
-                    }
-                }
-
-                // Global gain levels
-                let input_gain_db = input_gain.get();
-                let master_vol_db = master_volume.get();
-                let ig = sonido_core::db_to_linear(input_gain_db);
-                let mv = sonido_core::db_to_linear(master_vol_db);
-
-                // Sync bridge → effect parameters and bypass states
-                bridge.sync_to_chain(&mut chain);
-
-                // Sync effect order from GUI
-                let order = effect_order.get();
-                chain.reorder(order);
-
-                let mut input_peak = 0.0_f32;
-                let mut input_rms_sum = 0.0_f32;
-                let mut output_peak = 0.0_f32;
-                let mut output_rms_sum = 0.0_f32;
-
-                let frames = data.len() / out_ch;
-                let use_file = file_pb.file_mode && !file_pb.left.is_empty();
-
-                for i in 0..frames {
-                    let (in_l, in_r) = if use_file {
-                        // Drain mic input to keep the ring buffer from overflowing
-                        for _ in 0..in_ch {
-                            let _ = rx.try_recv();
-                        }
-                        file_pb.next_frame()
-                    } else {
-                        // Deinterleave mic input (mono: duplicate, stereo: take L/R)
-                        if in_ch >= 2 {
-                            let l = rx.try_recv().unwrap_or(0.0);
-                            let r = rx.try_recv().unwrap_or(0.0);
-                            for _ in 2..in_ch {
-                                let _ = rx.try_recv();
-                            }
-                            (l, r)
-                        } else {
-                            let s = rx.try_recv().unwrap_or(0.0);
-                            (s, s)
-                        }
-                    };
-
-                    let mut l = in_l * ig;
-                    let mut r = in_r * ig;
-
-                    let mono_in = (l + r) * 0.5;
-                    input_peak = input_peak.max(mono_in.abs());
-                    input_rms_sum += mono_in * mono_in;
-
-                    // Process through effect chain (order + bypass handled by ChainManager)
-                    (l, r) = chain.process_stereo(l, r);
-
-                    // Apply master volume
-                    l *= mv;
-                    r *= mv;
-
-                    let mono_out = (l + r) * 0.5;
-                    output_peak = output_peak.max(mono_out.abs());
-                    output_rms_sum += mono_out * mono_out;
-
-                    // Interleave output
-                    let idx = i * out_ch;
-                    match out_ch {
-                        1 => data[idx] = (l + r) * 0.5,
-                        2 => {
-                            data[idx] = l;
-                            data[idx + 1] = r;
-                        }
-                        _ => {
-                            data[idx] = l;
-                            data[idx + 1] = r;
-                            for c in 2..out_ch {
-                                data[idx + c] = 0.0;
-                            }
-                        }
-                    }
-                }
-
-                // CPU usage measurement
-                let elapsed = process_start.elapsed().as_secs_f64();
-                let cpu_pct = (elapsed / buffer_time_secs * 100.0) as f32;
-
-                // Send metering data (non-blocking)
-                let count = frames.max(1) as f32;
-                let _ = metering_tx.try_send(MeteringData {
-                    input_peak,
-                    input_rms: (input_rms_sum / count).sqrt(),
-                    output_peak,
-                    output_rms: (output_rms_sum / count).sqrt(),
-                    gain_reduction: 0.0,
-                    cpu_usage: cpu_pct,
-                    playback_position_secs: file_pb.position_secs(),
-                });
+                processor.process_buffer(data);
             },
             |err| log::error!("Output stream error: {}", err),
             None,
@@ -1040,42 +1009,4 @@ fn build_audio_streams(
     streams.push(output_stream);
 
     Ok(streams)
-}
-
-/// Run the audio processing thread (native only).
-///
-/// Creates cpal streams, starts them, and sleeps until the `running` flag is cleared.
-#[cfg(not(target_arch = "wasm32"))]
-#[allow(clippy::too_many_arguments)]
-fn run_audio_thread(
-    bridge: Arc<AtomicParamBridge>,
-    input_gain: Arc<crate::audio_bridge::AtomicParam>,
-    master_volume: Arc<crate::audio_bridge::AtomicParam>,
-    running: Arc<AtomicBool>,
-    metering_tx: Sender<MeteringData>,
-    effect_order: EffectOrder,
-    command_rx: Receiver<ChainCommand>,
-    transport_rx: Receiver<crate::file_player::TransportCommand>,
-    sample_rate: f32,
-    buffer_size: usize,
-) -> Result<(), String> {
-    let _streams = build_audio_streams(
-        bridge,
-        input_gain,
-        master_volume,
-        running.clone(),
-        metering_tx,
-        effect_order,
-        command_rx,
-        transport_rx,
-        sample_rate,
-        buffer_size,
-    )?;
-
-    // Keep thread alive while running — streams are dropped when this returns
-    while running.load(Ordering::Relaxed) {
-        thread::sleep(std::time::Duration::from_millis(100));
-    }
-
-    Ok(())
 }

@@ -4,6 +4,9 @@
 //! holding a live effect instance. Slots can be independently bypassed and
 //! reordered without reallocating the effects themselves.
 
+use crate::atomic_param_bridge::AtomicParamBridge;
+use crate::audio_bridge::EffectOrder;
+use sonido_core::ParamDescriptor;
 use sonido_registry::{EffectRegistry, EffectWithParams};
 
 /// A command to mutate the effect chain from the GUI thread.
@@ -169,7 +172,7 @@ impl ChainManager {
     /// Returns `None` if `slot` is out of range. When `slot` is not the last
     /// element, the last slot is moved into position `slot` and the processing
     /// order is updated to reflect the move.
-    pub fn remove_effect(&mut self, slot: usize) -> Option<&'static str> {
+    pub(crate) fn remove_effect(&mut self, slot: usize) -> Option<&'static str> {
         if slot >= self.slots.len() {
             return None;
         }
@@ -189,6 +192,48 @@ impl ChainManager {
         }
 
         Some(removed.id)
+    }
+
+    /// Adds an effect and registers it in the bridge and order atomically.
+    ///
+    /// Bundles three mutations that must stay in sync:
+    /// 1. Appends the effect to the chain
+    /// 2. Registers parameter descriptors in the bridge
+    /// 3. Appends the slot index to the effect order
+    ///
+    /// Returns the new slot index.
+    pub fn add_transactional(
+        &mut self,
+        id: &'static str,
+        effect: Box<dyn EffectWithParams + Send>,
+        bridge: &AtomicParamBridge,
+        order: &EffectOrder,
+        descriptors: Vec<ParamDescriptor>,
+    ) -> usize {
+        let slot = self.add_effect(id, effect);
+        bridge.add_slot(id, descriptors);
+        order.push();
+        slot
+    }
+
+    /// Removes an effect and cleans up bridge and order atomically.
+    ///
+    /// Bundles three mutations that must stay in sync:
+    /// 1. Removes the effect from the chain
+    /// 2. Removes the parameter slot from the bridge
+    /// 3. Removes and remaps the slot in the effect order
+    ///
+    /// Returns the removed effect's ID, or `None` if `slot` was out of range.
+    pub fn remove_transactional(
+        &mut self,
+        slot: usize,
+        bridge: &AtomicParamBridge,
+        order: &EffectOrder,
+    ) -> Option<&'static str> {
+        let removed_id = self.remove_effect(slot)?;
+        bridge.remove_slot(slot);
+        order.swap_remove(slot);
+        Some(removed_id)
     }
 }
 
