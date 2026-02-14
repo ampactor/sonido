@@ -37,10 +37,11 @@ impl Widget for BypassToggle<'_> {
             });
         let size = vec2(total_width.max(60.0), self.size + 4.0);
 
-        let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+        let (rect, mut response) = ui.allocate_exact_size(size, Sense::click());
 
         if response.clicked() {
             *self.active = !*self.active;
+            response.mark_changed();
         }
 
         if ui.is_rect_visible(rect) {
@@ -111,10 +112,11 @@ impl<'a> FootswitchToggle<'a> {
 impl Widget for FootswitchToggle<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
         let size = vec2(70.0, 50.0);
-        let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+        let (rect, mut response) = ui.allocate_exact_size(size, Sense::click());
 
         if response.clicked() {
             *self.active = !*self.active;
+            response.mark_changed();
         }
 
         if ui.is_rect_visible(rect) {
