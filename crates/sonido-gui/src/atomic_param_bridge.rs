@@ -23,6 +23,10 @@ struct SlotState {
     descriptors: Vec<ParamDescriptor>,
     /// Bypass state.
     bypassed: AtomicBool,
+    /// Set on the GUI thread when any parameter changes; cleared after
+    /// `sync_to_chain` pushes the values to the effect. Avoids iterating
+    /// all params every buffer for slots that haven't changed.
+    dirty: AtomicBool,
 }
 
 /// Thread-safe parameter bridge for the standalone dashboard.
@@ -68,6 +72,7 @@ impl AtomicParamBridge {
                     values,
                     descriptors,
                     bypassed: AtomicBool::new(false),
+                    dirty: AtomicBool::new(true),
                 }
             })
             .collect();
@@ -96,14 +101,17 @@ impl AtomicParamBridge {
     pub fn sync_to_chain(&self, chain: &mut crate::chain_manager::ChainManager) {
         let slots = self.slots.read();
         for (slot_idx, slot_state) in slots.iter().enumerate() {
-            // Sync bypass
+            // Bypass sync is unconditional — cheap and doesn't go through set()
             chain.set_bypassed(slot_idx, slot_state.bypassed.load(Ordering::Relaxed));
 
-            // Sync params
-            if let Some(chain_slot) = chain.slot_mut(slot_idx) {
-                for (param_idx, atomic_val) in slot_state.values.iter().enumerate() {
-                    let val = f32::from_bits(atomic_val.load(Ordering::Relaxed));
-                    chain_slot.effect.effect_set_param(param_idx, val);
+            // Only push params for slots where the GUI changed something
+            if slot_state.dirty.load(Ordering::Acquire) {
+                slot_state.dirty.store(false, Ordering::Release);
+                if let Some(chain_slot) = chain.slot_mut(slot_idx) {
+                    for (param_idx, atomic_val) in slot_state.values.iter().enumerate() {
+                        let val = f32::from_bits(atomic_val.load(Ordering::Relaxed));
+                        chain_slot.effect.effect_set_param(param_idx, val);
+                    }
                 }
             }
         }
@@ -125,6 +133,7 @@ impl AtomicParamBridge {
             values,
             descriptors,
             bypassed: AtomicBool::new(false),
+            dirty: AtomicBool::new(true),
         });
         slots.len() - 1
     }
@@ -183,6 +192,7 @@ impl ParamBridge for AtomicParamBridge {
         {
             let clamped = value.clamp(desc.min, desc.max);
             atomic.store(clamped.to_bits(), Ordering::Release);
+            s.dirty.store(true, Ordering::Release);
         }
     }
 

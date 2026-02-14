@@ -6,7 +6,7 @@
 
 use crate::atomic_param_bridge::AtomicParamBridge;
 use crate::audio_bridge::EffectOrder;
-use sonido_core::ParamDescriptor;
+use sonido_core::{ParamDescriptor, SmoothedParam};
 use sonido_registry::{EffectRegistry, EffectWithParams};
 
 /// A command to mutate the effect chain from the GUI thread.
@@ -32,13 +32,18 @@ pub enum ChainCommand {
 /// A single slot in the effect chain.
 ///
 /// Each slot owns one effect instance and tracks its bypass state.
+/// Bypass transitions use a [`SmoothedParam`] crossfade (5ms) to avoid
+/// audible clicks when toggling.
 pub struct ChainSlot {
     /// The effect instance.
     pub effect: Box<dyn EffectWithParams + Send>,
     /// Effect identifier (e.g., `"distortion"`, `"reverb"`).
     pub id: &'static str,
-    /// Whether this slot is bypassed.
+    /// Whether this slot is logically bypassed.
     pub bypassed: bool,
+    /// Crossfade level: 1.0 = fully active, 0.0 = fully bypassed.
+    /// Smoothed over 5ms to eliminate clicks on bypass toggle.
+    pub bypass_fade: SmoothedParam,
 }
 
 /// Manages an ordered chain of audio effects.
@@ -49,6 +54,8 @@ pub struct ChainSlot {
 pub struct ChainManager {
     slots: Vec<ChainSlot>,
     order: Vec<usize>,
+    /// Sample rate used to initialise bypass crossfades on new slots.
+    sample_rate: f32,
 }
 
 impl ChainManager {
@@ -69,28 +76,48 @@ impl ChainManager {
                     effect,
                     id,
                     bypassed: false,
+                    bypass_fade: SmoothedParam::fast(1.0, sample_rate),
                 });
             } else {
                 log::warn!("Unknown effect id \"{id}\", skipping");
             }
         }
         let order: Vec<usize> = (0..slots.len()).collect();
-        Self { slots, order }
+        Self {
+            slots,
+            order,
+            sample_rate,
+        }
     }
 
     /// Processes a stereo sample pair through the chain in order.
     ///
-    /// Bypassed slots are skipped. Returns the accumulated output.
+    /// Each slot's bypass crossfade is advanced every sample. Fully-bypassed
+    /// slots (fade < 1e-6) are skipped entirely as an optimisation. Slots
+    /// mid-fade mix dry and wet signals proportionally, producing click-free
+    /// bypass transitions.
     pub fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
         let mut l = left;
         let mut r = right;
         for &idx in &self.order {
-            if let Some(slot) = self.slots.get_mut(idx)
-                && !slot.bypassed
-            {
-                let out = slot.effect.process_stereo(l, r);
-                l = out.0;
-                r = out.1;
+            let Some(slot) = self.slots.get_mut(idx) else {
+                continue;
+            };
+            let fade = slot.bypass_fade.advance();
+            if fade < 1e-6 {
+                // Fully bypassed — skip processing entirely
+                continue;
+            }
+            let (wet_l, wet_r) = slot.effect.process_stereo(l, r);
+            if (fade - 1.0).abs() < 1e-6 {
+                // Fully active — no crossfade math needed
+                l = wet_l;
+                r = wet_r;
+            } else {
+                // Mid-fade — crossfade between dry and wet
+                let dry = 1.0 - fade;
+                l = l * dry + wet_l * fade;
+                r = r * dry + wet_r * fade;
             }
         }
         (l, r)
@@ -129,10 +156,25 @@ impl ChainManager {
 
     /// Sets the bypass state of a slot.
     ///
+    /// The bypass crossfade target is updated so the transition is click-free.
+    /// When un-bypassing, all effect parameters are re-set to their current
+    /// values so that any internal [`SmoothedParam`]s settle before audio
+    /// reaches the effect.
+    ///
     /// Out-of-range indices are silently ignored.
     pub fn set_bypassed(&mut self, slot: usize, bypassed: bool) {
         if let Some(s) = self.slots.get_mut(slot) {
             s.bypassed = bypassed;
+            if bypassed {
+                s.bypass_fade.set_target(0.0);
+            } else {
+                s.bypass_fade.set_target(1.0);
+                // Re-set params to trigger internal smoothing settle
+                for i in 0..s.effect.effect_param_count() {
+                    let v = s.effect.effect_get_param(i);
+                    s.effect.effect_set_param(i, v);
+                }
+            }
         }
     }
 
@@ -162,6 +204,7 @@ impl ChainManager {
             effect,
             id,
             bypassed: false,
+            bypass_fade: SmoothedParam::fast(1.0, self.sample_rate),
         });
         self.order.push(idx);
         idx
@@ -282,15 +325,18 @@ mod tests {
         let (l_active, _) = chain.process_stereo(0.5, 0.5);
 
         chain.set_bypassed(0, true);
+        // Snap the crossfade so the test sees instant bypass
+        chain.slot_mut(0).unwrap().bypass_fade.snap_to_target();
         assert!(chain.is_bypassed(0));
 
         let (l_bypass, r_bypass) = chain.process_stereo(0.5, 0.5);
-        // Bypassed → passthrough
+        // Bypassed -> passthrough
         assert!((l_bypass - 0.5).abs() < 1e-6);
         assert!((r_bypass - 0.5).abs() < 1e-6);
 
         // Un-bypass should restore active processing
         chain.set_bypassed(0, false);
+        chain.slot_mut(0).unwrap().bypass_fade.snap_to_target();
         assert!(!chain.is_bypassed(0));
         let (l_restored, _) = chain.process_stereo(0.5, 0.5);
         assert!((l_restored - l_active).abs() < 1e-6);
