@@ -168,6 +168,45 @@ pub fn asymmetric_clip(x: f32) -> f32 {
     }
 }
 
+/// Soft safety limiter with transparent knee.
+///
+/// Signals below 90% of `ceiling` pass through unchanged (transparent).
+/// Above the knee, tanh compression smoothly limits toward `ceiling`.
+/// Output is bounded: `|output| <= ceiling`.
+///
+/// Designed as a safety backstop before output level stages. Ensures effects
+/// produce bounded output even with extreme parameter combinations, without
+/// coloring signals at normal operating levels.
+///
+/// # Arguments
+/// * `x` - Input signal
+/// * `ceiling` - Maximum output magnitude (e.g., 1.0 for 0 dBFS)
+///
+/// # Returns
+/// Limited signal with `|output| <= ceiling`
+///
+/// # Reference
+/// Knee-based soft limiter using hyperbolic tangent compression.
+/// See Giannoulis et al., "Digital Dynamic Range Compressor Design" (2012)
+/// for the general knee-based limiting framework.
+#[inline]
+pub fn soft_limit(x: f32, ceiling: f32) -> f32 {
+    let threshold = ceiling * 0.9;
+    if x.abs() <= threshold {
+        x
+    } else {
+        let headroom = ceiling - threshold;
+        let excess = x.abs() - threshold;
+        x.signum() * (threshold + headroom * tanhf(excess / headroom))
+    }
+}
+
+/// Stereo version of [`soft_limit`].
+#[inline]
+pub fn soft_limit_stereo(left: f32, right: f32, ceiling: f32) -> (f32, f32) {
+    (soft_limit(left, ceiling), soft_limit(right, ceiling))
+}
+
 /// Linear interpolation between two values.
 ///
 /// # Arguments
@@ -418,5 +457,62 @@ mod tests {
         assert_eq!(flush_denormal(-1e-21), 0.0);
         assert_eq!(flush_denormal(1e-38), 0.0);
         assert_eq!(flush_denormal(0.0), 0.0);
+    }
+
+    #[test]
+    fn test_soft_limit_below_knee() {
+        // Below 90% of ceiling passes through unchanged
+        assert_eq!(soft_limit(0.5, 1.0), 0.5);
+        assert_eq!(soft_limit(-0.5, 1.0), -0.5);
+        assert_eq!(soft_limit(0.0, 1.0), 0.0);
+        assert_eq!(soft_limit(0.89, 1.0), 0.89);
+        assert_eq!(soft_limit(-0.89, 1.0), -0.89);
+    }
+
+    #[test]
+    fn test_soft_limit_at_knee() {
+        // At exactly 90% of ceiling, should pass through
+        let result = soft_limit(0.9, 1.0);
+        assert!((result - 0.9).abs() < 1e-6, "at knee: {result}");
+    }
+
+    #[test]
+    fn test_soft_limit_above_knee() {
+        // Above knee, output is compressed but <= ceiling
+        let result = soft_limit(2.0, 1.0);
+        assert!(result > 0.9, "should be above knee: {result}");
+        assert!(result <= 1.0, "should be at or below ceiling: {result}");
+    }
+
+    #[test]
+    fn test_soft_limit_extreme_input() {
+        // Very large input still bounded at ceiling (tanhf saturates to 1.0)
+        assert!(soft_limit(100.0, 1.0) <= 1.0);
+        assert!(soft_limit(-100.0, 1.0) >= -1.0);
+        assert!(soft_limit(1000.0, 1.0) <= 1.0);
+    }
+
+    #[test]
+    fn test_soft_limit_symmetry() {
+        // Negative mirrors positive
+        let pos = soft_limit(1.5, 1.0);
+        let neg = soft_limit(-1.5, 1.0);
+        assert!((pos + neg).abs() < 1e-6, "not symmetric: {pos} vs {neg}");
+    }
+
+    #[test]
+    fn test_soft_limit_custom_ceiling() {
+        // Works with ceiling != 1.0
+        assert_eq!(soft_limit(1.0, 2.0), 1.0); // below 90% of 2.0
+        assert!(soft_limit(3.0, 2.0) < 2.0);
+        assert!(soft_limit(3.0, 2.0) > 1.8);
+    }
+
+    #[test]
+    fn test_soft_limit_stereo() {
+        let (l, r) = soft_limit_stereo(0.5, 2.0, 1.0);
+        assert_eq!(l, 0.5); // below knee
+        assert!(r <= 1.0); // above knee, limited
+        assert!(r > 0.9);
     }
 }

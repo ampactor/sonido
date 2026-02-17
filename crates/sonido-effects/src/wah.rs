@@ -5,7 +5,7 @@
 
 use sonido_core::{
     Effect, EnvelopeFollower, ParamDescriptor, ParamFlags, ParamId, ParamScale, ParamUnit,
-    SmoothedParam, StateVariableFilter, SvfOutput, impl_params,
+    SmoothedParam, StateVariableFilter, SvfOutput, impl_params, math::soft_limit,
 };
 
 /// Wah mode selection.
@@ -204,7 +204,7 @@ impl Effect for Wah {
 
         // Mix filtered signal with dry for body (common in real wah pedals)
         let out = normalized * 0.8 + input * 0.2;
-        out * self.output_level.advance()
+        soft_limit(out, 1.0) * self.output_level.advance()
     }
 
     #[inline]
@@ -241,7 +241,10 @@ impl Effect for Wah {
         let out_r = (filtered_r / resonance) * 0.8 + right * 0.2;
 
         let output_gain = self.output_level.advance();
-        (out_l * output_gain, out_r * output_gain)
+        (
+            soft_limit(out_l, 1.0) * output_gain,
+            soft_limit(out_r, 1.0) * output_gain,
+        )
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {

@@ -2,7 +2,7 @@
 
 use sonido_core::{
     Biquad, Effect, ParamDescriptor, ParamId, ParamScale, ParamUnit, SmoothedParam, gain,
-    lowpass_coefficients,
+    lowpass_coefficients, math::soft_limit,
 };
 
 /// Low-pass filter effect with smoothed parameter control.
@@ -91,7 +91,7 @@ impl Effect for LowPassFilter {
             self.update_coefficients();
         }
 
-        self.biquad.process(input) * output_gain
+        soft_limit(self.biquad.process(input), 1.0) * output_gain
     }
 
     #[inline]
@@ -104,8 +104,8 @@ impl Effect for LowPassFilter {
             self.update_coefficients();
         }
 
-        let out_l = self.biquad.process(left) * output_gain;
-        let out_r = self.biquad_r.process(right) * output_gain;
+        let out_l = soft_limit(self.biquad.process(left), 1.0) * output_gain;
+        let out_r = soft_limit(self.biquad_r.process(right), 1.0) * output_gain;
 
         (out_l, out_r)
     }

@@ -30,7 +30,7 @@
 
 use sonido_core::{
     Effect, EnvelopeFollower, ParamDescriptor, ParamId, ParamUnit, SmoothedParam, db_to_linear,
-    fast_db_to_linear, fast_linear_to_db, linear_to_db,
+    fast_db_to_linear, fast_linear_to_db, linear_to_db, math::soft_limit,
 };
 
 /// Gain computer for calculating compression curve.
@@ -169,7 +169,7 @@ impl Effect for Compressor {
         let gain_linear = fast_db_to_linear(gain_reduction_db);
         let makeup = self.makeup_gain.advance();
 
-        input * gain_linear * makeup
+        soft_limit(input * gain_linear * makeup, 1.0)
     }
 
     #[inline]
@@ -185,7 +185,7 @@ impl Effect for Compressor {
         let makeup = self.makeup_gain.advance();
 
         let gain = gain_linear * makeup;
-        (left * gain, right * gain)
+        (soft_limit(left * gain, 1.0), soft_limit(right * gain, 1.0))
     }
 
     /// Process a block of stereo samples with linked stereo detection.
@@ -242,8 +242,8 @@ impl Effect for Compressor {
             let makeup = self.makeup_gain.advance();
 
             let gain = gain_linear * makeup;
-            left_out[i] = left * gain;
-            right_out[i] = right * gain;
+            left_out[i] = soft_limit(left * gain, 1.0);
+            right_out[i] = soft_limit(right * gain, 1.0);
         }
     }
 
