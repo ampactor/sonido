@@ -6,6 +6,7 @@
 use libm::tanhf;
 use sonido_core::{
     Effect, ParamDescriptor, ParamId, ParamUnit, SmoothedParam, db_to_linear, linear_to_db,
+    math::soft_limit,
 };
 
 /// Clean preamp stage
@@ -111,7 +112,7 @@ impl Effect for CleanPreamp {
             gained
         };
 
-        output * output_level
+        soft_limit(output, 1.0) * output_level
     }
 
     #[inline]
@@ -123,19 +124,21 @@ impl Effect for CleanPreamp {
 
         // Process left
         let gained_l = left * gain;
-        let out_l = if gained_l.abs() > threshold {
+        let clipped_l = if gained_l.abs() > threshold {
             threshold * gained_l.signum() * (1.0 + tanhf(gained_l.abs() / threshold - 1.0))
         } else {
             gained_l
-        } * output_level;
+        };
+        let out_l = soft_limit(clipped_l, 1.0) * output_level;
 
         // Process right
         let gained_r = right * gain;
-        let out_r = if gained_r.abs() > threshold {
+        let clipped_r = if gained_r.abs() > threshold {
             threshold * gained_r.signum() * (1.0 + tanhf(gained_r.abs() / threshold - 1.0))
         } else {
             gained_r
-        } * output_level;
+        };
+        let out_r = soft_limit(clipped_r, 1.0) * output_level;
 
         (out_l, out_r)
     }

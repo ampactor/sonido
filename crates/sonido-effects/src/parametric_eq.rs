@@ -4,7 +4,7 @@
 
 use sonido_core::{
     Biquad, Effect, ParamDescriptor, ParamId, ParamScale, ParamUnit, SmoothedParam, gain,
-    peaking_eq_coefficients,
+    math::soft_limit, peaking_eq_coefficients,
 };
 
 /// Number of samples between biquad coefficient recalculations during parameter
@@ -345,7 +345,7 @@ impl Effect for ParametricEq {
         // Process through cascaded filters
         let after_low = self.low_filter.process(input);
         let after_mid = self.mid_filter.process(after_low);
-        self.high_filter.process(after_mid) * output_gain
+        soft_limit(self.high_filter.process(after_mid), 1.0) * output_gain
     }
 
     #[inline]
@@ -392,12 +392,12 @@ impl Effect for ParametricEq {
         // Process left channel through L filters
         let left_low = self.low_filter.process(left);
         let left_mid = self.mid_filter.process(left_low);
-        let left_out = self.high_filter.process(left_mid) * output_gain;
+        let left_out = soft_limit(self.high_filter.process(left_mid), 1.0) * output_gain;
 
         // Process right channel through R filters
         let right_low = self.low_filter_r.process(right);
         let right_mid = self.mid_filter_r.process(right_low);
-        let right_out = self.high_filter_r.process(right_mid) * output_gain;
+        let right_out = soft_limit(self.high_filter_r.process(right_mid), 1.0) * output_gain;
 
         (left_out, right_out)
     }
