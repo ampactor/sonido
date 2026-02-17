@@ -4,14 +4,15 @@
 //! select, double-click to bypass, drag to reorder, right-click to remove,
 //! and press "+" to add new effects.
 
-use crate::audio_bridge::EffectOrder;
+use crate::atomic_param_bridge::AtomicParamBridge;
 use egui::{Color32, Response, ScrollArea, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
 use sonido_gui_core::{ParamBridge, SlotIndex};
 use sonido_registry::EffectRegistry;
+use std::sync::Arc;
 
 /// Chain view state for drag-and-drop, selection, and pending commands.
 pub struct ChainView {
-    effect_order: EffectOrder,
+    bridge: Arc<AtomicParamBridge>,
     dragging: Option<usize>,
     drag_offset: f32,
     selected: Option<SlotIndex>,
@@ -22,21 +23,16 @@ pub struct ChainView {
 }
 
 impl ChainView {
-    /// Create a new chain view with no selection.
-    pub fn new() -> Self {
+    /// Create a new chain view backed by the given parameter bridge.
+    pub fn new(bridge: Arc<AtomicParamBridge>) -> Self {
         Self {
-            effect_order: EffectOrder::default(),
+            bridge,
             dragging: None,
             drag_offset: 0.0,
             selected: None,
             pending_add: None,
             pending_remove: None,
         }
-    }
-
-    /// Get the current effect order.
-    pub fn effect_order(&self) -> &EffectOrder {
-        &self.effect_order
     }
 
     /// Get the currently selected slot index.
@@ -75,7 +71,7 @@ impl ChainView {
         bridge: &dyn ParamBridge,
         registry: &EffectRegistry,
     ) -> Option<SlotIndex> {
-        let order = self.effect_order.get();
+        let order = self.bridge.get_order();
         let slot_count = bridge.slot_count();
 
         // Clear selection if the selected slot was removed
@@ -166,11 +162,11 @@ impl ChainView {
 
                         let swap_threshold = effect_width / 2.0 + spacing;
                         if self.drag_offset > swap_threshold && pos < visible.len() - 1 {
-                            self.effect_order.move_effect(pos, pos + 1);
+                            self.bridge.move_effect(pos, pos + 1);
                             self.dragging = Some(pos + 1);
                             self.drag_offset = 0.0;
                         } else if self.drag_offset < -swap_threshold && pos > 0 {
-                            self.effect_order.move_effect(pos, pos - 1);
+                            self.bridge.move_effect(pos, pos - 1);
                             self.dragging = Some(pos - 1);
                             self.drag_offset = 0.0;
                         }
@@ -367,11 +363,5 @@ impl ChainView {
                 Stroke::new(2.0, arrow_color),
             );
         }
-    }
-}
-
-impl Default for ChainView {
-    fn default() -> Self {
-        Self::new()
     }
 }

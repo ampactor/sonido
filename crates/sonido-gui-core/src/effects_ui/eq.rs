@@ -1,6 +1,6 @@
 //! Parametric EQ effect UI panel.
 
-use crate::widgets::{BypassToggle, Knob};
+use crate::widgets::{BypassToggle, Knob, gesture_wrap};
 use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
 
@@ -64,7 +64,7 @@ impl ParametricEqPanel {
         });
     }
 
-    /// Render a single EQ band (freq, gain, Q).
+    /// Render a single EQ band (freq, gain, Q) with compact 50px knobs.
     fn render_band(
         ui: &mut Ui,
         bridge: &dyn ParamBridge,
@@ -88,17 +88,13 @@ impl ParametricEqPanel {
                 .as_ref()
                 .map_or((20.0, 20000.0, 1000.0), |d| (d.min, d.max, d.default));
             let mut freq = bridge.get(slot, freq_idx);
-            if ui
-                .add(
-                    Knob::new(&mut freq, min, max, "FREQ")
-                        .default(default)
-                        .format_hz()
-                        .diameter(50.0),
-                )
-                .changed()
-            {
-                bridge.set(slot, freq_idx, freq);
-            }
+            let response = ui.add(
+                Knob::new(&mut freq, min, max, "FREQ")
+                    .default(default)
+                    .format_hz()
+                    .diameter(50.0),
+            );
+            gesture_wrap(&response, bridge, slot, freq_idx, freq, default);
 
             ui.add_space(8.0);
 
@@ -108,17 +104,13 @@ impl ParametricEqPanel {
                 .as_ref()
                 .map_or((-12.0, 12.0, 0.0), |d| (d.min, d.max, d.default));
             let mut gain = bridge.get(slot, gain_idx);
-            if ui
-                .add(
-                    Knob::new(&mut gain, min, max, "GAIN")
-                        .default(default)
-                        .format_db()
-                        .diameter(50.0),
-                )
-                .changed()
-            {
-                bridge.set(slot, gain_idx, gain);
-            }
+            let response = ui.add(
+                Knob::new(&mut gain, min, max, "GAIN")
+                    .default(default)
+                    .format_db()
+                    .diameter(50.0),
+            );
+            gesture_wrap(&response, bridge, slot, gain_idx, gain, default);
 
             ui.add_space(8.0);
 
@@ -128,17 +120,13 @@ impl ParametricEqPanel {
                 .as_ref()
                 .map_or((0.5, 5.0, 1.0), |d| (d.min, d.max, d.default));
             let mut q = bridge.get(slot, q_idx);
-            if ui
-                .add(
-                    Knob::new(&mut q, min, max, "Q")
-                        .default(default)
-                        .format(|v| format!("{v:.1}"))
-                        .diameter(50.0),
-                )
-                .changed()
-            {
-                bridge.set(slot, q_idx, q);
-            }
+            let response = ui.add(
+                Knob::new(&mut q, min, max, "Q")
+                    .default(default)
+                    .format(|v| format!("{v:.1}"))
+                    .diameter(50.0),
+            );
+            gesture_wrap(&response, bridge, slot, q_idx, q, default);
         });
     }
 }

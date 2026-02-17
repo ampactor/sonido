@@ -1,6 +1,6 @@
 //! Wah effect UI panel.
 
-use crate::widgets::{BypassToggle, Knob};
+use crate::widgets::{BypassToggle, bridged_combo, bridged_knob, bridged_knob_fmt};
 use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
 
@@ -31,76 +31,19 @@ impl WahPanel {
 
                 // Mode selector (param 3)
                 ui.label("Mode:");
-                let current = bridge.get(slot, ParamIndex(3)) as u32 as usize;
-                let selected = WAH_MODES.get(current).unwrap_or(&"Auto");
-                egui::ComboBox::from_id_salt(("wah_mode", slot.0))
-                    .selected_text(*selected)
-                    .show_ui(ui, |ui| {
-                        for (i, name) in WAH_MODES.iter().enumerate() {
-                            if ui.selectable_label(i == current, *name).clicked() {
-                                bridge.set(slot, ParamIndex(3), i as f32);
-                            }
-                        }
-                    });
+                bridged_combo(ui, bridge, slot, ParamIndex(3), "wah_mode", WAH_MODES);
             });
 
             ui.add_space(12.0);
 
             ui.horizontal(|ui| {
-                // Frequency (param 0)
-                let desc = bridge.param_descriptor(slot, ParamIndex(0));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((200.0, 2000.0, 800.0), |d| (d.min, d.max, d.default));
-                let mut freq = bridge.get(slot, ParamIndex(0));
-                if ui
-                    .add(
-                        Knob::new(&mut freq, min, max, "FREQ")
-                            .default(default)
-                            .format_hz(),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(0), freq);
-                }
-
+                bridged_knob(ui, bridge, slot, ParamIndex(0), "FREQ");
                 ui.add_space(16.0);
-
-                // Resonance (param 1)
-                let desc = bridge.param_descriptor(slot, ParamIndex(1));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((1.0, 10.0, 5.0), |d| (d.min, d.max, d.default));
-                let mut resonance = bridge.get(slot, ParamIndex(1));
-                if ui
-                    .add(
-                        Knob::new(&mut resonance, min, max, "RESO")
-                            .default(default)
-                            .format(|v| format!("{v:.1}")),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(1), resonance);
-                }
-
+                bridged_knob_fmt(ui, bridge, slot, ParamIndex(1), "RESO", |v| {
+                    format!("{v:.1}")
+                });
                 ui.add_space(16.0);
-
-                // Sensitivity (param 2) — percent in ParameterInfo units (0–100)
-                let desc = bridge.param_descriptor(slot, ParamIndex(2));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((0.0, 100.0, 50.0), |d| (d.min, d.max, d.default));
-                let mut sensitivity = bridge.get(slot, ParamIndex(2));
-                if ui
-                    .add(
-                        Knob::new(&mut sensitivity, min, max, "SENS")
-                            .default(default)
-                            .format(|v| format!("{v:.0}%")),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(2), sensitivity);
-                }
+                bridged_knob(ui, bridge, slot, ParamIndex(2), "SENS");
             });
         });
     }

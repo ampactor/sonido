@@ -1,6 +1,6 @@
 //! Filter effect UI panel.
 
-use crate::widgets::{BypassToggle, Knob};
+use crate::widgets::{BypassToggle, Knob, bridged_knob_fmt, gesture_wrap};
 use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
 
@@ -28,42 +28,26 @@ impl FilterPanel {
             ui.add_space(12.0);
 
             ui.horizontal(|ui| {
-                // Cutoff (param 0)
+                // Cutoff (param 0) — custom sensitivity for wide frequency range
                 let desc = bridge.param_descriptor(slot, ParamIndex(0));
                 let (min, max, default) = desc
                     .as_ref()
                     .map_or((20.0, 20000.0, 5000.0), |d| (d.min, d.max, d.default));
                 let mut cutoff = bridge.get(slot, ParamIndex(0));
-                if ui
-                    .add(
-                        Knob::new(&mut cutoff, min, max, "CUTOFF")
-                            .default(default)
-                            .format_hz()
-                            .sensitivity(0.008),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(0), cutoff);
-                }
+                let response = ui.add(
+                    Knob::new(&mut cutoff, min, max, "CUTOFF")
+                        .default(default)
+                        .format_hz()
+                        .sensitivity(0.008),
+                );
+                gesture_wrap(&response, bridge, slot, ParamIndex(0), cutoff, default);
 
                 ui.add_space(16.0);
 
                 // Resonance (param 1)
-                let desc = bridge.param_descriptor(slot, ParamIndex(1));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((0.1, 10.0, 0.7), |d| (d.min, d.max, d.default));
-                let mut resonance = bridge.get(slot, ParamIndex(1));
-                if ui
-                    .add(
-                        Knob::new(&mut resonance, min, max, "RESO")
-                            .default(default)
-                            .format(|v| format!("{v:.1}")),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(1), resonance);
-                }
+                bridged_knob_fmt(ui, bridge, slot, ParamIndex(1), "RESO", |v| {
+                    format!("{v:.1}")
+                });
             });
         });
     }

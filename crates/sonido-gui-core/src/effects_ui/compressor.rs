@@ -1,6 +1,6 @@
 //! Compressor effect UI panel.
 
-use crate::widgets::{BypassToggle, Knob};
+use crate::widgets::{BypassToggle, bridged_knob};
 use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
 
@@ -30,96 +30,20 @@ impl CompressorPanel {
 
             // First row: Threshold, Ratio, Makeup
             ui.horizontal(|ui| {
-                let desc = bridge.param_descriptor(slot, ParamIndex(0));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((-40.0, 0.0, -20.0), |d| (d.min, d.max, d.default));
-                let mut threshold = bridge.get(slot, ParamIndex(0));
-                if ui
-                    .add(
-                        Knob::new(&mut threshold, min, max, "THRESH")
-                            .default(default)
-                            .format_db(),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(0), threshold);
-                }
-
+                bridged_knob(ui, bridge, slot, ParamIndex(0), "THRESH");
                 ui.add_space(16.0);
-
-                let desc = bridge.param_descriptor(slot, ParamIndex(1));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((1.0, 20.0, 4.0), |d| (d.min, d.max, d.default));
-                let mut ratio = bridge.get(slot, ParamIndex(1));
-                if ui
-                    .add(
-                        Knob::new(&mut ratio, min, max, "RATIO")
-                            .default(default)
-                            .format_ratio(),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(1), ratio);
-                }
-
+                bridged_knob(ui, bridge, slot, ParamIndex(1), "RATIO");
                 ui.add_space(16.0);
-
-                let desc = bridge.param_descriptor(slot, ParamIndex(4));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((0.0, 20.0, 0.0), |d| (d.min, d.max, d.default));
-                let mut makeup = bridge.get(slot, ParamIndex(4));
-                if ui
-                    .add(
-                        Knob::new(&mut makeup, min, max, "MAKEUP")
-                            .default(default)
-                            .format_db(),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(4), makeup);
-                }
+                bridged_knob(ui, bridge, slot, ParamIndex(4), "MAKEUP");
             });
 
             ui.add_space(8.0);
 
             // Second row: Attack, Release
             ui.horizontal(|ui| {
-                let desc = bridge.param_descriptor(slot, ParamIndex(2));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((0.1, 100.0, 10.0), |d| (d.min, d.max, d.default));
-                let mut attack = bridge.get(slot, ParamIndex(2));
-                if ui
-                    .add(
-                        Knob::new(&mut attack, min, max, "ATTACK")
-                            .default(default)
-                            .format_ms(),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(2), attack);
-                }
-
+                bridged_knob(ui, bridge, slot, ParamIndex(2), "ATTACK");
                 ui.add_space(16.0);
-
-                let desc = bridge.param_descriptor(slot, ParamIndex(3));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((10.0, 1000.0, 100.0), |d| (d.min, d.max, d.default));
-                let mut release = bridge.get(slot, ParamIndex(3));
-                if ui
-                    .add(
-                        Knob::new(&mut release, min, max, "RELEASE")
-                            .default(default)
-                            .format_ms(),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(3), release);
-                }
+                bridged_knob(ui, bridge, slot, ParamIndex(3), "RELEASE");
             });
         });
     }

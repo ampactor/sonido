@@ -1,6 +1,6 @@
 //! Distortion effect UI panel.
 
-use crate::widgets::{BypassToggle, Knob};
+use crate::widgets::{BypassToggle, bridged_combo, bridged_knob};
 use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
 
@@ -31,76 +31,17 @@ impl DistortionPanel {
 
                 // Waveshape selector (param 3)
                 ui.label("Type:");
-                let current = bridge.get(slot, ParamIndex(3)) as u32 as usize;
-                let selected = WAVESHAPES.get(current).unwrap_or(&"Soft Clip");
-                egui::ComboBox::from_id_salt(("waveshape", slot.0))
-                    .selected_text(*selected)
-                    .show_ui(ui, |ui| {
-                        for (i, name) in WAVESHAPES.iter().enumerate() {
-                            if ui.selectable_label(i == current, *name).clicked() {
-                                bridge.set(slot, ParamIndex(3), i as f32);
-                            }
-                        }
-                    });
+                bridged_combo(ui, bridge, slot, ParamIndex(3), "waveshape", WAVESHAPES);
             });
 
             ui.add_space(12.0);
 
             ui.horizontal(|ui| {
-                // Drive (param 0)
-                let desc = bridge.param_descriptor(slot, ParamIndex(0));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((0.0, 40.0, 0.0), |d| (d.min, d.max, d.default));
-                let mut drive = bridge.get(slot, ParamIndex(0));
-                if ui
-                    .add(
-                        Knob::new(&mut drive, min, max, "DRIVE")
-                            .default(default)
-                            .format_db(),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(0), drive);
-                }
-
+                bridged_knob(ui, bridge, slot, ParamIndex(0), "DRIVE");
                 ui.add_space(16.0);
-
-                // Tone (param 1)
-                let desc = bridge.param_descriptor(slot, ParamIndex(1));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((500.0, 10000.0, 8000.0), |d| (d.min, d.max, d.default));
-                let mut tone = bridge.get(slot, ParamIndex(1));
-                if ui
-                    .add(
-                        Knob::new(&mut tone, min, max, "TONE")
-                            .default(default)
-                            .format_hz(),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(1), tone);
-                }
-
+                bridged_knob(ui, bridge, slot, ParamIndex(1), "TONE");
                 ui.add_space(16.0);
-
-                // Level (param 2)
-                let desc = bridge.param_descriptor(slot, ParamIndex(2));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((-20.0, 0.0, 0.0), |d| (d.min, d.max, d.default));
-                let mut level = bridge.get(slot, ParamIndex(2));
-                if ui
-                    .add(
-                        Knob::new(&mut level, min, max, "LEVEL")
-                            .default(default)
-                            .format_db(),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(2), level);
-                }
+                bridged_knob(ui, bridge, slot, ParamIndex(2), "LEVEL");
             });
         });
     }

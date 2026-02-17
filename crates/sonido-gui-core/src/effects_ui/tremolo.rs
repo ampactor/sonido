@@ -1,6 +1,6 @@
 //! Tremolo effect UI panel.
 
-use crate::widgets::{BypassToggle, Knob};
+use crate::widgets::{BypassToggle, bridged_combo, bridged_knob};
 use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
 
@@ -31,57 +31,22 @@ impl TremoloPanel {
 
                 // Waveform selector (param 2)
                 ui.label("Wave:");
-                let current = bridge.get(slot, ParamIndex(2)) as u32 as usize;
-                let selected = WAVEFORMS.get(current).unwrap_or(&"Sine");
-                egui::ComboBox::from_id_salt(("tremolo_waveform", slot.0))
-                    .selected_text(*selected)
-                    .show_ui(ui, |ui| {
-                        for (i, name) in WAVEFORMS.iter().enumerate() {
-                            if ui.selectable_label(i == current, *name).clicked() {
-                                bridge.set(slot, ParamIndex(2), i as f32);
-                            }
-                        }
-                    });
+                bridged_combo(
+                    ui,
+                    bridge,
+                    slot,
+                    ParamIndex(2),
+                    "tremolo_waveform",
+                    WAVEFORMS,
+                );
             });
 
             ui.add_space(12.0);
 
             ui.horizontal(|ui| {
-                // Rate (param 0)
-                let desc = bridge.param_descriptor(slot, ParamIndex(0));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((0.5, 20.0, 5.0), |d| (d.min, d.max, d.default));
-                let mut rate = bridge.get(slot, ParamIndex(0));
-                if ui
-                    .add(
-                        Knob::new(&mut rate, min, max, "RATE")
-                            .default(default)
-                            .format_hz(),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(0), rate);
-                }
-
+                bridged_knob(ui, bridge, slot, ParamIndex(0), "RATE");
                 ui.add_space(16.0);
-
-                // Depth (param 1) — percent (0–100)
-                let desc = bridge.param_descriptor(slot, ParamIndex(1));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((0.0, 100.0, 50.0), |d| (d.min, d.max, d.default));
-                let mut depth = bridge.get(slot, ParamIndex(1));
-                if ui
-                    .add(
-                        Knob::new(&mut depth, min, max, "DEPTH")
-                            .default(default)
-                            .format(|v| format!("{v:.0}%")),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(1), depth);
-                }
+                bridged_knob(ui, bridge, slot, ParamIndex(1), "DEPTH");
             });
         });
     }

@@ -1,6 +1,6 @@
 //! Preamp effect UI panel.
 
-use crate::widgets::{BypassToggle, Knob};
+use crate::widgets::{BypassToggle, bridged_knob};
 use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
 
@@ -28,21 +28,7 @@ impl PreampPanel {
             ui.add_space(12.0);
 
             ui.horizontal(|ui| {
-                let desc = bridge.param_descriptor(slot, ParamIndex(0));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((-20.0, 20.0, 0.0), |d| (d.min, d.max, d.default));
-                let mut gain = bridge.get(slot, ParamIndex(0));
-                if ui
-                    .add(
-                        Knob::new(&mut gain, min, max, "GAIN")
-                            .default(default)
-                            .format_db(),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(0), gain);
-                }
+                bridged_knob(ui, bridge, slot, ParamIndex(0), "GAIN");
             });
         });
     }

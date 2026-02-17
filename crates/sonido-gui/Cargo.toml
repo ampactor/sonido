@@ -25,6 +25,7 @@ sonido-gui-core = { path = "../sonido-gui-core" }
 sonido-registry = { path = "../sonido-registry", features = ["std"] }
 
 # Thread-safety
+arc-swap = "1.8"
 crossbeam-channel = "0.5"
 parking_lot = "0.12"
 

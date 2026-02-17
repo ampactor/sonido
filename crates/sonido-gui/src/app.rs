@@ -1,7 +1,7 @@
 //! Main application state and UI layout.
 
 use crate::atomic_param_bridge::AtomicParamBridge;
-use crate::audio_bridge::{AudioBridge, EffectOrder, MeteringData};
+use crate::audio_bridge::{AudioBridge, MeteringData};
 use crate::chain_manager::{ChainCommand, ChainManager};
 use crate::chain_view::ChainView;
 use crate::file_player::FilePlayer;
@@ -101,20 +101,20 @@ impl SonidoApp {
         let registry = Arc::new(EffectRegistry::new());
 
         let single_effect = effect.is_some();
-        let chain: &[&str] = if let Some(name) = effect {
-            // Validate that the effect exists in the registry
-            assert!(
-                registry.create(name, 48000.0).is_some(),
-                "Unknown effect: {name}. Available: {:?}",
-                registry
-                    .all_effects()
-                    .iter()
-                    .map(|e| e.id)
-                    .collect::<Vec<_>>()
-            );
-            // Leak into 'static — lives for the process lifetime (app runs once)
-            let leaked: &'static str = Box::leak(name.to_owned().into_boxed_str());
-            Box::leak(vec![leaked].into_boxed_slice())
+        let chain: &[&'static str] = if let Some(name) = effect {
+            // Look up the static ID from the registry to avoid Box::leak
+            let desc = registry.get(name).unwrap_or_else(|| {
+                panic!(
+                    "Unknown effect: {name}. Available: {:?}",
+                    registry
+                        .all_effects()
+                        .iter()
+                        .map(|e| e.id)
+                        .collect::<Vec<_>>()
+                )
+            });
+            // Leak a single-element slice — lives for the process lifetime
+            Box::leak(vec![desc.id].into_boxed_slice())
         } else {
             DEFAULT_CHAIN
         };
@@ -133,7 +133,7 @@ impl SonidoApp {
         let audio_bridge = AudioBridge::new();
         let transport_tx = audio_bridge.transport_sender();
 
-        let mut chain_view = ChainView::new();
+        let mut chain_view = ChainView::new(Arc::clone(&bridge));
         if single_effect {
             chain_view.set_selected(SlotIndex(0));
         }
@@ -201,7 +201,6 @@ impl SonidoApp {
         let master_volume = self.audio_bridge.master_volume();
         let running = self.audio_bridge.running();
         let metering_tx = self.audio_bridge.metering_sender();
-        let effect_order = self.chain_view.effect_order().clone();
         let command_rx = self.audio_bridge.command_receiver();
         let transport_rx = self.audio_bridge.transport_receiver();
 
@@ -214,7 +213,6 @@ impl SonidoApp {
             master_volume,
             running,
             metering_tx,
-            effect_order,
             command_rx,
             transport_rx,
             self.sample_rate,
@@ -751,8 +749,7 @@ impl FilePlayback {
 struct AudioProcessor {
     chain: ChainManager,
     bridge: Arc<AtomicParamBridge>,
-    effect_order: EffectOrder,
-    /// Cached copy of the effect order; only refreshed when `effect_order` is dirty.
+    /// Cached copy of the effect order; only refreshed when `bridge.order_is_dirty()`.
     cached_order: Vec<usize>,
     input_gain: Arc<crate::audio_bridge::AtomicParam>,
     master_volume: Arc<crate::audio_bridge::AtomicParam>,
@@ -820,17 +817,11 @@ impl AudioProcessor {
                     let descriptors: Vec<_> = (0..count)
                         .filter_map(|i| effect.effect_param_info(i))
                         .collect();
-                    self.chain.add_transactional(
-                        id,
-                        effect,
-                        &self.bridge,
-                        &self.effect_order,
-                        descriptors,
-                    );
+                    self.chain
+                        .add_transactional(id, effect, &self.bridge, descriptors);
                 }
                 ChainCommand::Remove { slot } => {
-                    self.chain
-                        .remove_transactional(slot, &self.bridge, &self.effect_order);
+                    self.chain.remove_transactional(slot, &self.bridge);
                 }
             }
         }
@@ -843,10 +834,10 @@ impl AudioProcessor {
         self.bridge.sync_to_chain(&mut self.chain);
 
         // Sync effect order from GUI (only when changed)
-        if self.effect_order.is_dirty() {
-            self.cached_order.clone_from(&self.effect_order.get());
+        if self.bridge.order_is_dirty() {
+            self.cached_order = self.bridge.get_order();
             self.chain.reorder(self.cached_order.clone());
-            self.effect_order.clear_dirty();
+            self.bridge.clear_order_dirty();
         }
 
         let mut input_peak = 0.0_f32;
@@ -946,7 +937,6 @@ fn build_audio_streams(
     master_volume: Arc<crate::audio_bridge::AtomicParam>,
     running: Arc<AtomicBool>,
     metering_tx: Sender<MeteringData>,
-    effect_order: EffectOrder,
     command_rx: Receiver<ChainCommand>,
     transport_rx: Receiver<crate::file_player::TransportCommand>,
     sample_rate: f32,
@@ -1039,7 +1029,6 @@ fn build_audio_streams(
     let mut processor = AudioProcessor {
         chain,
         bridge,
-        effect_order,
         cached_order: Vec::new(),
         input_gain,
         master_volume,

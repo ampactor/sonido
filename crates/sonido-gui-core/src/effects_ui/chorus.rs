@@ -1,6 +1,6 @@
 //! Chorus effect UI panel.
 
-use crate::widgets::{BypassToggle, Knob};
+use crate::widgets::{BypassToggle, bridged_knob};
 use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
 
@@ -28,60 +28,11 @@ impl ChorusPanel {
             ui.add_space(12.0);
 
             ui.horizontal(|ui| {
-                // Rate (param 0)
-                let desc = bridge.param_descriptor(slot, ParamIndex(0));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((0.1, 10.0, 1.0), |d| (d.min, d.max, d.default));
-                let mut rate = bridge.get(slot, ParamIndex(0));
-                if ui
-                    .add(
-                        Knob::new(&mut rate, min, max, "RATE")
-                            .default(default)
-                            .format(|v| format!("{v:.2} Hz")),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(0), rate);
-                }
-
+                bridged_knob(ui, bridge, slot, ParamIndex(0), "RATE");
                 ui.add_space(16.0);
-
-                // Depth (param 1) — percent (0–100)
-                let desc = bridge.param_descriptor(slot, ParamIndex(1));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((0.0, 100.0, 50.0), |d| (d.min, d.max, d.default));
-                let mut depth = bridge.get(slot, ParamIndex(1));
-                if ui
-                    .add(
-                        Knob::new(&mut depth, min, max, "DEPTH")
-                            .default(default)
-                            .format(|v| format!("{v:.0}%")),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(1), depth);
-                }
-
+                bridged_knob(ui, bridge, slot, ParamIndex(1), "DEPTH");
                 ui.add_space(16.0);
-
-                // Mix (param 2) — percent (0–100)
-                let desc = bridge.param_descriptor(slot, ParamIndex(2));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((0.0, 100.0, 50.0), |d| (d.min, d.max, d.default));
-                let mut mix = bridge.get(slot, ParamIndex(2));
-                if ui
-                    .add(
-                        Knob::new(&mut mix, min, max, "MIX")
-                            .default(default)
-                            .format(|v| format!("{v:.0}%")),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(2), mix);
-                }
+                bridged_knob(ui, bridge, slot, ParamIndex(2), "MIX");
             });
         });
     }

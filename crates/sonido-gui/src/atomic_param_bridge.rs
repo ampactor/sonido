@@ -4,18 +4,22 @@
 //! mirroring the [`ParameterInfo`](sonido_core::ParameterInfo) index
 //! convention. The GUI thread calls `set()`, the audio thread calls `get()`.
 //!
-//! Created once at startup from the [`EffectRegistry`], it replaces the
-//! hand-mapped `SharedParams` struct with a fully generic, registry-driven
-//! parameter store.
+//! All hot-path reads go through [`ArcSwap::load`], which is wait-free.
+//! Structural mutations (add/remove slot, reorder) use RCU via
+//! [`ArcSwap::rcu`] — readers never block.
 
-use parking_lot::RwLock;
+use arc_swap::ArcSwap;
 use sonido_core::ParamDescriptor;
 use sonido_gui_core::{ParamBridge, ParamIndex, SlotIndex};
 use sonido_registry::EffectRegistry;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 /// Per-slot parameter storage.
-struct SlotState {
+///
+/// Each slot is `Arc`-wrapped inside [`SharedAudioState`] so it survives
+/// across snapshot swaps without cloning atomic values.
+pub(crate) struct SlotState {
     effect_id: &'static str,
     /// Atomic f32 values, one per ParameterInfo parameter.
     values: Vec<AtomicU32>,
@@ -29,27 +33,38 @@ struct SlotState {
     dirty: AtomicBool,
 }
 
+/// Immutable snapshot shared between GUI and audio threads via [`ArcSwap`].
+///
+/// Slots are `Arc`-wrapped so state survives across snapshot swaps without
+/// cloning atomic values. The `order` vector tracks processing order.
+pub(crate) struct SharedAudioState {
+    slots: Vec<Arc<SlotState>>,
+    order: Vec<usize>,
+}
+
 /// Thread-safe parameter bridge for the standalone dashboard.
 ///
 /// Each slot corresponds to one effect in the processing chain, with
 /// parameters indexed to match [`ParameterInfo`](sonido_core::ParameterInfo).
 /// Values are stored in ParameterInfo units (dB, Hz, ms, 0–100 for percent).
 ///
-/// Slots are protected by an `RwLock`: reads (parameter get/set, sync) take
-/// a shared lock, while structural mutations (add/remove slot) take an
-/// exclusive lock. Since add/remove only happens on user interaction, the
-/// write lock is rarely contended.
+/// Hot-path reads (`get`, `set`, `sync_to_chain`) go through
+/// [`ArcSwap::load`] — wait-free, no locks. Structural mutations
+/// (`add_slot`, `remove_slot`, `move_effect`) use RCU — readers never block.
 pub struct AtomicParamBridge {
-    slots: RwLock<Vec<SlotState>>,
+    state: ArcSwap<SharedAudioState>,
+    /// Set by GUI (reorder / param change), checked by audio thread.
+    order_dirty: AtomicBool,
 }
 
 impl AtomicParamBridge {
     /// Build a bridge from the registry, creating one slot per effect ID.
     ///
     /// Parameters are initialized to their `ParamDescriptor::default` values.
-    /// All effects start active (not bypassed).
+    /// All effects start active (not bypassed). The initial processing order
+    /// matches insertion order (`0..n`).
     pub fn new(registry: &EffectRegistry, effect_ids: &[&'static str], sample_rate: f32) -> Self {
-        let slots = effect_ids
+        let slots: Vec<Arc<SlotState>> = effect_ids
             .iter()
             .map(|&id| {
                 let (values, descriptors) = if let Some(effect) = registry.create(id, sample_rate) {
@@ -67,29 +82,30 @@ impl AtomicParamBridge {
                     (Vec::new(), Vec::new())
                 };
 
-                SlotState {
+                Arc::new(SlotState {
                     effect_id: id,
                     values,
                     descriptors,
                     bypassed: AtomicBool::new(false),
                     dirty: AtomicBool::new(true),
-                }
+                })
             })
             .collect();
 
+        let order: Vec<usize> = (0..slots.len()).collect();
+
         Self {
-            slots: RwLock::new(slots),
+            state: ArcSwap::from_pointee(SharedAudioState { slots, order }),
+            order_dirty: AtomicBool::new(true),
         }
     }
 
     /// Set the default bypass state for a slot.
     ///
     /// Called after construction to configure which effects start bypassed.
-    /// Uses a read lock because `AtomicBool::store` does not require exclusive
-    /// access to the `Vec`.
     pub fn set_default_bypass(&self, slot: SlotIndex, bypassed: bool) {
-        let slots = self.slots.read();
-        if let Some(s) = slots.get(slot.0) {
+        let snap = self.state.load();
+        if let Some(s) = snap.slots.get(slot.0) {
             s.bypassed.store(bypassed, Ordering::Relaxed);
         }
     }
@@ -99,8 +115,8 @@ impl AtomicParamBridge {
     /// Called once per audio buffer. Reads atomic values and pushes them
     /// into each effect via `set_param()`. Also syncs bypass states.
     pub fn sync_to_chain(&self, chain: &mut crate::chain_manager::ChainManager) {
-        let slots = self.slots.read();
-        for (slot_raw, slot_state) in slots.iter().enumerate() {
+        let snap = self.state.load();
+        for (slot_raw, slot_state) in snap.slots.iter().enumerate() {
             // Bypass sync is unconditional — cheap and doesn't go through set()
             chain.set_bypassed(slot_raw, slot_state.bypassed.load(Ordering::Relaxed));
 
@@ -120,65 +136,135 @@ impl AtomicParamBridge {
     /// Appends a new slot, returning its index.
     ///
     /// Called on the audio thread when processing a `ChainCommand::Add`.
-    /// Acquires an exclusive write lock. Parameter values are initialized
-    /// to each descriptor's default.
+    /// Uses RCU — existing readers see the old snapshot until they reload.
+    /// Parameter values are initialized to each descriptor's default.
     pub fn add_slot(&self, id: &'static str, descriptors: Vec<ParamDescriptor>) -> SlotIndex {
-        let mut slots = self.slots.write();
         let values = descriptors
             .iter()
             .map(|d| AtomicU32::new(d.default.to_bits()))
             .collect();
-        slots.push(SlotState {
+        let new_slot = Arc::new(SlotState {
             effect_id: id,
             values,
             descriptors,
             bypassed: AtomicBool::new(false),
             dirty: AtomicBool::new(true),
         });
-        SlotIndex(slots.len() - 1)
+
+        self.state.rcu(|old| {
+            let mut slots = old.slots.clone();
+            slots.push(Arc::clone(&new_slot));
+            let mut order = old.order.clone();
+            order.push(slots.len() - 1);
+            Arc::new(SharedAudioState { slots, order })
+        });
+        let idx = self.state.load().slots.len() - 1;
+        self.order_dirty.store(true, Ordering::Release);
+        SlotIndex(idx)
     }
 
     /// Removes a slot via swap-remove.
     ///
     /// Called on the audio thread when processing a `ChainCommand::Remove`.
-    /// Acquires an exclusive write lock.
+    /// Uses RCU. The order vector is updated to remove the slot and remap
+    /// the swapped-in last index.
     pub(crate) fn remove_slot(&self, slot: SlotIndex) {
-        let mut slots = self.slots.write();
-        if slot.0 < slots.len() {
+        self.state.rcu(|old| {
+            if slot.0 >= old.slots.len() {
+                return Arc::clone(old);
+            }
+            let old_last = old.slots.len() - 1;
+            let mut slots = old.slots.clone();
             slots.swap_remove(slot.0);
-        }
+
+            // Remove `slot` from order and remap last→slot
+            let mut order: Vec<usize> =
+                old.order.iter().copied().filter(|&i| i != slot.0).collect();
+            if slot.0 != old_last {
+                for idx in &mut order {
+                    if *idx == old_last {
+                        *idx = slot.0;
+                    }
+                }
+            }
+            Arc::new(SharedAudioState { slots, order })
+        });
+        self.order_dirty.store(true, Ordering::Release);
+    }
+
+    // ── Order operations (moved from EffectOrder) ──────────────────────────
+
+    /// Returns a clone of the current processing order.
+    pub fn get_order(&self) -> Vec<usize> {
+        self.state.load().order.clone()
+    }
+
+    /// Move an effect from one position to another in the processing order.
+    ///
+    /// Uses RCU so audio-thread readers are never blocked.
+    pub fn move_effect(&self, from: usize, to: usize) {
+        self.state.rcu(|old| {
+            if from >= old.order.len() || to >= old.order.len() || from == to {
+                return Arc::clone(old);
+            }
+            let mut order = old.order.clone();
+            let effect = order.remove(from);
+            order.insert(to, effect);
+            Arc::new(SharedAudioState {
+                slots: old.slots.clone(),
+                order,
+            })
+        });
+        self.order_dirty.store(true, Ordering::Release);
+    }
+
+    /// Returns `true` if the order has been mutated since the last
+    /// [`clear_order_dirty`](Self::clear_order_dirty).
+    pub fn order_is_dirty(&self) -> bool {
+        self.order_dirty.load(Ordering::Acquire)
+    }
+
+    /// Clear the order dirty flag (audio thread calls this after caching).
+    pub fn clear_order_dirty(&self) {
+        self.order_dirty.store(false, Ordering::Release);
     }
 }
 
 impl ParamBridge for AtomicParamBridge {
     fn slot_count(&self) -> usize {
-        self.slots.read().len()
+        self.state.load().slots.len()
     }
 
     fn effect_id(&self, slot: SlotIndex) -> &str {
-        // We can't return a reference into the RwLock guard, but effect_id
-        // is &'static str so copying is fine.
-        self.slots.read().get(slot.0).map_or("", |s| s.effect_id)
+        // effect_id is &'static str so the reference outlives the snapshot.
+        self.state
+            .load()
+            .slots
+            .get(slot.0)
+            .map_or("", |s| s.effect_id)
     }
 
     fn param_count(&self, slot: SlotIndex) -> usize {
-        self.slots
-            .read()
+        self.state
+            .load()
+            .slots
             .get(slot.0)
             .map_or(0, |s| s.descriptors.len())
     }
 
     fn param_descriptor(&self, slot: SlotIndex, param: ParamIndex) -> Option<ParamDescriptor> {
-        self.slots
-            .read()
+        self.state
+            .load()
+            .slots
             .get(slot.0)
             .and_then(|s| s.descriptors.get(param.0))
             .cloned()
     }
 
     fn get(&self, slot: SlotIndex, param: ParamIndex) -> f32 {
-        self.slots
-            .read()
+        self.state
+            .load()
+            .slots
             .get(slot.0)
             .and_then(|s| s.values.get(param.0))
             .map(|v| f32::from_bits(v.load(Ordering::Acquire)))
@@ -186,8 +272,8 @@ impl ParamBridge for AtomicParamBridge {
     }
 
     fn set(&self, slot: SlotIndex, param: ParamIndex, value: f32) {
-        let slots = self.slots.read();
-        if let Some(s) = slots.get(slot.0)
+        let snap = self.state.load();
+        if let Some(s) = snap.slots.get(slot.0)
             && let Some((atomic, desc)) = s.values.get(param.0).zip(s.descriptors.get(param.0))
         {
             let clamped = value.clamp(desc.min, desc.max);
@@ -197,15 +283,16 @@ impl ParamBridge for AtomicParamBridge {
     }
 
     fn is_bypassed(&self, slot: SlotIndex) -> bool {
-        self.slots
-            .read()
+        self.state
+            .load()
+            .slots
             .get(slot.0)
             .is_some_and(|s| s.bypassed.load(Ordering::Acquire))
     }
 
     fn set_bypassed(&self, slot: SlotIndex, bypassed: bool) {
-        let slots = self.slots.read();
-        if let Some(s) = slots.get(slot.0) {
+        let snap = self.state.load();
+        if let Some(s) = snap.slots.get(slot.0) {
             s.bypassed.store(bypassed, Ordering::Release);
         }
     }
@@ -307,5 +394,66 @@ mod tests {
         assert_eq!(bridge.slot_count(), 2);
         assert_eq!(bridge.effect_id(SlotIndex(0)), "reverb");
         assert_eq!(bridge.effect_id(SlotIndex(1)), "compressor");
+    }
+
+    #[test]
+    fn initial_order_is_sequential() {
+        let registry = EffectRegistry::new();
+        let bridge =
+            AtomicParamBridge::new(&registry, &["distortion", "reverb", "chorus"], 48000.0);
+        assert_eq!(bridge.get_order(), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn move_effect_reorders() {
+        let registry = EffectRegistry::new();
+        let bridge =
+            AtomicParamBridge::new(&registry, &["distortion", "reverb", "chorus"], 48000.0);
+
+        bridge.move_effect(0, 2);
+        assert_eq!(bridge.get_order(), vec![1, 2, 0]);
+    }
+
+    #[test]
+    fn order_dirty_tracks_mutations() {
+        let registry = EffectRegistry::new();
+        let bridge = AtomicParamBridge::new(&registry, &["distortion", "reverb"], 48000.0);
+
+        // Starts dirty
+        assert!(bridge.order_is_dirty());
+        bridge.clear_order_dirty();
+        assert!(!bridge.order_is_dirty());
+
+        bridge.move_effect(0, 1);
+        assert!(bridge.order_is_dirty());
+    }
+
+    #[test]
+    fn add_slot_updates_order() {
+        let registry = EffectRegistry::new();
+        let bridge = AtomicParamBridge::new(&registry, &["distortion"], 48000.0);
+        assert_eq!(bridge.get_order(), vec![0]);
+
+        let effect = registry.create("reverb", 48000.0).unwrap();
+        let count = effect.effect_param_count();
+        let descs: Vec<_> = (0..count)
+            .filter_map(|i| effect.effect_param_info(i))
+            .collect();
+
+        bridge.add_slot("reverb", descs);
+        assert_eq!(bridge.get_order(), vec![0, 1]);
+    }
+
+    #[test]
+    fn remove_slot_updates_order() {
+        let registry = EffectRegistry::new();
+        let bridge =
+            AtomicParamBridge::new(&registry, &["distortion", "compressor", "reverb"], 48000.0);
+        assert_eq!(bridge.get_order(), vec![0, 1, 2]);
+
+        // Remove slot 0 → slot 2 swaps to 0, order remaps 2→0
+        bridge.remove_slot(SlotIndex(0));
+        // Original order [0, 1, 2] → remove 0 → [1, 2] → remap 2→0 → [1, 0]
+        assert_eq!(bridge.get_order(), vec![1, 0]);
     }
 }
