@@ -2,8 +2,8 @@
 
 use libm::ceilf;
 use sonido_core::{
-    Effect, InterpolatedDelay, ParamDescriptor, ParamFlags, ParamId, ParameterInfo, SmoothedParam,
-    flush_denormal, wet_dry_mix, wet_dry_mix_stereo,
+    Effect, InterpolatedDelay, ParamDescriptor, ParamFlags, ParamId, SmoothedParam, flush_denormal,
+    wet_dry_mix, wet_dry_mix_stereo,
 };
 
 /// Classic delay effect with feedback and optional ping-pong stereo mode.
@@ -229,19 +229,14 @@ impl Effect for Delay {
     }
 }
 
-impl ParameterInfo for Delay {
-    fn param_count(&self) -> usize {
-        5
-    }
+sonido_core::impl_params! {
+    Delay, this {
+        [0] ParamDescriptor::time_ms("Delay Time", "Time", 1.0, 2000.0, 300.0)
+                .with_id(ParamId(1100), "dly_time"),
+            get: this.delay_time.target() / this.sample_rate * 1000.0,
+            set: |v| this.set_delay_time_ms(v);
 
-    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
-        match index {
-            0 => Some(
-                ParamDescriptor::time_ms("Delay Time", "Time", 1.0, 2000.0, 300.0)
-                    .with_id(ParamId(1100), "dly_time"),
-            ),
-            1 => Some(
-                ParamDescriptor {
+        [1] ParamDescriptor {
                     name: "Feedback",
                     short_name: "Feedback",
                     unit: sonido_core::ParamUnit::Percent,
@@ -252,10 +247,15 @@ impl ParameterInfo for Delay {
                     ..ParamDescriptor::mix()
                 }
                 .with_id(ParamId(1101), "dly_feedback"),
-            ),
-            2 => Some(ParamDescriptor::mix().with_id(ParamId(1102), "dly_mix")),
-            3 => Some(
-                ParamDescriptor {
+            get: this.feedback.target() * 100.0,
+            set: |v| this.set_feedback(v / 100.0);
+
+        [2] ParamDescriptor::mix()
+                .with_id(ParamId(1102), "dly_mix"),
+            get: this.mix.target() * 100.0,
+            set: |v| this.set_mix(v / 100.0);
+
+        [3] ParamDescriptor {
                     name: "Ping Pong",
                     short_name: "PngPng",
                     unit: sonido_core::ParamUnit::None,
@@ -267,46 +267,20 @@ impl ParameterInfo for Delay {
                 }
                 .with_id(ParamId(1103), "dly_ping_pong")
                 .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED)),
-            ),
-            4 => Some(
-                sonido_core::gain::output_param_descriptor().with_id(ParamId(1104), "dly_output"),
-            ),
-            _ => None,
-        }
-    }
+            get: if this.ping_pong { 1.0 } else { 0.0 },
+            set: |v| this.set_ping_pong(v > 0.5);
 
-    fn get_param(&self, index: usize) -> f32 {
-        match index {
-            0 => self.delay_time.target() / self.sample_rate * 1000.0,
-            1 => self.feedback.target() * 100.0,
-            2 => self.mix.target() * 100.0,
-            3 => {
-                if self.ping_pong {
-                    1.0
-                } else {
-                    0.0
-                }
-            }
-            4 => sonido_core::gain::output_level_db(&self.output_level),
-            _ => 0.0,
-        }
-    }
-
-    fn set_param(&mut self, index: usize, value: f32) {
-        match index {
-            0 => self.set_delay_time_ms(value),
-            1 => self.set_feedback(value / 100.0),
-            2 => self.set_mix(value / 100.0),
-            3 => self.set_ping_pong(value > 0.5),
-            4 => sonido_core::gain::set_output_level_db(&mut self.output_level, value),
-            _ => {}
-        }
+        [4] sonido_core::gain::output_param_descriptor()
+                .with_id(ParamId(1104), "dly_output"),
+            get: sonido_core::gain::output_level_db(&this.output_level),
+            set: |v| sonido_core::gain::set_output_level_db(&mut this.output_level, v);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sonido_core::ParameterInfo;
 
     #[test]
     fn test_delay_basic() {

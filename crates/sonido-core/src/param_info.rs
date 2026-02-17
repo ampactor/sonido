@@ -60,6 +60,114 @@
 //!
 //! This module is fully `no_std` compatible with no heap allocations required.
 
+/// Generates a [`ParameterInfo`] implementation from a declarative parameter table.
+///
+/// Eliminates boilerplate match arms for `param_count`, `param_info`, `get_param`,
+/// and `set_param`. Auto-clamps setter values to descriptor bounds.
+///
+/// # Syntax
+///
+/// ```ignore
+/// impl_params! {
+///     EffectType, this {
+///         [0] ParamDescriptor::gain_db("Drive", "Drive", 0.0, 40.0, 12.0)
+///                 .with_id(ParamId(200), "dist_drive"),
+///             get: this.drive_db(),
+///             set: |v| this.set_drive_db(v);
+///     }
+/// }
+/// ```
+///
+/// - `this` — binding name for `self` (required due to Rust 2024 macro hygiene)
+/// - `[index]` — stable parameter index (0-based, explicit, not auto-numbered)
+/// - `descriptor_expr` — expression returning [`ParamDescriptor`]
+/// - `getter_expr` — expression evaluating to `f32` (use the binding name, not `self`)
+/// - `|val| setter_expr` — `val` receives the clamped value; use the binding name
+///
+/// # Auto-Clamping
+///
+/// `set_param` automatically clamps the incoming value to the descriptor's
+/// `[min, max]` range before passing it to the setter expression. This
+/// eliminates manual `.clamp(min, max)` calls and ensures bounds stay in
+/// sync with the descriptor.
+///
+/// # Example
+///
+/// ```rust
+/// use sonido_core::{impl_params, ParamDescriptor, ParamId, ParameterInfo};
+///
+/// struct MyEffect {
+///     gain_db: f32,
+///     mix: f32,
+/// }
+///
+/// impl_params! {
+///     MyEffect, this {
+///         [0] ParamDescriptor::gain_db("Gain", "Gain", -60.0, 12.0, 0.0)
+///                 .with_id(ParamId(100), "my_gain"),
+///             get: this.gain_db,
+///             set: |v| this.gain_db = v;
+///
+///         [1] ParamDescriptor::mix()
+///                 .with_id(ParamId(101), "my_mix"),
+///             get: this.mix,
+///             set: |v| this.mix = v;
+///     }
+/// }
+///
+/// let mut fx = MyEffect { gain_db: 0.0, mix: 50.0 };
+/// assert_eq!(fx.param_count(), 2);
+/// fx.set_param(0, 100.0); // auto-clamped to 12.0
+/// assert_eq!(fx.get_param(0), 12.0);
+/// ```
+#[macro_export]
+macro_rules! impl_params {
+    (
+        $effect:ty, $this:ident {
+            $(
+                [$idx:literal] $desc:expr,
+                    get: $getter:expr,
+                    set: |$val:ident| $setter:expr ;
+            )*
+        }
+    ) => {
+        impl $crate::ParameterInfo for $effect {
+            #[inline]
+            fn param_count(&self) -> usize {
+                0usize $( + { let _ = $idx; 1usize } )*
+            }
+
+            fn param_info(&self, index: usize) -> ::core::option::Option<$crate::ParamDescriptor> {
+                match index {
+                    $( $idx => ::core::option::Option::Some($desc), )*
+                    _ => ::core::option::Option::None,
+                }
+            }
+
+            fn get_param(&self, index: usize) -> f32 {
+                let $this = self;
+                match index {
+                    $( $idx => $getter, )*
+                    _ => 0.0,
+                }
+            }
+
+            fn set_param(&mut self, index: usize, value: f32) {
+                let $this = self;
+                match index {
+                    $(
+                        $idx => {
+                            let $val = { let _desc = $desc; _desc.clamp(value) };
+                            $setter;
+                        }
+                    )*
+                    _ => {}
+                }
+            }
+        }
+    };
+}
+
 #[cfg(not(feature = "std"))]
 use alloc::{format, string::String};
 
@@ -624,6 +732,39 @@ impl ParamDescriptor {
         }
     }
 
+    /// Generic parameter constructor with neutral defaults.
+    ///
+    /// Use this for parameters that don't fit the common patterns
+    /// (`mix()`, `depth()`, `gain_db()`, etc.). Provides sensible
+    /// defaults for all metadata fields (unit: None, step: 0.01,
+    /// scale: Linear, flags: AUTOMATABLE).
+    ///
+    /// Chain `.with_unit()`, `.with_scale()`, `.with_id()`, etc. to customize.
+    pub const fn custom(
+        name: &'static str,
+        short_name: &'static str,
+        min: f32,
+        max: f32,
+        default: f32,
+    ) -> Self {
+        Self {
+            name,
+            short_name,
+            unit: ParamUnit::None,
+            min,
+            max,
+            default,
+            step: 0.01,
+            id: ParamId(0),
+            string_id: "",
+            scale: ParamScale::Linear,
+            flags: ParamFlags::AUTOMATABLE,
+            group: "",
+            modulation_id: None,
+            step_labels: None,
+        }
+    }
+
     /// Sets the stable parameter ID and string ID.
     ///
     /// Builder pattern — call after a factory method or struct literal.
@@ -640,6 +781,22 @@ impl ParamDescriptor {
     pub const fn with_id(mut self, id: ParamId, string_id: &'static str) -> Self {
         self.id = id;
         self.string_id = string_id;
+        self
+    }
+
+    /// Sets the parameter unit type.
+    ///
+    /// Builder pattern — call after a factory method or struct literal.
+    pub const fn with_unit(mut self, unit: ParamUnit) -> Self {
+        self.unit = unit;
+        self
+    }
+
+    /// Sets the step increment for encoder-based control.
+    ///
+    /// Builder pattern — call after a factory method or struct literal.
+    pub const fn with_step(mut self, step: f32) -> Self {
+        self.step = step;
         self
     }
 
@@ -1451,6 +1608,40 @@ mod tests {
     }
 
     #[test]
+    fn test_custom_factory() {
+        let desc = ParamDescriptor::custom("Test Param", "Test", 0.0, 10.0, 5.0);
+        assert_eq!(desc.name, "Test Param");
+        assert_eq!(desc.short_name, "Test");
+        assert_eq!(desc.unit, ParamUnit::None);
+        assert_eq!(desc.min, 0.0);
+        assert_eq!(desc.max, 10.0);
+        assert_eq!(desc.default, 5.0);
+        assert_eq!(desc.step, 0.01);
+        assert_eq!(desc.id, ParamId(0));
+        assert_eq!(desc.string_id, "");
+        assert_eq!(desc.scale, ParamScale::Linear);
+        assert_eq!(desc.flags, ParamFlags::AUTOMATABLE);
+        assert_eq!(desc.group, "");
+        assert_eq!(desc.modulation_id, None);
+        assert_eq!(desc.step_labels, None);
+    }
+
+    #[test]
+    fn test_with_unit_builder() {
+        let desc = ParamDescriptor::custom("Freq", "Freq", 20.0, 20000.0, 1000.0)
+            .with_unit(ParamUnit::Hertz);
+        assert_eq!(desc.unit, ParamUnit::Hertz);
+        assert_eq!(desc.name, "Freq"); // unchanged
+    }
+
+    #[test]
+    fn test_with_step_builder() {
+        let desc = ParamDescriptor::custom("Ratio", "Ratio", 1.0, 20.0, 4.0).with_step(0.1);
+        assert_eq!(desc.step, 0.1);
+        assert_eq!(desc.name, "Ratio"); // unchanged
+    }
+
+    #[test]
     fn test_parse_value_invalid() {
         let desc = ParamDescriptor::mix();
         assert_eq!(desc.parse_value("not a number"), None);
@@ -1465,5 +1656,59 @@ mod tests {
         let desc = ParamDescriptor::mix();
         let text = desc.format_value(75.0);
         assert_eq!(desc.parse_value(&text), Some(75.0));
+    }
+
+    // Test struct for impl_params! macro
+    struct MacroTestEffect {
+        gain: f32,
+        mix: f32,
+    }
+
+    impl MacroTestEffect {
+        fn new() -> Self {
+            Self {
+                gain: 0.0,
+                mix: 50.0,
+            }
+        }
+    }
+
+    impl_params! {
+        MacroTestEffect, this {
+            [0] ParamDescriptor::gain_db("Gain", "Gain", -60.0, 12.0, 0.0)
+                    .with_id(ParamId(100), "test_gain"),
+                get: this.gain,
+                set: |v| this.gain = v;
+
+            [1] ParamDescriptor::mix()
+                    .with_id(ParamId(101), "test_mix"),
+                get: this.mix,
+                set: |v| this.mix = v;
+        }
+    }
+
+    #[test]
+    fn test_impl_params_macro() {
+        let mut fx = MacroTestEffect::new();
+        assert_eq!(fx.param_count(), 2);
+        assert_eq!(fx.get_param(0), 0.0);
+        assert_eq!(fx.get_param(1), 50.0);
+
+        // Auto-clamping
+        fx.set_param(0, 100.0);
+        assert_eq!(fx.get_param(0), 12.0);
+
+        fx.set_param(0, -100.0);
+        assert_eq!(fx.get_param(0), -60.0);
+
+        // Out of bounds
+        assert_eq!(fx.get_param(99), 0.0);
+        fx.set_param(99, 42.0); // no panic
+
+        // param_info
+        let info = fx.param_info(0).unwrap();
+        assert_eq!(info.name, "Gain");
+        assert_eq!(info.id, ParamId(100));
+        assert!(fx.param_info(99).is_none());
     }
 }

@@ -3,8 +3,8 @@
 //! Classic amplitude modulation effect that creates rhythmic volume variations.
 
 use sonido_core::{
-    Effect, Lfo, LfoWaveform, ParamDescriptor, ParamFlags, ParamId, ParamUnit, ParameterInfo,
-    SmoothedParam,
+    Effect, Lfo, LfoWaveform, ParamDescriptor, ParamFlags, ParamId, ParamUnit, SmoothedParam,
+    impl_params,
 };
 
 /// Tremolo waveform type.
@@ -190,60 +190,44 @@ impl Effect for Tremolo {
     }
 }
 
-impl ParameterInfo for Tremolo {
-    fn param_count(&self) -> usize {
-        4
-    }
+impl_params! {
+    Tremolo, this {
+        [0] ParamDescriptor::rate_hz(0.5, 20.0, 5.0)
+                .with_id(ParamId(1000), "trem_rate"),
+            get: this.rate.target(),
+            set: |v| this.set_rate(v);
 
-    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
-        match index {
-            0 => Some(ParamDescriptor::rate_hz(0.5, 20.0, 5.0).with_id(ParamId(1000), "trem_rate")),
-            1 => Some(ParamDescriptor::depth().with_id(ParamId(1001), "trem_depth")),
-            2 => Some(
-                ParamDescriptor {
-                    name: "Waveform",
-                    short_name: "Wave",
-                    unit: ParamUnit::None,
-                    min: 0.0,
-                    max: 3.0,
-                    default: 0.0,
-                    step: 1.0,
-                    ..ParamDescriptor::mix()
-                }
-                .with_id(ParamId(1002), "trem_waveform")
-                .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED)),
-            ),
-            3 => Some(
-                sonido_core::gain::output_param_descriptor().with_id(ParamId(1003), "trem_output"),
-            ),
-            _ => None,
-        }
-    }
+        [1] ParamDescriptor::depth()
+                .with_id(ParamId(1001), "trem_depth"),
+            get: this.depth.target() * 100.0,
+            set: |v| this.set_depth(v / 100.0);
 
-    fn get_param(&self, index: usize) -> f32 {
-        match index {
-            0 => self.rate.target(),
-            1 => self.depth.target() * 100.0,
-            2 => self.waveform.to_index() as f32,
-            3 => sonido_core::gain::output_level_db(&self.output_level),
-            _ => 0.0,
-        }
-    }
+        [2] ParamDescriptor {
+                name: "Waveform",
+                short_name: "Wave",
+                unit: ParamUnit::None,
+                min: 0.0,
+                max: 3.0,
+                default: 0.0,
+                step: 1.0,
+                ..ParamDescriptor::mix()
+            }
+            .with_id(ParamId(1002), "trem_waveform")
+            .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED)),
+            get: this.waveform.to_index() as f32,
+            set: |v| this.set_waveform(TremoloWaveform::from_index(v as usize));
 
-    fn set_param(&mut self, index: usize, value: f32) {
-        match index {
-            0 => self.set_rate(value),
-            1 => self.set_depth(value / 100.0),
-            2 => self.set_waveform(TremoloWaveform::from_index(value as usize)),
-            3 => sonido_core::gain::set_output_level_db(&mut self.output_level, value),
-            _ => {}
-        }
+        [3] sonido_core::gain::output_param_descriptor()
+                .with_id(ParamId(1003), "trem_output"),
+            get: sonido_core::gain::output_level_db(&this.output_level),
+            set: |v| sonido_core::gain::set_output_level_db(&mut this.output_level, v);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sonido_core::ParameterInfo;
 
     #[test]
     fn test_tremolo_basic() {

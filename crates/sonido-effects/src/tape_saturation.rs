@@ -4,8 +4,8 @@
 //! even harmonic enhancement, and high frequency rolloff.
 
 use sonido_core::{
-    Effect, OnePole, ParamDescriptor, ParamId, ParamScale, ParamUnit, ParameterInfo, SmoothedParam,
-    db_to_linear, fast_exp2, linear_to_db,
+    Effect, OnePole, ParamDescriptor, ParamId, ParamScale, ParamUnit, SmoothedParam, db_to_linear,
+    fast_exp2, linear_to_db,
 };
 
 /// Tape saturation effect
@@ -189,103 +189,78 @@ impl Effect for TapeSaturation {
     }
 }
 
-impl ParameterInfo for TapeSaturation {
-    fn param_count(&self) -> usize {
-        5
-    }
+sonido_core::impl_params! {
+    TapeSaturation, this {
+        [0] ParamDescriptor {
+                name: "Drive",
+                short_name: "Drive",
+                unit: ParamUnit::Decibels,
+                min: 0.0,
+                max: 24.0,
+                default: 6.0,
+                step: 0.5,
+                ..ParamDescriptor::mix()
+            }
+            .with_id(ParamId(1400), "tape_drive"),
+            get: linear_to_db(this.drive.target()),
+            set: |v| this.set_drive(db_to_linear(v));
 
-    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
-        match index {
-            0 => Some(
-                ParamDescriptor {
-                    name: "Drive",
-                    short_name: "Drive",
-                    unit: ParamUnit::Decibels,
-                    min: 0.0,
-                    max: 24.0,
-                    default: 6.0,
-                    step: 0.5,
-                    ..ParamDescriptor::mix()
-                }
-                .with_id(ParamId(1400), "tape_drive"),
-            ),
-            1 => Some(
-                ParamDescriptor {
-                    name: "Saturation",
-                    short_name: "Sat",
-                    unit: ParamUnit::Percent,
-                    min: 0.0,
-                    max: 100.0,
-                    default: 50.0,
-                    step: 1.0,
-                    ..ParamDescriptor::mix()
-                }
-                .with_id(ParamId(1401), "tape_saturation"),
-            ),
-            2 => Some(
-                ParamDescriptor {
-                    name: "Output",
-                    short_name: "Output",
-                    unit: ParamUnit::Decibels,
-                    min: -12.0,
-                    max: 12.0,
-                    default: -6.0,
-                    step: 0.5,
-                    ..ParamDescriptor::mix()
-                }
-                .with_id(ParamId(1402), "tape_output"),
-            ),
-            3 => Some(
-                ParamDescriptor {
-                    name: "HF Rolloff",
-                    short_name: "HFRoll",
-                    unit: ParamUnit::Hertz,
-                    min: 1000.0,
-                    max: 20000.0,
-                    default: 12000.0,
-                    step: 100.0,
-                    ..ParamDescriptor::mix()
-                }
-                .with_id(ParamId(1403), "tape_hf_rolloff")
-                .with_scale(ParamScale::Logarithmic),
-            ),
-            4 => Some(
-                ParamDescriptor {
-                    name: "Bias",
-                    short_name: "Bias",
-                    unit: ParamUnit::None,
-                    min: -0.2,
-                    max: 0.2,
-                    default: 0.0,
-                    step: 0.01,
-                    ..ParamDescriptor::mix()
-                }
-                .with_id(ParamId(1404), "tape_bias"),
-            ),
-            _ => None,
-        }
-    }
+        [1] ParamDescriptor {
+                name: "Saturation",
+                short_name: "Sat",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+                step: 1.0,
+                ..ParamDescriptor::mix()
+            }
+            .with_id(ParamId(1401), "tape_saturation"),
+            get: this.saturation.target() * 100.0,
+            set: |v| this.set_saturation(v / 100.0);
 
-    fn get_param(&self, index: usize) -> f32 {
-        match index {
-            0 => linear_to_db(self.drive.target()),
-            1 => self.saturation.target() * 100.0,
-            2 => linear_to_db(self.output_gain.target()),
-            3 => self.hf_freq,
-            4 => self.bias,
-            _ => 0.0,
-        }
-    }
+        [2] ParamDescriptor {
+                name: "Output",
+                short_name: "Output",
+                unit: ParamUnit::Decibels,
+                min: -12.0,
+                max: 12.0,
+                default: -6.0,
+                step: 0.5,
+                ..ParamDescriptor::mix()
+            }
+            .with_id(ParamId(1402), "tape_output"),
+            get: linear_to_db(this.output_gain.target()),
+            set: |v| this.set_output(db_to_linear(v));
 
-    fn set_param(&mut self, index: usize, value: f32) {
-        match index {
-            0 => self.set_drive(db_to_linear(value.clamp(0.0, 24.0))),
-            1 => self.set_saturation(value / 100.0),
-            2 => self.set_output(db_to_linear(value.clamp(-12.0, 12.0))),
-            3 => self.set_hf_rolloff(value.clamp(1000.0, 20000.0)),
-            4 => self.set_bias(value),
-            _ => {}
-        }
+        [3] ParamDescriptor {
+                name: "HF Rolloff",
+                short_name: "HFRoll",
+                unit: ParamUnit::Hertz,
+                min: 1000.0,
+                max: 20000.0,
+                default: 12000.0,
+                step: 100.0,
+                ..ParamDescriptor::mix()
+            }
+            .with_id(ParamId(1403), "tape_hf_rolloff")
+            .with_scale(ParamScale::Logarithmic),
+            get: this.hf_freq,
+            set: |v| this.set_hf_rolloff(v);
+
+        [4] ParamDescriptor {
+                name: "Bias",
+                short_name: "Bias",
+                unit: ParamUnit::None,
+                min: -0.2,
+                max: 0.2,
+                default: 0.0,
+                step: 0.01,
+                ..ParamDescriptor::mix()
+            }
+            .with_id(ParamId(1404), "tape_bias"),
+            get: this.bias,
+            set: |v| this.set_bias(v);
     }
 }
 

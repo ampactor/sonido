@@ -1,8 +1,8 @@
 //! Biquad-based filter effects.
 
 use sonido_core::{
-    Biquad, Effect, ParamDescriptor, ParamId, ParamScale, ParamUnit, ParameterInfo, SmoothedParam,
-    gain, lowpass_coefficients,
+    Biquad, Effect, ParamDescriptor, ParamId, ParamScale, ParamUnit, SmoothedParam, gain,
+    lowpass_coefficients,
 };
 
 /// Low-pass filter effect with smoothed parameter control.
@@ -130,61 +130,41 @@ impl Effect for LowPassFilter {
     }
 }
 
-impl ParameterInfo for LowPassFilter {
-    fn param_count(&self) -> usize {
-        3
-    }
+sonido_core::impl_params! {
+    LowPassFilter, this {
+        [0] ParamDescriptor {
+                name: "Cutoff",
+                short_name: "Cutoff",
+                unit: ParamUnit::Hertz,
+                min: 20.0,
+                max: 20000.0,
+                default: 1000.0,
+                step: 1.0,
+                ..ParamDescriptor::mix()
+            }
+            .with_id(ParamId(1200), "flt_cutoff")
+            .with_scale(ParamScale::Logarithmic),
+            get: this.cutoff.target(),
+            set: |v| this.set_cutoff_hz(v);
 
-    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
-        match index {
-            0 => Some(
-                ParamDescriptor {
-                    name: "Cutoff",
-                    short_name: "Cutoff",
-                    unit: ParamUnit::Hertz,
-                    min: 20.0,
-                    max: 20000.0,
-                    default: 1000.0,
-                    step: 1.0,
-                    ..ParamDescriptor::mix()
-                }
-                .with_id(ParamId(1200), "flt_cutoff")
-                .with_scale(ParamScale::Logarithmic),
-            ),
-            1 => Some(
-                ParamDescriptor {
-                    name: "Resonance",
-                    short_name: "Reso",
-                    unit: ParamUnit::Ratio,
-                    min: 0.1,
-                    max: 20.0,
-                    default: 0.707,
-                    step: 0.01,
-                    ..ParamDescriptor::mix()
-                }
-                .with_id(ParamId(1201), "flt_resonance"),
-            ),
-            2 => Some(gain::output_param_descriptor().with_id(ParamId(1202), "flt_output")),
-            _ => None,
-        }
-    }
+        [1] ParamDescriptor {
+                name: "Resonance",
+                short_name: "Reso",
+                unit: ParamUnit::Ratio,
+                min: 0.1,
+                max: 20.0,
+                default: 0.707,
+                step: 0.01,
+                ..ParamDescriptor::mix()
+            }
+            .with_id(ParamId(1201), "flt_resonance"),
+            get: this.q.target(),
+            set: |v| this.set_q(v);
 
-    fn get_param(&self, index: usize) -> f32 {
-        match index {
-            0 => self.cutoff.target(),
-            1 => self.q.target(),
-            2 => gain::output_level_db(&self.output_level),
-            _ => 0.0,
-        }
-    }
-
-    fn set_param(&mut self, index: usize, value: f32) {
-        match index {
-            0 => self.set_cutoff_hz(value),
-            1 => self.set_q(value),
-            2 => gain::set_output_level_db(&mut self.output_level, value),
-            _ => {}
-        }
+        [2] sonido_core::gain::output_param_descriptor()
+                .with_id(ParamId(1202), "flt_output"),
+            get: sonido_core::gain::output_level_db(&this.output_level),
+            set: |v| sonido_core::gain::set_output_level_db(&mut this.output_level, v);
     }
 }
 

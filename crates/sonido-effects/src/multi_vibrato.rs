@@ -4,8 +4,8 @@
 //! to simulate authentic tape wow and flutter.
 
 use sonido_core::{
-    Effect, FixedDelayLine, Lfo, LfoWaveform, ParamDescriptor, ParamId, ParamUnit, ParameterInfo,
-    SmoothedParam, wet_dry_mix, wet_dry_mix_stereo,
+    Effect, FixedDelayLine, Lfo, LfoWaveform, ParamDescriptor, ParamId, ParamUnit, SmoothedParam,
+    wet_dry_mix, wet_dry_mix_stereo,
 };
 
 /// Number of vibrato units in MultiVibrato
@@ -216,62 +216,40 @@ impl Effect for MultiVibrato {
     }
 }
 
-impl ParameterInfo for MultiVibrato {
-    fn param_count(&self) -> usize {
-        3
-    }
+sonido_core::impl_params! {
+    MultiVibrato, this {
+        [0] ParamDescriptor {
+                name: "Depth",
+                short_name: "Depth",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 200.0,
+                default: 100.0,
+                step: 1.0,
+                ..ParamDescriptor::mix()
+            }
+            .with_id(ParamId(1300), "vib_depth"),
+            get: this.depth_scale.target() * 100.0,
+            set: |v| this.set_depth(v / 100.0);
 
-    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
-        match index {
-            0 => Some(
-                ParamDescriptor {
-                    name: "Depth",
-                    short_name: "Depth",
-                    unit: ParamUnit::Percent,
-                    min: 0.0,
-                    max: 200.0,
-                    default: 100.0,
-                    step: 1.0,
-                    ..ParamDescriptor::mix()
-                }
-                .with_id(ParamId(1300), "vib_depth"),
-            ),
-            1 => Some(
-                ParamDescriptor {
-                    name: "Mix",
-                    short_name: "Mix",
-                    unit: ParamUnit::Percent,
-                    min: 0.0,
-                    max: 100.0,
-                    default: 100.0,
-                    step: 1.0,
-                    ..ParamDescriptor::mix()
-                }
-                .with_id(ParamId(1301), "vib_mix"),
-            ),
-            2 => Some(
-                sonido_core::gain::output_param_descriptor().with_id(ParamId(1302), "vib_output"),
-            ),
-            _ => None,
-        }
-    }
+        [1] ParamDescriptor {
+                name: "Mix",
+                short_name: "Mix",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 100.0,
+                default: 100.0,
+                step: 1.0,
+                ..ParamDescriptor::mix()
+            }
+            .with_id(ParamId(1301), "vib_mix"),
+            get: this.mix * 100.0,
+            set: |v| this.set_mix(v / 100.0);
 
-    fn get_param(&self, index: usize) -> f32 {
-        match index {
-            0 => self.depth_scale.target() * 100.0,
-            1 => self.mix * 100.0,
-            2 => sonido_core::gain::output_level_db(&self.output_level),
-            _ => 0.0,
-        }
-    }
-
-    fn set_param(&mut self, index: usize, value: f32) {
-        match index {
-            0 => self.set_depth(value / 100.0),
-            1 => self.set_mix(value / 100.0),
-            2 => sonido_core::gain::set_output_level_db(&mut self.output_level, value),
-            _ => {}
-        }
+        [2] sonido_core::gain::output_param_descriptor()
+                .with_id(ParamId(1302), "vib_output"),
+            get: sonido_core::gain::output_level_db(&this.output_level),
+            set: |v| sonido_core::gain::set_output_level_db(&mut this.output_level, v);
     }
 }
 

@@ -124,10 +124,16 @@ impl Lfo {
         self.phase
     }
 
-    /// Get next LFO value (-1.0 to 1.0)
+    /// Compute the waveform value at the current phase without advancing.
+    ///
+    /// Returns a bipolar value in \[-1.0, 1.0\] based on the current phase
+    /// and waveform. For `SampleAndHold`, returns the currently held value.
+    ///
+    /// This is useful for reading the LFO state without side effects
+    /// (e.g., for `ModulationSource::mod_value()`).
     #[inline]
-    pub fn advance(&mut self) -> f32 {
-        let output = match self.waveform {
+    pub fn value_at_phase(&self) -> f32 {
+        match self.waveform {
             LfoWaveform::Sine => fast_sin_turns(self.phase),
 
             LfoWaveform::Triangle => {
@@ -148,17 +154,22 @@ impl Lfo {
                 }
             }
 
-            LfoWaveform::SampleAndHold => {
-                // New random value when phase wraps
-                if self.phase < self.prev_phase {
-                    // Simple pseudo-random using phase (hash-like magic numbers)
-                    #[allow(clippy::excessive_precision)]
-                    let x = sinf(self.phase * 12345.6789) * 43758.5453;
-                    self.sh_value = (x - floorf(x)) * 2.0 - 1.0;
-                }
-                self.sh_value
-            }
-        };
+            LfoWaveform::SampleAndHold => self.sh_value,
+        }
+    }
+
+    /// Get next LFO value (-1.0 to 1.0)
+    #[inline]
+    pub fn advance(&mut self) -> f32 {
+        // S&H: generate new random value on phase wrap (before reading)
+        if self.waveform == LfoWaveform::SampleAndHold && self.phase < self.prev_phase {
+            // Simple pseudo-random using phase (hash-like magic numbers)
+            #[allow(clippy::excessive_precision)]
+            let x = sinf(self.phase * 12345.6789) * 43758.5453;
+            self.sh_value = (x - floorf(x)) * 2.0 - 1.0;
+        }
+
+        let output = self.value_at_phase();
 
         self.prev_phase = self.phase;
         self.phase += self.phase_inc;
@@ -278,6 +289,31 @@ mod tests {
         // Phase increment should scale inversely with sample rate
         let ratio = 48000.0 / 44100.0;
         assert!((phase_inc_44k / phase_inc_48k - ratio).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_value_at_phase_matches_advance() {
+        // For non-S&H waveforms, value_at_phase() should return the same
+        // value that advance() is about to return (before phase increment).
+        for waveform in [
+            LfoWaveform::Sine,
+            LfoWaveform::Triangle,
+            LfoWaveform::Saw,
+            LfoWaveform::Square,
+        ] {
+            let mut lfo = Lfo::new(48000.0, 3.0);
+            lfo.set_waveform(waveform);
+
+            for _ in 0..500 {
+                let peek = lfo.value_at_phase();
+                let advanced = lfo.advance();
+                assert!(
+                    (peek - advanced).abs() < 1e-7,
+                    "Waveform {:?}: value_at_phase()={peek} != advance()={advanced}",
+                    waveform,
+                );
+            }
+        }
     }
 
     #[test]

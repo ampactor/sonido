@@ -7,8 +7,8 @@
 
 use libm::ceilf;
 use sonido_core::{
-    Effect, InterpolatedDelay, Lfo, ParamDescriptor, ParamId, ParameterInfo, SmoothedParam,
-    flush_denormal, wet_dry_mix, wet_dry_mix_stereo,
+    Effect, InterpolatedDelay, Lfo, ParamDescriptor, ParamId, SmoothedParam, flush_denormal,
+    impl_params, wet_dry_mix, wet_dry_mix_stereo,
 };
 
 /// Flanger effect with LFO-modulated delay.
@@ -259,50 +259,39 @@ impl Effect for Flanger {
     }
 }
 
-impl ParameterInfo for Flanger {
-    fn param_count(&self) -> usize {
-        5
-    }
+impl_params! {
+    Flanger, this {
+        [0] ParamDescriptor::rate_hz(0.05, 5.0, 0.5)
+                .with_id(ParamId(800), "flgr_rate"),
+            get: this.rate.target(),
+            set: |v| this.set_rate(v);
 
-    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
-        match index {
-            0 => Some(ParamDescriptor::rate_hz(0.05, 5.0, 0.5).with_id(ParamId(800), "flgr_rate")),
-            1 => Some(ParamDescriptor::depth().with_id(ParamId(801), "flgr_depth")),
-            2 => Some(ParamDescriptor::feedback().with_id(ParamId(802), "flgr_fdbk")),
-            3 => Some(ParamDescriptor::mix().with_id(ParamId(803), "flgr_mix")),
-            4 => Some(
-                sonido_core::gain::output_param_descriptor().with_id(ParamId(804), "flgr_output"),
-            ),
-            _ => None,
-        }
-    }
+        [1] ParamDescriptor::depth()
+                .with_id(ParamId(801), "flgr_depth"),
+            get: this.depth.target() * 100.0,
+            set: |v| this.set_depth(v / 100.0);
 
-    fn get_param(&self, index: usize) -> f32 {
-        match index {
-            0 => self.rate.target(),
-            1 => self.depth.target() * 100.0,
-            2 => self.feedback.target() * 100.0,
-            3 => self.mix.target() * 100.0,
-            4 => sonido_core::gain::output_level_db(&self.output_level),
-            _ => 0.0,
-        }
-    }
+        [2] ParamDescriptor::feedback()
+                .with_id(ParamId(802), "flgr_fdbk"),
+            get: this.feedback.target() * 100.0,
+            set: |v| this.set_feedback(v / 100.0);
 
-    fn set_param(&mut self, index: usize, value: f32) {
-        match index {
-            0 => self.set_rate(value),
-            1 => self.set_depth(value / 100.0),
-            2 => self.set_feedback(value / 100.0),
-            3 => self.set_mix(value / 100.0),
-            4 => sonido_core::gain::set_output_level_db(&mut self.output_level, value),
-            _ => {}
-        }
+        [3] ParamDescriptor::mix()
+                .with_id(ParamId(803), "flgr_mix"),
+            get: this.mix.target() * 100.0,
+            set: |v| this.set_mix(v / 100.0);
+
+        [4] sonido_core::gain::output_param_descriptor()
+                .with_id(ParamId(804), "flgr_output"),
+            get: sonido_core::gain::output_level_db(&this.output_level),
+            set: |v| sonido_core::gain::set_output_level_db(&mut this.output_level, v);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sonido_core::ParameterInfo;
 
     #[test]
     fn test_flanger_basic() {

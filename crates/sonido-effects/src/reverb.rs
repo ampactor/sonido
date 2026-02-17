@@ -6,7 +6,7 @@
 use libm::{ceilf, roundf};
 use sonido_core::{
     AllpassFilter, CombFilter, Effect, InterpolatedDelay, ParamDescriptor, ParamFlags, ParamId,
-    ParamUnit, ParameterInfo, SmoothedParam, wet_dry_mix, wet_dry_mix_stereo,
+    ParamUnit, SmoothedParam, wet_dry_mix, wet_dry_mix_stereo,
 };
 
 /// Freeverb comb filter delay times (at 44.1kHz reference).
@@ -553,20 +553,13 @@ impl Effect for Reverb {
     }
 
     fn latency_samples(&self) -> usize {
-        // Report pre-delay as latency
-        self.predelay_samples.get() as usize
+        0 // Predelay is a musical parameter, not processing latency
     }
 }
 
-impl ParameterInfo for Reverb {
-    fn param_count(&self) -> usize {
-        8
-    }
-
-    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
-        match index {
-            0 => Some(
-                ParamDescriptor {
+sonido_core::impl_params! {
+    Reverb, this {
+        [0] ParamDescriptor {
                     name: "Room Size",
                     short_name: "Room",
                     unit: ParamUnit::Percent,
@@ -577,9 +570,10 @@ impl ParameterInfo for Reverb {
                     ..ParamDescriptor::mix()
                 }
                 .with_id(ParamId(1500), "rev_room_size"),
-            ),
-            1 => Some(
-                ParamDescriptor {
+            get: this.room_size() * 100.0,
+            set: |v| this.set_room_size(v / 100.0);
+
+        [1] ParamDescriptor {
                     name: "Decay",
                     short_name: "Decay",
                     unit: ParamUnit::Percent,
@@ -590,9 +584,10 @@ impl ParameterInfo for Reverb {
                     ..ParamDescriptor::mix()
                 }
                 .with_id(ParamId(1501), "rev_decay"),
-            ),
-            2 => Some(
-                ParamDescriptor {
+            get: this.decay() * 100.0,
+            set: |v| this.set_decay(v / 100.0);
+
+        [2] ParamDescriptor {
                     name: "Damping",
                     short_name: "Damping",
                     unit: ParamUnit::Percent,
@@ -603,23 +598,22 @@ impl ParameterInfo for Reverb {
                     ..ParamDescriptor::mix()
                 }
                 .with_id(ParamId(1502), "rev_damping"),
-            ),
-            3 => Some(
-                ParamDescriptor {
-                    name: "Pre-Delay",
-                    short_name: "PreDly",
-                    unit: ParamUnit::Milliseconds,
-                    min: 0.0,
-                    max: 100.0,
-                    default: 10.0,
-                    step: 1.0,
-                    ..ParamDescriptor::mix()
-                }
+            get: this.damping() * 100.0,
+            set: |v| this.set_damping(v / 100.0);
+
+        [3] ParamDescriptor::custom("Pre-Delay", "PreDly", 0.0, 100.0, 10.0)
+                .with_unit(ParamUnit::Milliseconds)
+                .with_step(1.0)
                 .with_id(ParamId(1503), "rev_predelay"),
-            ),
-            4 => Some(ParamDescriptor::mix().with_id(ParamId(1504), "rev_mix")),
-            5 => Some(
-                ParamDescriptor {
+            get: this.predelay_ms(),
+            set: |v| this.set_predelay_ms(v);
+
+        [4] ParamDescriptor::mix()
+                .with_id(ParamId(1504), "rev_mix"),
+            get: this.mix() * 100.0,
+            set: |v| this.set_mix(v / 100.0);
+
+        [5] ParamDescriptor {
                     name: "Stereo Width",
                     short_name: "Width",
                     unit: ParamUnit::Percent,
@@ -630,61 +624,29 @@ impl ParameterInfo for Reverb {
                     ..ParamDescriptor::mix()
                 }
                 .with_id(ParamId(1505), "rev_width"),
-            ),
-            6 => Some(
-                ParamDescriptor {
-                    name: "Reverb Type",
-                    short_name: "Type",
-                    unit: ParamUnit::None,
-                    min: 0.0,
-                    max: 1.0,
-                    default: 0.0,
-                    step: 1.0,
-                    ..ParamDescriptor::mix()
-                }
+            get: this.stereo_width * 100.0,
+            set: |v| this.set_stereo_width(v / 100.0);
+
+        [6] ParamDescriptor::custom("Reverb Type", "Type", 0.0, 1.0, 0.0)
+                .with_step(1.0)
                 .with_id(ParamId(1506), "rev_type")
                 .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED))
                 .with_step_labels(&["Room", "Hall"]),
-            ),
-            7 => Some(
-                sonido_core::gain::output_param_descriptor().with_id(ParamId(1507), "rev_output"),
-            ),
-            _ => None,
-        }
-    }
-
-    fn get_param(&self, index: usize) -> f32 {
-        match index {
-            0 => self.room_size() * 100.0,
-            1 => self.decay() * 100.0,
-            2 => self.damping() * 100.0,
-            3 => self.predelay_ms(),
-            4 => self.mix() * 100.0,
-            5 => self.stereo_width * 100.0,
-            6 => match self.reverb_type {
+            get: match this.reverb_type {
                 ReverbType::Room => 0.0,
                 ReverbType::Hall => 1.0,
             },
-            7 => sonido_core::gain::output_level_db(&self.output_level),
-            _ => 0.0,
-        }
-    }
+            set: |v| {
+                match v as u8 {
+                    0 => this.set_reverb_type(ReverbType::Room),
+                    _ => this.set_reverb_type(ReverbType::Hall),
+                }
+            };
 
-    fn set_param(&mut self, index: usize, value: f32) {
-        match index {
-            0 => self.set_room_size(value / 100.0),
-            1 => self.set_decay(value / 100.0),
-            2 => self.set_damping(value / 100.0),
-            3 => self.set_predelay_ms(value),
-            4 => self.set_mix(value / 100.0),
-            5 => self.set_stereo_width(value / 100.0),
-            6 => match value as u8 {
-                0 => self.set_reverb_type(ReverbType::Room),
-                _ => self.set_reverb_type(ReverbType::Hall),
-            },
-            7 => sonido_core::gain::set_output_level_db(&mut self.output_level, value),
-            _ => {}
-        }
+        [7] sonido_core::gain::output_param_descriptor()
+                .with_id(ParamId(1507), "rev_output"),
+            get: sonido_core::gain::output_level_db(&this.output_level),
+            set: |v| sonido_core::gain::set_output_level_db(&mut this.output_level, v);
     }
 }
 
@@ -908,6 +870,16 @@ mod tests {
             diff_count > 100,
             "L and R should be decorrelated, but only {} samples differed",
             diff_count
+        );
+    }
+
+    #[test]
+    fn test_reverb_latency_samples() {
+        let reverb = Reverb::new(48000.0);
+        assert_eq!(
+            reverb.latency_samples(),
+            0,
+            "Predelay is musical, not processing latency"
         );
     }
 
