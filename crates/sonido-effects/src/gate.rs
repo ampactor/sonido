@@ -4,7 +4,7 @@
 //! useful for removing noise, bleed, or unwanted quiet sounds.
 
 use sonido_core::{
-    Effect, EnvelopeFollower, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam,
+    Effect, EnvelopeFollower, ParamDescriptor, ParamId, ParamUnit, ParameterInfo, SmoothedParam,
     fast_db_to_linear,
 };
 
@@ -340,43 +340,43 @@ impl ParameterInfo for Gate {
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
         match index {
-            0 => Some(ParamDescriptor {
-                name: "Threshold",
-                short_name: "Thresh",
-                unit: ParamUnit::Decibels,
-                min: -80.0,
-                max: 0.0,
-                default: -40.0,
-                step: 1.0,
-            }),
-            1 => Some(ParamDescriptor {
-                name: "Attack",
-                short_name: "Atk",
-                unit: ParamUnit::Milliseconds,
-                min: 0.1,
-                max: 50.0,
-                default: 1.0,
-                step: 0.1,
-            }),
-            2 => Some(ParamDescriptor {
-                name: "Release",
-                short_name: "Rel",
-                unit: ParamUnit::Milliseconds,
-                min: 10.0,
-                max: 1000.0,
-                default: 100.0,
-                step: 1.0,
-            }),
-            3 => Some(ParamDescriptor {
-                name: "Hold",
-                short_name: "Hold",
-                unit: ParamUnit::Milliseconds,
-                min: 0.0,
-                max: 500.0,
-                default: 50.0,
-                step: 1.0,
-            }),
-            4 => Some(sonido_core::gain::output_param_descriptor()),
+            0 => Some(
+                ParamDescriptor {
+                    name: "Threshold",
+                    short_name: "Thresh",
+                    unit: ParamUnit::Decibels,
+                    min: -80.0,
+                    max: 0.0,
+                    default: -40.0,
+                    step: 1.0,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(400), "gate_thresh"),
+            ),
+            1 => Some(
+                ParamDescriptor {
+                    name: "Attack",
+                    short_name: "Atk",
+                    unit: ParamUnit::Milliseconds,
+                    min: 0.1,
+                    max: 50.0,
+                    default: 1.0,
+                    step: 0.1,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(401), "gate_attack"),
+            ),
+            2 => Some(
+                ParamDescriptor::time_ms("Release", "Rel", 10.0, 1000.0, 100.0)
+                    .with_id(ParamId(402), "gate_release"),
+            ),
+            3 => Some(
+                ParamDescriptor::time_ms("Hold", "Hold", 0.0, 500.0, 50.0)
+                    .with_id(ParamId(403), "gate_hold"),
+            ),
+            4 => Some(
+                sonido_core::gain::output_param_descriptor().with_id(ParamId(404), "gate_output"),
+            ),
             _ => None,
         }
     }

@@ -29,7 +29,7 @@
 //! - **Slow release** (> 200ms): Smooth, transparent compression
 
 use sonido_core::{
-    Effect, EnvelopeFollower, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam,
+    Effect, EnvelopeFollower, ParamDescriptor, ParamId, ParamUnit, ParameterInfo, SmoothedParam,
     db_to_linear, fast_db_to_linear, fast_linear_to_db, linear_to_db,
 };
 
@@ -266,60 +266,48 @@ impl ParameterInfo for Compressor {
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
         match index {
-            0 => Some(ParamDescriptor {
-                name: "Threshold",
-                short_name: "Thresh",
-                unit: ParamUnit::Decibels,
-                min: -60.0,
-                max: 0.0,
-                default: -18.0,
-                step: 0.5,
-            }),
-            1 => Some(ParamDescriptor {
-                name: "Ratio",
-                short_name: "Ratio",
-                unit: ParamUnit::Ratio,
-                min: 1.0,
-                max: 20.0,
-                default: 4.0,
-                step: 0.1,
-            }),
-            2 => Some(ParamDescriptor {
-                name: "Attack",
-                short_name: "Attack",
-                unit: ParamUnit::Milliseconds,
-                min: 0.1,
-                max: 100.0,
-                default: 10.0,
-                step: 0.1,
-            }),
-            3 => Some(ParamDescriptor {
-                name: "Release",
-                short_name: "Release",
-                unit: ParamUnit::Milliseconds,
-                min: 10.0,
-                max: 1000.0,
-                default: 100.0,
-                step: 1.0,
-            }),
-            4 => Some(ParamDescriptor {
-                name: "Makeup Gain",
-                short_name: "Makeup",
-                unit: ParamUnit::Decibels,
-                min: 0.0,
-                max: 24.0,
-                default: 0.0,
-                step: 0.5,
-            }),
-            5 => Some(ParamDescriptor {
-                name: "Knee",
-                short_name: "Knee",
-                unit: ParamUnit::Decibels,
-                min: 0.0,
-                max: 12.0,
-                default: 6.0,
-                step: 0.5,
-            }),
+            0 => Some(
+                ParamDescriptor::gain_db("Threshold", "Thresh", -60.0, 0.0, -18.0)
+                    .with_id(ParamId(300), "comp_thresh"),
+            ),
+            1 => Some(
+                ParamDescriptor {
+                    name: "Ratio",
+                    short_name: "Ratio",
+                    unit: ParamUnit::Ratio,
+                    min: 1.0,
+                    max: 20.0,
+                    default: 4.0,
+                    step: 0.1,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(301), "comp_ratio"),
+            ),
+            2 => Some(
+                ParamDescriptor {
+                    name: "Attack",
+                    short_name: "Attack",
+                    unit: ParamUnit::Milliseconds,
+                    min: 0.1,
+                    max: 100.0,
+                    default: 10.0,
+                    step: 0.1,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(302), "comp_attack"),
+            ),
+            3 => Some(
+                ParamDescriptor::time_ms("Release", "Release", 10.0, 1000.0, 100.0)
+                    .with_id(ParamId(303), "comp_release"),
+            ),
+            4 => Some(
+                ParamDescriptor::gain_db("Makeup Gain", "Makeup", 0.0, 24.0, 0.0)
+                    .with_id(ParamId(304), "comp_makeup"),
+            ),
+            5 => Some(
+                ParamDescriptor::gain_db("Knee", "Knee", 0.0, 12.0, 6.0)
+                    .with_id(ParamId(305), "comp_knee"),
+            ),
             _ => None,
         }
     }
@@ -351,7 +339,9 @@ impl ParameterInfo for Compressor {
 
 #[cfg(test)]
 mod tests {
+    extern crate alloc;
     use super::*;
+    use alloc::{vec, vec::Vec};
 
     #[test]
     fn test_compressor_basic() {

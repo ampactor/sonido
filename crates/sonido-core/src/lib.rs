@@ -127,6 +127,6 @@ pub use modulation::{ModulationAmount, ModulationSource};
 pub use one_pole::OnePole;
 pub use oversample::{MAX_OVERSAMPLE_FACTOR, Oversampled};
 pub use param::{LinearSmoothedParam, SmoothedParam};
-pub use param_info::{ParamDescriptor, ParamUnit, ParameterInfo};
+pub use param_info::{ParamDescriptor, ParamFlags, ParamId, ParamScale, ParamUnit, ParameterInfo};
 pub use svf::{StateVariableFilter, SvfOutput};
 pub use tempo::{NoteDivision, TempoManager, TransportState};

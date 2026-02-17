@@ -77,7 +77,7 @@ const UPSAMPLE_TAPS: usize = 8;
 /// The upsampling uses windowed-sinc interpolation with a Blackman-Harris window
 /// over an 8-sample kernel for each polyphase sub-filter. This eliminates the
 /// HF rolloff inherent in linear interpolation and provides clean interpolation
-/// with >90 dB sidelobe suppression from the window.
+/// with >92 dB sidelobe suppression from the window.
 ///
 /// The downsampling uses a 48-tap Kaiser-windowed sinc FIR filter (beta ≈ 8.0)
 /// with cutoff frequencies tuned per oversampling factor (0.45×, 0.22×, 0.11×

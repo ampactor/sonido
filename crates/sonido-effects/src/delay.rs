@@ -2,8 +2,8 @@
 
 use libm::ceilf;
 use sonido_core::{
-    Effect, InterpolatedDelay, ParamDescriptor, ParameterInfo, SmoothedParam, flush_denormal,
-    wet_dry_mix, wet_dry_mix_stereo,
+    Effect, InterpolatedDelay, ParamDescriptor, ParamFlags, ParamId, ParameterInfo, SmoothedParam,
+    flush_denormal, wet_dry_mix, wet_dry_mix_stereo,
 };
 
 /// Classic delay effect with feedback and optional ping-pong stereo mode.
@@ -236,33 +236,41 @@ impl ParameterInfo for Delay {
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
         match index {
-            0 => Some(ParamDescriptor::time_ms(
-                "Delay Time",
-                "Time",
-                1.0,
-                2000.0,
-                300.0,
-            )),
-            1 => Some(ParamDescriptor {
-                name: "Feedback",
-                short_name: "Feedback",
-                unit: sonido_core::ParamUnit::Percent,
-                min: 0.0,
-                max: 95.0,
-                default: 40.0,
-                step: 1.0,
-            }),
-            2 => Some(ParamDescriptor::mix()),
-            3 => Some(ParamDescriptor {
-                name: "Ping Pong",
-                short_name: "PngPng",
-                unit: sonido_core::ParamUnit::None,
-                min: 0.0,
-                max: 1.0,
-                default: 0.0,
-                step: 1.0,
-            }),
-            4 => Some(sonido_core::gain::output_param_descriptor()),
+            0 => Some(
+                ParamDescriptor::time_ms("Delay Time", "Time", 1.0, 2000.0, 300.0)
+                    .with_id(ParamId(1100), "dly_time"),
+            ),
+            1 => Some(
+                ParamDescriptor {
+                    name: "Feedback",
+                    short_name: "Feedback",
+                    unit: sonido_core::ParamUnit::Percent,
+                    min: 0.0,
+                    max: 95.0,
+                    default: 40.0,
+                    step: 1.0,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(1101), "dly_feedback"),
+            ),
+            2 => Some(ParamDescriptor::mix().with_id(ParamId(1102), "dly_mix")),
+            3 => Some(
+                ParamDescriptor {
+                    name: "Ping Pong",
+                    short_name: "PngPng",
+                    unit: sonido_core::ParamUnit::None,
+                    min: 0.0,
+                    max: 1.0,
+                    default: 0.0,
+                    step: 1.0,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(1103), "dly_ping_pong")
+                .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED)),
+            ),
+            4 => Some(
+                sonido_core::gain::output_param_descriptor().with_id(ParamId(1104), "dly_output"),
+            ),
             _ => None,
         }
     }

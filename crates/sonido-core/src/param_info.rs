@@ -6,18 +6,24 @@
 //! - **GUI applications**: Automatically generate parameter controls
 //! - **Hardware controllers**: Map MIDI CC or encoder knobs to parameters
 //! - **Preset systems**: Save and restore parameter state
-//! - **Host automation**: DAW parameter automation support
+//! - **Host automation**: DAW parameter automation and CLAP/VST3 integration
 //!
 //! # Design
 //!
 //! The system uses index-based parameter access for efficiency and simplicity.
 //! Each parameter is described by a [`ParamDescriptor`] containing metadata for
-//! display and validation.
+//! display, validation, and plugin host communication. Parameters also carry:
+//!
+//! - [`ParamId`] — stable numeric ID for automation recording and preset persistence
+//! - [`ParamScale`] — normalization curve (linear, logarithmic, power)
+//! - [`ParamFlags`] — capability flags for plugin hosts (automatable, stepped, etc.)
+//! - `string_id` — human-readable stable ID for debugging and serialization
+//! - `group` — parameter grouping for host tree display
 //!
 //! # Example
 //!
 //! ```rust
-//! use sonido_core::{ParameterInfo, ParamDescriptor, ParamUnit};
+//! use sonido_core::{ParameterInfo, ParamDescriptor, ParamUnit, ParamId, ParamScale, ParamFlags};
 //!
 //! struct SimpleGain {
 //!     gain_db: f32,
@@ -28,15 +34,8 @@
 //!
 //!     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
 //!         match index {
-//!             0 => Some(ParamDescriptor {
-//!                 name: "Gain",
-//!                 short_name: "Gain",
-//!                 unit: ParamUnit::Decibels,
-//!                 min: -60.0,
-//!                 max: 12.0,
-//!                 default: 0.0,
-//!                 step: 0.1,
-//!             }),
+//!             0 => Some(ParamDescriptor::gain_db("Gain", "Gain", -60.0, 12.0, 0.0)
+//!                 .with_id(ParamId(100), "gain_level")),
 //!             _ => None,
 //!         }
 //!     }
@@ -61,6 +60,100 @@
 //!
 //! This module is fully `no_std` compatible with no heap allocations required.
 
+/// Scaling curve for parameter normalization.
+///
+/// Determines how a parameter's plain value maps to normalized \[0.0, 1.0\] space.
+/// Linear is default. Use Logarithmic for frequency parameters (20 Hz–20 kHz),
+/// Power for parameters that need more resolution at one end.
+///
+/// # Normalization Formulas
+///
+/// - **Linear**: `normalized = (value - min) / (max - min)`
+/// - **Logarithmic**: `normalized = ln(value/min) / ln(max/min)`
+/// - **Power(exp)**: `normalized = ((value - min) / (max - min)).powf(1.0 / exp)`
+///
+/// Reference: JUCE `NormalisableRange` (skew factor), iPlug2 `ShapePowCurve`.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum ParamScale {
+    /// Linear mapping (default). Equal resolution across the range.
+    #[default]
+    Linear,
+    /// Logarithmic mapping. More resolution at low values.
+    /// Ideal for frequency parameters (20 Hz → 20 kHz).
+    /// Requires `min > 0.0`.
+    Logarithmic,
+    /// Power curve mapping with configurable exponent.
+    /// exponent < 1.0 → more resolution at low end.
+    /// exponent > 1.0 → more resolution at high end.
+    /// Equivalent to JUCE's `NormalisableRange` skew factor.
+    Power(f32),
+}
+
+/// Stable parameter identifier that survives reordering.
+///
+/// Used by plugin hosts for automation recording, preset save/restore,
+/// and parameter mapping. Once assigned, a `ParamId` MUST NEVER change
+/// for a given parameter — it's part of the public API contract.
+///
+/// Maps directly to CLAP `clap_id` and VST3 `ParamID`.
+///
+/// # Convention
+///
+/// Each effect gets a base ID; params are sequential from there:
+/// - Distortion: 200, 201, 202, 203
+/// - Reverb: 1500, 1501, 1502, ...
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ParamId(pub u32);
+
+/// Parameter capability flags for plugin host communication.
+///
+/// Bitflag type that maps to CLAP `clap_param_info_flags` and
+/// VST3 `ParameterInfo::flags`. Use [`union`](Self::union) to combine.
+///
+/// # Example
+///
+/// ```rust
+/// use sonido_core::ParamFlags;
+///
+/// let flags = ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED);
+/// assert!(flags.contains(ParamFlags::AUTOMATABLE));
+/// assert!(flags.contains(ParamFlags::STEPPED));
+/// assert!(!flags.contains(ParamFlags::HIDDEN));
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParamFlags(u8);
+
+impl ParamFlags {
+    /// No flags set.
+    pub const NONE: Self = Self(0);
+    /// Host can automate this parameter (default for all params).
+    pub const AUTOMATABLE: Self = Self(1 << 0);
+    /// Parameter has discrete steps (enum-like, integer values).
+    pub const STEPPED: Self = Self(1 << 1);
+    /// Parameter should be hidden from generic host UI.
+    pub const HIDDEN: Self = Self(1 << 2);
+    /// Parameter is read-only (metering, display only).
+    pub const READ_ONLY: Self = Self(1 << 3);
+
+    /// Returns `true` if all bits in `other` are set in `self`.
+    #[inline]
+    pub const fn contains(self, other: Self) -> bool {
+        self.0 & other.0 == other.0
+    }
+
+    /// Returns the union of two flag sets.
+    #[inline]
+    pub const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+}
+
+impl Default for ParamFlags {
+    fn default() -> Self {
+        Self::AUTOMATABLE
+    }
+}
+
 /// Trait for effects that expose introspectable parameters.
 ///
 /// Implement this trait to allow runtime discovery and manipulation of your
@@ -82,7 +175,7 @@
 /// # Example
 ///
 /// ```rust
-/// use sonido_core::{ParameterInfo, ParamDescriptor, ParamUnit};
+/// use sonido_core::{ParameterInfo, ParamDescriptor, ParamId};
 ///
 /// struct Compressor {
 ///     threshold_db: f32,
@@ -96,42 +189,14 @@
 ///
 ///     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
 ///         match index {
-///             0 => Some(ParamDescriptor {
-///                 name: "Threshold",
-///                 short_name: "Thresh",
-///                 unit: ParamUnit::Decibels,
-///                 min: -60.0,
-///                 max: 0.0,
-///                 default: -20.0,
-///                 step: 0.5,
-///             }),
-///             1 => Some(ParamDescriptor {
-///                 name: "Ratio",
-///                 short_name: "Ratio",
-///                 unit: ParamUnit::Ratio,
-///                 min: 1.0,
-///                 max: 20.0,
-///                 default: 4.0,
-///                 step: 0.1,
-///             }),
-///             2 => Some(ParamDescriptor {
-///                 name: "Attack",
-///                 short_name: "Attack",
-///                 unit: ParamUnit::Milliseconds,
-///                 min: 0.1,
-///                 max: 100.0,
-///                 default: 10.0,
-///                 step: 0.1,
-///             }),
-///             3 => Some(ParamDescriptor {
-///                 name: "Release",
-///                 short_name: "Release",
-///                 unit: ParamUnit::Milliseconds,
-///                 min: 10.0,
-///                 max: 1000.0,
-///                 default: 100.0,
-///                 step: 1.0,
-///             }),
+///             0 => Some(ParamDescriptor::gain_db("Threshold", "Thresh", -60.0, 0.0, -20.0)
+///                 .with_id(ParamId(300), "comp_thresh")),
+///             1 => Some(ParamDescriptor::time_ms("Ratio", "Ratio", 1.0, 20.0, 4.0)
+///                 .with_id(ParamId(301), "comp_ratio")),
+///             2 => Some(ParamDescriptor::time_ms("Attack", "Attack", 0.1, 100.0, 10.0)
+///                 .with_id(ParamId(302), "comp_attack")),
+///             3 => Some(ParamDescriptor::time_ms("Release", "Release", 10.0, 1000.0, 100.0)
+///                 .with_id(ParamId(303), "comp_release")),
 ///             _ => None,
 ///         }
 ///     }
@@ -262,6 +327,21 @@ pub trait ParameterInfo {
     /// }
     /// ```
     fn set_param(&mut self, index: usize, value: f32);
+
+    /// Returns the stable [`ParamId`] for the parameter at the given index.
+    ///
+    /// Default implementation reads it from the descriptor. Returns `None`
+    /// if the index is out of range.
+    fn param_id(&self, index: usize) -> Option<ParamId> {
+        self.param_info(index).map(|d| d.id)
+    }
+
+    /// Finds a parameter index by its stable [`ParamId`].
+    ///
+    /// Scans all parameters (O(n)) — suitable for setup paths, not audio.
+    fn param_index_by_id(&self, id: ParamId) -> Option<usize> {
+        (0..self.param_count()).find(|&i| self.param_info(i).is_some_and(|d| d.id == id))
+    }
 }
 
 /// Describes a single parameter's metadata for display and validation.
@@ -287,17 +367,10 @@ pub trait ParameterInfo {
 /// # Example
 ///
 /// ```rust
-/// use sonido_core::{ParamDescriptor, ParamUnit};
+/// use sonido_core::{ParamDescriptor, ParamId};
 ///
-/// let delay_time = ParamDescriptor {
-///     name: "Delay Time",
-///     short_name: "Time",
-///     unit: ParamUnit::Milliseconds,
-///     min: 1.0,
-///     max: 2000.0,
-///     default: 250.0,
-///     step: 1.0,
-/// };
+/// let delay_time = ParamDescriptor::time_ms("Delay Time", "Time", 1.0, 2000.0, 250.0)
+///     .with_id(ParamId(1100), "dly_time");
 ///
 /// // Format for display
 /// let value = 500.0;
@@ -331,6 +404,35 @@ pub struct ParamDescriptor {
     /// Use small values (e.g., `0.01`) for continuous parameters and
     /// larger values (e.g., `1.0`) for discrete or coarse parameters.
     pub step: f32,
+
+    /// Stable numeric ID for plugin host automation and preset persistence.
+    ///
+    /// Maps directly to CLAP `clap_id` and VST3 `ParamID`. Once assigned,
+    /// this value must never change for a given parameter.
+    /// Default: `ParamId(0)` (unassigned).
+    pub id: ParamId,
+
+    /// Human-readable stable ID for presets, debugging, and serialization.
+    ///
+    /// Convention: `"effect_param"` (e.g., `"dist_drive"`, `"rev_decay"`).
+    /// Default: `""` (unassigned).
+    pub string_id: &'static str,
+
+    /// Normalization curve for mapping between plain and normalized values.
+    ///
+    /// Default: [`ParamScale::Linear`].
+    pub scale: ParamScale,
+
+    /// Capability flags for plugin host communication.
+    ///
+    /// Default: [`ParamFlags::AUTOMATABLE`].
+    pub flags: ParamFlags,
+
+    /// Parameter group for host tree display (e.g., `"filter"`, `"modulation"`).
+    ///
+    /// Empty string means top-level (ungrouped). Used by CLAP hosts to
+    /// organize parameters hierarchically.
+    pub group: &'static str,
 }
 
 impl ParamDescriptor {
@@ -346,6 +448,11 @@ impl ParamDescriptor {
             max: 100.0,
             default: 50.0,
             step: 1.0,
+            id: ParamId(0),
+            string_id: "",
+            scale: ParamScale::Linear,
+            flags: ParamFlags::AUTOMATABLE,
+            group: "",
         }
     }
 
@@ -361,6 +468,11 @@ impl ParamDescriptor {
             max: 100.0,
             default: 50.0,
             step: 1.0,
+            id: ParamId(0),
+            string_id: "",
+            scale: ParamScale::Linear,
+            flags: ParamFlags::AUTOMATABLE,
+            group: "",
         }
     }
 
@@ -377,6 +489,11 @@ impl ParamDescriptor {
             max: 95.0,
             default: 50.0,
             step: 1.0,
+            id: ParamId(0),
+            string_id: "",
+            scale: ParamScale::Linear,
+            flags: ParamFlags::AUTOMATABLE,
+            group: "",
         }
     }
 
@@ -404,6 +521,11 @@ impl ParamDescriptor {
             max,
             default,
             step: 1.0,
+            id: ParamId(0),
+            string_id: "",
+            scale: ParamScale::Linear,
+            flags: ParamFlags::AUTOMATABLE,
+            group: "",
         }
     }
 
@@ -431,12 +553,17 @@ impl ParamDescriptor {
             max,
             default,
             step: 0.5,
+            id: ParamId(0),
+            string_id: "",
+            scale: ParamScale::Linear,
+            flags: ParamFlags::AUTOMATABLE,
+            group: "",
         }
     }
 
     /// Standard LFO rate parameter in Hz.
     ///
-    /// Used by modulation effects (chorus, flanger, phaser, tremolo).
+    /// Uses logarithmic scaling for perceptually uniform rate control.
     ///
     /// # Arguments
     ///
@@ -452,7 +579,55 @@ impl ParamDescriptor {
             max,
             default,
             step: 0.05,
+            id: ParamId(0),
+            string_id: "",
+            scale: ParamScale::Logarithmic,
+            flags: ParamFlags::AUTOMATABLE,
+            group: "",
         }
+    }
+
+    /// Sets the stable parameter ID and string ID.
+    ///
+    /// Builder pattern — call after a factory method or struct literal.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sonido_core::{ParamDescriptor, ParamId};
+    ///
+    /// let desc = ParamDescriptor::mix().with_id(ParamId(700), "chor_mix");
+    /// assert_eq!(desc.id, ParamId(700));
+    /// assert_eq!(desc.string_id, "chor_mix");
+    /// ```
+    pub const fn with_id(mut self, id: ParamId, string_id: &'static str) -> Self {
+        self.id = id;
+        self.string_id = string_id;
+        self
+    }
+
+    /// Sets the normalization scale.
+    ///
+    /// Builder pattern — call after a factory method or struct literal.
+    pub const fn with_scale(mut self, scale: ParamScale) -> Self {
+        self.scale = scale;
+        self
+    }
+
+    /// Sets the parameter flags.
+    ///
+    /// Builder pattern — call after a factory method or struct literal.
+    pub const fn with_flags(mut self, flags: ParamFlags) -> Self {
+        self.flags = flags;
+        self
+    }
+
+    /// Sets the parameter group.
+    ///
+    /// Builder pattern — call after a factory method or struct literal.
+    pub const fn with_group(mut self, group: &'static str) -> Self {
+        self.group = group;
+        self
     }
 
     /// Clamps a value to this parameter's valid range.
@@ -460,18 +635,9 @@ impl ParamDescriptor {
     /// # Example
     ///
     /// ```rust
-    /// use sonido_core::{ParamDescriptor, ParamUnit};
+    /// use sonido_core::ParamDescriptor;
     ///
-    /// let desc = ParamDescriptor {
-    ///     name: "Gain",
-    ///     short_name: "Gain",
-    ///     unit: ParamUnit::Decibels,
-    ///     min: -60.0,
-    ///     max: 12.0,
-    ///     default: 0.0,
-    ///     step: 0.1,
-    /// };
-    ///
+    /// let desc = ParamDescriptor::gain_db("Gain", "Gain", -60.0, 12.0, 0.0);
     /// assert_eq!(desc.clamp(0.0), 0.0);
     /// assert_eq!(desc.clamp(-100.0), -60.0);
     /// assert_eq!(desc.clamp(100.0), 12.0);
@@ -487,26 +653,19 @@ impl ParamDescriptor {
         }
     }
 
-    /// Converts a value to normalized range (0.0 to 1.0).
+    /// Converts a plain value to normalized range (0.0 to 1.0).
     ///
-    /// This is useful for GUI sliders or MIDI CC mapping where the
-    /// control range is always 0.0 to 1.0.
+    /// Respects the parameter's [`ParamScale`]:
+    /// - **Linear**: `(value - min) / (max - min)`
+    /// - **Logarithmic**: `ln(value/min) / ln(max/min)` — requires `min > 0`
+    /// - **Power(exp)**: `((value - min) / (max - min)).powf(1.0 / exp)`
     ///
     /// # Example
     ///
     /// ```rust
-    /// use sonido_core::{ParamDescriptor, ParamUnit};
+    /// use sonido_core::ParamDescriptor;
     ///
-    /// let desc = ParamDescriptor {
-    ///     name: "Mix",
-    ///     short_name: "Mix",
-    ///     unit: ParamUnit::Percent,
-    ///     min: 0.0,
-    ///     max: 100.0,
-    ///     default: 50.0,
-    ///     step: 1.0,
-    /// };
-    ///
+    /// let desc = ParamDescriptor::mix();
     /// assert_eq!(desc.normalize(0.0), 0.0);
     /// assert_eq!(desc.normalize(50.0), 0.5);
     /// assert_eq!(desc.normalize(100.0), 1.0);
@@ -515,38 +674,52 @@ impl ParamDescriptor {
     pub fn normalize(&self, value: f32) -> f32 {
         let range = self.max - self.min;
         if range == 0.0 {
-            0.0
-        } else {
-            (value - self.min) / range
+            return 0.0;
+        }
+        match self.scale {
+            ParamScale::Linear => (value - self.min) / range,
+            ParamScale::Logarithmic => {
+                if self.min <= 0.0 || value <= 0.0 {
+                    return 0.0;
+                }
+                libm::logf(value / self.min) / libm::logf(self.max / self.min)
+            }
+            ParamScale::Power(exp) => {
+                let linear = (value - self.min) / range;
+                libm::powf(linear, 1.0 / exp)
+            }
         }
     }
 
     /// Converts a normalized value (0.0 to 1.0) to the actual parameter range.
     ///
-    /// This is the inverse of [`normalize`](Self::normalize).
+    /// Inverse of [`normalize`](Self::normalize), respecting [`ParamScale`].
     ///
     /// # Example
     ///
     /// ```rust
-    /// use sonido_core::{ParamDescriptor, ParamUnit};
+    /// use sonido_core::ParamDescriptor;
     ///
-    /// let desc = ParamDescriptor {
-    ///     name: "Mix",
-    ///     short_name: "Mix",
-    ///     unit: ParamUnit::Percent,
-    ///     min: 0.0,
-    ///     max: 100.0,
-    ///     default: 50.0,
-    ///     step: 1.0,
-    /// };
-    ///
+    /// let desc = ParamDescriptor::mix();
     /// assert_eq!(desc.denormalize(0.0), 0.0);
     /// assert_eq!(desc.denormalize(0.5), 50.0);
     /// assert_eq!(desc.denormalize(1.0), 100.0);
     /// ```
     #[inline]
     pub fn denormalize(&self, normalized: f32) -> f32 {
-        self.min + normalized * (self.max - self.min)
+        match self.scale {
+            ParamScale::Linear => self.min + normalized * (self.max - self.min),
+            ParamScale::Logarithmic => {
+                if self.min <= 0.0 {
+                    return self.min;
+                }
+                self.min * libm::powf(self.max / self.min, normalized)
+            }
+            ParamScale::Power(exp) => {
+                let curved = libm::powf(normalized, exp);
+                self.min + curved * (self.max - self.min)
+            }
+        }
     }
 }
 
@@ -647,24 +820,11 @@ mod tests {
 
         fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
             match index {
-                0 => Some(ParamDescriptor {
-                    name: "Gain",
-                    short_name: "Gain",
-                    unit: ParamUnit::Decibels,
-                    min: -60.0,
-                    max: 12.0,
-                    default: 0.0,
-                    step: 0.1,
-                }),
-                1 => Some(ParamDescriptor {
-                    name: "Mix",
-                    short_name: "Mix",
-                    unit: ParamUnit::Percent,
-                    min: 0.0,
-                    max: 100.0,
-                    default: 50.0,
-                    step: 1.0,
-                }),
+                0 => Some(
+                    ParamDescriptor::gain_db("Gain", "Gain", -60.0, 12.0, 0.0)
+                        .with_id(ParamId(100), "test_gain"),
+                ),
+                1 => Some(ParamDescriptor::mix().with_id(ParamId(101), "test_mix")),
                 _ => None,
             }
         }
@@ -769,16 +929,7 @@ mod tests {
 
     #[test]
     fn test_descriptor_clamp() {
-        let desc = ParamDescriptor {
-            name: "Test",
-            short_name: "Test",
-            unit: ParamUnit::None,
-            min: 0.0,
-            max: 100.0,
-            default: 50.0,
-            step: 1.0,
-        };
-
+        let desc = ParamDescriptor::mix(); // 0..100
         assert_eq!(desc.clamp(50.0), 50.0);
         assert_eq!(desc.clamp(-10.0), 0.0);
         assert_eq!(desc.clamp(200.0), 100.0);
@@ -787,45 +938,83 @@ mod tests {
     }
 
     #[test]
-    fn test_normalize_denormalize() {
-        let desc = ParamDescriptor {
-            name: "Freq",
-            short_name: "Freq",
-            unit: ParamUnit::Hertz,
-            min: 20.0,
-            max: 20000.0,
-            default: 1000.0,
-            step: 1.0,
-        };
+    fn test_normalize_denormalize_linear() {
+        let desc = ParamDescriptor::mix(); // 0..100, linear
 
-        // Test normalize
-        assert_eq!(desc.normalize(20.0), 0.0);
-        assert_eq!(desc.normalize(20000.0), 1.0);
+        assert_eq!(desc.normalize(0.0), 0.0);
+        assert_eq!(desc.normalize(50.0), 0.5);
+        assert_eq!(desc.normalize(100.0), 1.0);
 
-        // Test denormalize
-        assert_eq!(desc.denormalize(0.0), 20.0);
-        assert_eq!(desc.denormalize(1.0), 20000.0);
+        assert_eq!(desc.denormalize(0.0), 0.0);
+        assert_eq!(desc.denormalize(0.5), 50.0);
+        assert_eq!(desc.denormalize(1.0), 100.0);
 
-        // Test round-trip
-        let original = 5000.0;
-        let normalized = desc.normalize(original);
-        let denormalized = desc.denormalize(normalized);
-        assert!((denormalized - original).abs() < 0.001);
+        // Round-trip
+        let original = 73.0;
+        let rt = desc.denormalize(desc.normalize(original));
+        assert!((rt - original).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_normalize_denormalize_logarithmic() {
+        let desc = ParamDescriptor::rate_hz(20.0, 20000.0, 1000.0); // logarithmic
+
+        // Endpoints
+        assert!((desc.normalize(20.0) - 0.0).abs() < 1e-6);
+        assert!((desc.normalize(20000.0) - 1.0).abs() < 1e-6);
+
+        // Midpoint in log space: sqrt(20 * 20000) ≈ 632.5
+        let mid = desc.denormalize(0.5);
+        let expected_mid = libm::sqrtf(20.0 * 20000.0);
+        assert!(
+            (mid - expected_mid).abs() < 1.0,
+            "log midpoint: expected ~{expected_mid}, got {mid}"
+        );
+
+        // Round-trip
+        for &val in &[20.0, 100.0, 1000.0, 5000.0, 20000.0] {
+            let rt = desc.denormalize(desc.normalize(val));
+            assert!(
+                (rt - val).abs() / val < 1e-4,
+                "log round-trip failed for {val}: got {rt}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_normalize_denormalize_power() {
+        let desc = ParamDescriptor::depth().with_scale(ParamScale::Power(2.0));
+
+        // Endpoints unchanged
+        assert_eq!(desc.normalize(0.0), 0.0);
+        assert_eq!(desc.normalize(100.0), 1.0);
+
+        // Power(2): normalize(x) = sqrt(x/100), denormalize(n) = n^2 * 100
+        let n = desc.normalize(25.0); // sqrt(0.25) = 0.5
+        assert!(
+            (n - 0.5).abs() < 1e-6,
+            "power normalize: expected 0.5, got {n}"
+        );
+
+        let v = desc.denormalize(0.5); // 0.5^2 * 100 = 25
+        assert!(
+            (v - 25.0).abs() < 1e-4,
+            "power denormalize: expected 25, got {v}"
+        );
+
+        // Round-trip
+        for &val in &[0.0, 10.0, 25.0, 50.0, 75.0, 100.0] {
+            let rt = desc.denormalize(desc.normalize(val));
+            assert!(
+                (rt - val).abs() < 0.01,
+                "power round-trip failed for {val}: got {rt}"
+            );
+        }
     }
 
     #[test]
     fn test_normalize_zero_range() {
-        let desc = ParamDescriptor {
-            name: "Fixed",
-            short_name: "Fixed",
-            unit: ParamUnit::None,
-            min: 42.0,
-            max: 42.0,
-            default: 42.0,
-            step: 0.0,
-        };
-
-        // Zero range should return 0.0 to avoid division by zero
+        let desc = ParamDescriptor::gain_db("Fixed", "Fixed", 42.0, 42.0, 42.0);
         assert_eq!(desc.normalize(42.0), 0.0);
     }
 
@@ -841,21 +1030,12 @@ mod tests {
 
     #[test]
     fn test_param_unit_debug() {
-        // Ensure Debug is implemented
         let _ = format!("{:?}", ParamUnit::Decibels);
     }
 
     #[test]
     fn test_descriptor_debug_clone() {
-        let desc = ParamDescriptor {
-            name: "Test",
-            short_name: "Test",
-            unit: ParamUnit::None,
-            min: 0.0,
-            max: 1.0,
-            default: 0.5,
-            step: 0.01,
-        };
+        let desc = ParamDescriptor::depth();
 
         // Test Debug
         let _ = format!("{:?}", desc);
@@ -878,5 +1058,63 @@ mod tests {
         assert_eq!(desc.max, 5.0);
         assert_eq!(desc.default, 0.5);
         assert_eq!(desc.step, 0.05);
+        assert_eq!(desc.scale, ParamScale::Logarithmic);
+    }
+
+    #[test]
+    fn test_param_id_lookup() {
+        let effect = TestEffect::new();
+
+        assert_eq!(effect.param_id(0), Some(ParamId(100)));
+        assert_eq!(effect.param_id(1), Some(ParamId(101)));
+        assert_eq!(effect.param_id(2), None);
+
+        assert_eq!(effect.param_index_by_id(ParamId(100)), Some(0));
+        assert_eq!(effect.param_index_by_id(ParamId(101)), Some(1));
+        assert_eq!(effect.param_index_by_id(ParamId(999)), None);
+    }
+
+    #[test]
+    fn test_param_flags() {
+        assert!(ParamFlags::AUTOMATABLE.contains(ParamFlags::AUTOMATABLE));
+        assert!(!ParamFlags::AUTOMATABLE.contains(ParamFlags::STEPPED));
+        assert!(!ParamFlags::NONE.contains(ParamFlags::AUTOMATABLE));
+
+        let combined = ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED);
+        assert!(combined.contains(ParamFlags::AUTOMATABLE));
+        assert!(combined.contains(ParamFlags::STEPPED));
+        assert!(!combined.contains(ParamFlags::HIDDEN));
+    }
+
+    #[test]
+    fn test_with_id_builder() {
+        let desc = ParamDescriptor::mix().with_id(ParamId(42), "test_mix");
+        assert_eq!(desc.id, ParamId(42));
+        assert_eq!(desc.string_id, "test_mix");
+        assert_eq!(desc.name, "Mix"); // unchanged
+    }
+
+    #[test]
+    fn test_with_scale_builder() {
+        let desc = ParamDescriptor::depth().with_scale(ParamScale::Power(3.0));
+        assert_eq!(desc.scale, ParamScale::Power(3.0));
+        assert_eq!(desc.name, "Depth"); // unchanged
+    }
+
+    #[test]
+    fn test_with_flags_builder() {
+        let desc =
+            ParamDescriptor::mix().with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED));
+        assert!(desc.flags.contains(ParamFlags::STEPPED));
+    }
+
+    #[test]
+    fn test_defaults() {
+        let desc = ParamDescriptor::mix();
+        assert_eq!(desc.id, ParamId(0));
+        assert_eq!(desc.string_id, "");
+        assert_eq!(desc.scale, ParamScale::Linear);
+        assert_eq!(desc.flags, ParamFlags::AUTOMATABLE);
+        assert_eq!(desc.group, "");
     }
 }

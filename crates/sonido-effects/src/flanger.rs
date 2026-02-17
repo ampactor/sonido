@@ -7,8 +7,8 @@
 
 use libm::ceilf;
 use sonido_core::{
-    Effect, InterpolatedDelay, Lfo, ParamDescriptor, ParameterInfo, SmoothedParam, flush_denormal,
-    wet_dry_mix, wet_dry_mix_stereo,
+    Effect, InterpolatedDelay, Lfo, ParamDescriptor, ParamId, ParameterInfo, SmoothedParam,
+    flush_denormal, wet_dry_mix, wet_dry_mix_stereo,
 };
 
 /// Flanger effect with LFO-modulated delay.
@@ -266,11 +266,13 @@ impl ParameterInfo for Flanger {
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
         match index {
-            0 => Some(ParamDescriptor::rate_hz(0.05, 5.0, 0.5)),
-            1 => Some(ParamDescriptor::depth()),
-            2 => Some(ParamDescriptor::feedback()),
-            3 => Some(ParamDescriptor::mix()),
-            4 => Some(sonido_core::gain::output_param_descriptor()),
+            0 => Some(ParamDescriptor::rate_hz(0.05, 5.0, 0.5).with_id(ParamId(800), "flgr_rate")),
+            1 => Some(ParamDescriptor::depth().with_id(ParamId(801), "flgr_depth")),
+            2 => Some(ParamDescriptor::feedback().with_id(ParamId(802), "flgr_fdbk")),
+            3 => Some(ParamDescriptor::mix().with_id(ParamId(803), "flgr_mix")),
+            4 => Some(
+                sonido_core::gain::output_param_descriptor().with_id(ParamId(804), "flgr_output"),
+            ),
             _ => None,
         }
     }

@@ -5,7 +5,8 @@
 
 use libm::tanhf;
 use sonido_core::{
-    Effect, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, db_to_linear, linear_to_db,
+    Effect, ParamDescriptor, ParamId, ParamUnit, ParameterInfo, SmoothedParam, db_to_linear,
+    linear_to_db,
 };
 
 /// Clean preamp stage
@@ -163,33 +164,27 @@ impl ParameterInfo for CleanPreamp {
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
         match index {
-            0 => Some(ParamDescriptor {
-                name: "Gain",
-                short_name: "Gain",
-                unit: ParamUnit::Decibels,
-                min: -20.0,
-                max: 20.0,
-                default: 0.0,
-                step: 0.5,
-            }),
-            1 => Some(ParamDescriptor {
-                name: "Output",
-                short_name: "Output",
-                unit: ParamUnit::Decibels,
-                min: -20.0,
-                max: 20.0,
-                default: 0.0,
-                step: 0.5,
-            }),
-            2 => Some(ParamDescriptor {
-                name: "Headroom",
-                short_name: "Hroom",
-                unit: ParamUnit::Decibels,
-                min: 6.0,
-                max: 40.0,
-                default: 20.0,
-                step: 1.0,
-            }),
+            0 => Some(
+                ParamDescriptor::gain_db("Gain", "Gain", -20.0, 20.0, 0.0)
+                    .with_id(ParamId(100), "pre_gain"),
+            ),
+            1 => Some(
+                ParamDescriptor::gain_db("Output", "Output", -20.0, 20.0, 0.0)
+                    .with_id(ParamId(101), "pre_output"),
+            ),
+            2 => Some(
+                ParamDescriptor {
+                    name: "Headroom",
+                    short_name: "Hroom",
+                    unit: ParamUnit::Decibels,
+                    min: 6.0,
+                    max: 40.0,
+                    default: 20.0,
+                    step: 1.0,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(102), "pre_headroom"),
+            ),
             _ => None,
         }
     }

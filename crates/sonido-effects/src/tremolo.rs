@@ -3,7 +3,8 @@
 //! Classic amplitude modulation effect that creates rhythmic volume variations.
 
 use sonido_core::{
-    Effect, Lfo, LfoWaveform, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam,
+    Effect, Lfo, LfoWaveform, ParamDescriptor, ParamFlags, ParamId, ParamUnit, ParameterInfo,
+    SmoothedParam,
 };
 
 /// Tremolo waveform type.
@@ -196,18 +197,25 @@ impl ParameterInfo for Tremolo {
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
         match index {
-            0 => Some(ParamDescriptor::rate_hz(0.5, 20.0, 5.0)),
-            1 => Some(ParamDescriptor::depth()),
-            2 => Some(ParamDescriptor {
-                name: "Waveform",
-                short_name: "Wave",
-                unit: ParamUnit::None,
-                min: 0.0,
-                max: 3.0,
-                default: 0.0,
-                step: 1.0,
-            }),
-            3 => Some(sonido_core::gain::output_param_descriptor()),
+            0 => Some(ParamDescriptor::rate_hz(0.5, 20.0, 5.0).with_id(ParamId(1000), "trem_rate")),
+            1 => Some(ParamDescriptor::depth().with_id(ParamId(1001), "trem_depth")),
+            2 => Some(
+                ParamDescriptor {
+                    name: "Waveform",
+                    short_name: "Wave",
+                    unit: ParamUnit::None,
+                    min: 0.0,
+                    max: 3.0,
+                    default: 0.0,
+                    step: 1.0,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(1002), "trem_waveform")
+                .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED)),
+            ),
+            3 => Some(
+                sonido_core::gain::output_param_descriptor().with_id(ParamId(1003), "trem_output"),
+            ),
             _ => None,
         }
     }

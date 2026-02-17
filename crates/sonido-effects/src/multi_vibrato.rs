@@ -4,7 +4,7 @@
 //! to simulate authentic tape wow and flutter.
 
 use sonido_core::{
-    Effect, FixedDelayLine, Lfo, LfoWaveform, ParamDescriptor, ParamUnit, ParameterInfo,
+    Effect, FixedDelayLine, Lfo, LfoWaveform, ParamDescriptor, ParamId, ParamUnit, ParameterInfo,
     SmoothedParam, wet_dry_mix, wet_dry_mix_stereo,
 };
 
@@ -223,25 +223,35 @@ impl ParameterInfo for MultiVibrato {
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
         match index {
-            0 => Some(ParamDescriptor {
-                name: "Depth",
-                short_name: "Depth",
-                unit: ParamUnit::Percent,
-                min: 0.0,
-                max: 200.0,
-                default: 100.0,
-                step: 1.0,
-            }),
-            1 => Some(ParamDescriptor {
-                name: "Mix",
-                short_name: "Mix",
-                unit: ParamUnit::Percent,
-                min: 0.0,
-                max: 100.0,
-                default: 100.0,
-                step: 1.0,
-            }),
-            2 => Some(sonido_core::gain::output_param_descriptor()),
+            0 => Some(
+                ParamDescriptor {
+                    name: "Depth",
+                    short_name: "Depth",
+                    unit: ParamUnit::Percent,
+                    min: 0.0,
+                    max: 200.0,
+                    default: 100.0,
+                    step: 1.0,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(1300), "vib_depth"),
+            ),
+            1 => Some(
+                ParamDescriptor {
+                    name: "Mix",
+                    short_name: "Mix",
+                    unit: ParamUnit::Percent,
+                    min: 0.0,
+                    max: 100.0,
+                    default: 100.0,
+                    step: 1.0,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(1301), "vib_mix"),
+            ),
+            2 => Some(
+                sonido_core::gain::output_param_descriptor().with_id(ParamId(1302), "vib_output"),
+            ),
             _ => None,
         }
     }
