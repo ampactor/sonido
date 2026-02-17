@@ -4,8 +4,8 @@
 //! useful for removing noise, bleed, or unwanted quiet sounds.
 
 use sonido_core::{
-    Effect, EnvelopeFollower, ParamDescriptor, ParamId, ParamUnit, ParameterInfo, SmoothedParam,
-    fast_db_to_linear,
+    Effect, EnvelopeFollower, ParamDescriptor, ParamId, ParamUnit, SmoothedParam,
+    fast_db_to_linear, impl_params,
 };
 
 /// Noise gate states.
@@ -333,74 +333,50 @@ impl Effect for Gate {
     }
 }
 
-impl ParameterInfo for Gate {
-    fn param_count(&self) -> usize {
-        5
-    }
+impl_params! {
+    Gate, this {
+        [0] ParamDescriptor {
+                name: "Threshold",
+                short_name: "Thresh",
+                unit: ParamUnit::Decibels,
+                min: -80.0,
+                max: 0.0,
+                default: -40.0,
+                step: 1.0,
+                ..ParamDescriptor::mix()
+            }
+            .with_id(ParamId(400), "gate_thresh"),
+            get: this.threshold.target(),
+            set: |v| this.set_threshold_db(v);
 
-    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
-        match index {
-            0 => Some(
-                ParamDescriptor {
-                    name: "Threshold",
-                    short_name: "Thresh",
-                    unit: ParamUnit::Decibels,
-                    min: -80.0,
-                    max: 0.0,
-                    default: -40.0,
-                    step: 1.0,
-                    ..ParamDescriptor::mix()
-                }
-                .with_id(ParamId(400), "gate_thresh"),
-            ),
-            1 => Some(
-                ParamDescriptor {
-                    name: "Attack",
-                    short_name: "Atk",
-                    unit: ParamUnit::Milliseconds,
-                    min: 0.1,
-                    max: 50.0,
-                    default: 1.0,
-                    step: 0.1,
-                    ..ParamDescriptor::mix()
-                }
-                .with_id(ParamId(401), "gate_attack"),
-            ),
-            2 => Some(
-                ParamDescriptor::time_ms("Release", "Rel", 10.0, 1000.0, 100.0)
-                    .with_id(ParamId(402), "gate_release"),
-            ),
-            3 => Some(
-                ParamDescriptor::time_ms("Hold", "Hold", 0.0, 500.0, 50.0)
-                    .with_id(ParamId(403), "gate_hold"),
-            ),
-            4 => Some(
-                sonido_core::gain::output_param_descriptor().with_id(ParamId(404), "gate_output"),
-            ),
-            _ => None,
-        }
-    }
+        [1] ParamDescriptor {
+                name: "Attack",
+                short_name: "Atk",
+                unit: ParamUnit::Milliseconds,
+                min: 0.1,
+                max: 50.0,
+                default: 1.0,
+                step: 0.1,
+                ..ParamDescriptor::mix()
+            }
+            .with_id(ParamId(401), "gate_attack"),
+            get: this.attack_ms.target(),
+            set: |v| this.set_attack_ms(v);
 
-    fn get_param(&self, index: usize) -> f32 {
-        match index {
-            0 => self.threshold.target(),
-            1 => self.attack_ms.target(),
-            2 => self.release_ms.target(),
-            3 => self.hold_ms.target(),
-            4 => sonido_core::gain::output_level_db(&self.output_level),
-            _ => 0.0,
-        }
-    }
+        [2] ParamDescriptor::time_ms("Release", "Rel", 10.0, 1000.0, 100.0)
+                .with_id(ParamId(402), "gate_release"),
+            get: this.release_ms.target(),
+            set: |v| this.set_release_ms(v);
 
-    fn set_param(&mut self, index: usize, value: f32) {
-        match index {
-            0 => self.set_threshold_db(value),
-            1 => self.set_attack_ms(value),
-            2 => self.set_release_ms(value),
-            3 => self.set_hold_ms(value),
-            4 => sonido_core::gain::set_output_level_db(&mut self.output_level, value),
-            _ => {}
-        }
+        [3] ParamDescriptor::time_ms("Hold", "Hold", 0.0, 500.0, 50.0)
+                .with_id(ParamId(403), "gate_hold"),
+            get: this.hold_ms.target(),
+            set: |v| this.set_hold_ms(v);
+
+        [4] sonido_core::gain::output_param_descriptor()
+                .with_id(ParamId(404), "gate_output"),
+            get: sonido_core::gain::output_level_db(&this.output_level),
+            set: |v| sonido_core::gain::set_output_level_db(&mut this.output_level, v);
     }
 }
 
@@ -409,6 +385,7 @@ mod tests {
     use super::*;
     #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
+    use sonido_core::ParameterInfo;
     #[cfg(feature = "std")]
     use std::vec::Vec;
 

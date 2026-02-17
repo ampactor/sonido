@@ -1,9 +1,14 @@
 //! Modulation source abstraction for parameter control.
 //!
-//! Provides a unified interface for anything that can modulate parameters:
-//! LFOs, envelopes, envelope followers, and external audio sources.
+//! Provides a unified interface for autonomous modulation generators:
+//! LFOs, ADSR envelopes, and audio-rate modulators. The trait is for
+//! sources that produce time-varying signals independently — not
+//! input-dependent processors.
+//!
+//! `EnvelopeFollower` requires input via `process()` and does not
+//! implement this trait.
 
-use crate::{EnvelopeFollower, Lfo};
+use crate::Lfo;
 
 /// Trait for anything that can generate modulation signals.
 ///
@@ -12,7 +17,6 @@ use crate::{EnvelopeFollower, Lfo};
 /// a unified interface across fundamentally different signal generators:
 ///
 /// - **LFOs** (bipolar, free-running periodic signals)
-/// - **Envelope followers** (unipolar, input-dependent amplitude tracking)
 /// - **ADSR envelopes** (unipolar, gate-triggered)
 /// - **Audio-rate modulators** (bipolar, for FM/AM synthesis)
 ///
@@ -87,51 +91,7 @@ impl ModulationSource for Lfo {
     }
 
     fn mod_value(&self) -> f32 {
-        // LFO doesn't have a separate current value getter,
-        // but we can compute it from phase without advancing
-        use crate::LfoWaveform;
-        use core::f32::consts::PI;
-        use libm::sinf;
-
-        let phase = self.phase();
-        match self.waveform() {
-            LfoWaveform::Sine => sinf(phase * 2.0 * PI),
-            LfoWaveform::Triangle => {
-                if phase < 0.5 {
-                    4.0 * phase - 1.0
-                } else {
-                    3.0 - 4.0 * phase
-                }
-            }
-            LfoWaveform::Saw => 2.0 * phase - 1.0,
-            LfoWaveform::Square => {
-                if phase < 0.5 {
-                    1.0
-                } else {
-                    -1.0
-                }
-            }
-            LfoWaveform::SampleAndHold => 0.0, // Can't know without state
-        }
-    }
-}
-
-impl ModulationSource for EnvelopeFollower {
-    fn mod_advance(&mut self) -> f32 {
-        // EnvelopeFollower needs input, so we return current level
-        self.level()
-    }
-
-    fn is_bipolar(&self) -> bool {
-        false // Envelope follower is always 0 to 1
-    }
-
-    fn mod_reset(&mut self) {
-        self.reset();
-    }
-
-    fn mod_value(&self) -> f32 {
-        self.level()
+        self.value_at_phase()
     }
 }
 
@@ -218,21 +178,6 @@ mod tests {
                 value
             );
         }
-    }
-
-    #[test]
-    fn test_envelope_follower_modulation() {
-        let mut env = EnvelopeFollower::new(48000.0);
-
-        assert!(!env.is_bipolar());
-
-        // Feed some signal
-        for _ in 0..100 {
-            env.process(0.5);
-        }
-
-        let value = env.mod_value();
-        assert!((0.0..=1.0).contains(&value));
     }
 
     #[test]

@@ -29,8 +29,8 @@
 //! - **Slow release** (> 200ms): Smooth, transparent compression
 
 use sonido_core::{
-    Effect, EnvelopeFollower, ParamDescriptor, ParamId, ParamUnit, ParameterInfo, SmoothedParam,
-    db_to_linear, fast_db_to_linear, fast_linear_to_db, linear_to_db,
+    Effect, EnvelopeFollower, ParamDescriptor, ParamId, ParamUnit, SmoothedParam, db_to_linear,
+    fast_db_to_linear, fast_linear_to_db, linear_to_db,
 };
 
 /// Gain computer for calculating compression curve.
@@ -259,81 +259,41 @@ impl Effect for Compressor {
     }
 }
 
-impl ParameterInfo for Compressor {
-    fn param_count(&self) -> usize {
-        6
-    }
+sonido_core::impl_params! {
+    Compressor, this {
+        [0] ParamDescriptor::gain_db("Threshold", "Thresh", -60.0, 0.0, -18.0)
+                .with_id(ParamId(300), "comp_thresh"),
+            get: this.gain_computer.threshold_db,
+            set: |v| this.set_threshold_db(v);
 
-    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
-        match index {
-            0 => Some(
-                ParamDescriptor::gain_db("Threshold", "Thresh", -60.0, 0.0, -18.0)
-                    .with_id(ParamId(300), "comp_thresh"),
-            ),
-            1 => Some(
-                ParamDescriptor {
-                    name: "Ratio",
-                    short_name: "Ratio",
-                    unit: ParamUnit::Ratio,
-                    min: 1.0,
-                    max: 20.0,
-                    default: 4.0,
-                    step: 0.1,
-                    ..ParamDescriptor::mix()
-                }
+        [1] ParamDescriptor::custom("Ratio", "Ratio", 1.0, 20.0, 4.0)
+                .with_unit(ParamUnit::Ratio)
+                .with_step(0.1)
                 .with_id(ParamId(301), "comp_ratio"),
-            ),
-            2 => Some(
-                ParamDescriptor {
-                    name: "Attack",
-                    short_name: "Attack",
-                    unit: ParamUnit::Milliseconds,
-                    min: 0.1,
-                    max: 100.0,
-                    default: 10.0,
-                    step: 0.1,
-                    ..ParamDescriptor::mix()
-                }
+            get: this.gain_computer.ratio,
+            set: |v| this.set_ratio(v);
+
+        [2] ParamDescriptor::custom("Attack", "Attack", 0.1, 100.0, 10.0)
+                .with_unit(ParamUnit::Milliseconds)
+                .with_step(0.1)
                 .with_id(ParamId(302), "comp_attack"),
-            ),
-            3 => Some(
-                ParamDescriptor::time_ms("Release", "Release", 10.0, 1000.0, 100.0)
-                    .with_id(ParamId(303), "comp_release"),
-            ),
-            4 => Some(
-                ParamDescriptor::gain_db("Makeup Gain", "Makeup", 0.0, 24.0, 0.0)
-                    .with_id(ParamId(304), "comp_makeup"),
-            ),
-            5 => Some(
-                ParamDescriptor::gain_db("Knee", "Knee", 0.0, 12.0, 6.0)
-                    .with_id(ParamId(305), "comp_knee"),
-            ),
-            _ => None,
-        }
-    }
+            get: this.envelope_follower.attack_ms(),
+            set: |v| this.set_attack_ms(v);
 
-    fn get_param(&self, index: usize) -> f32 {
-        match index {
-            0 => self.gain_computer.threshold_db,
-            1 => self.gain_computer.ratio,
-            2 => self.envelope_follower.attack_ms(),
-            3 => self.envelope_follower.release_ms(),
-            4 => linear_to_db(self.makeup_gain.target()),
-            5 => self.gain_computer.knee_db,
-            _ => 0.0,
-        }
-    }
+        [3] ParamDescriptor::time_ms("Release", "Release", 10.0, 1000.0, 100.0)
+                .with_id(ParamId(303), "comp_release"),
+            get: this.envelope_follower.release_ms(),
+            set: |v| this.set_release_ms(v);
 
-    fn set_param(&mut self, index: usize, value: f32) {
-        match index {
-            0 => self.set_threshold_db(value),
-            1 => self.set_ratio(value),
-            2 => self.set_attack_ms(value),
-            3 => self.set_release_ms(value),
-            4 => self.set_makeup_gain_db(value),
-            5 => self.set_knee_db(value),
-            _ => {}
-        }
+        [4] ParamDescriptor::gain_db("Makeup Gain", "Makeup", 0.0, 24.0, 0.0)
+                .with_id(ParamId(304), "comp_makeup"),
+            get: linear_to_db(this.makeup_gain.target()),
+            set: |v| this.set_makeup_gain_db(v);
+
+        [5] ParamDescriptor::gain_db("Knee", "Knee", 0.0, 12.0, 6.0)
+                .with_id(ParamId(305), "comp_knee"),
+            get: this.gain_computer.knee_db,
+            set: |v| this.set_knee_db(v);
     }
 }
 

@@ -122,28 +122,29 @@ pub fn hard_clip(x: f32, threshold: f32) -> f32 {
 /// When |x| exceeds threshold, the signal "folds" back instead of clipping.
 /// Creates rich harmonic content, popular in synthesizers.
 ///
+/// Uses a bounded iterative approach (max 16 iterations) instead of recursion
+/// for stack safety on embedded targets (e.g., Daisy Seed with limited stack).
+///
 /// # Arguments
 /// * `x` - Input sample
 /// * `threshold` - Folding threshold
 ///
 /// # Returns
-/// Foldback-distorted output
+/// Foldback-distorted output, clamped to `[-threshold, threshold]`
 #[inline]
 pub fn foldback(x: f32, threshold: f32) -> f32 {
-    if x.abs() <= threshold {
-        x
-    } else {
-        // Fold the signal back
-        let sign = x.signum();
-        let excess = x.abs() - threshold;
-        let folded = threshold - excess;
-        // Recursive fold for high drive
-        if folded < -threshold {
-            foldback(sign * folded, threshold)
-        } else {
-            sign * folded
-        }
+    if threshold <= 0.0 {
+        return 0.0;
     }
+    let mut out = x;
+    for _ in 0..16 {
+        if out.abs() <= threshold {
+            return out;
+        }
+        let sign = out.signum();
+        out = sign * (threshold - (out.abs() - threshold));
+    }
+    out.clamp(-threshold, threshold)
 }
 
 /// Asymmetric soft clipping.
@@ -329,6 +330,33 @@ mod tests {
         // Above threshold: folds back
         let folded = foldback(1.0, threshold);
         assert!((folded - 0.6).abs() < 1e-6, "Expected 0.6, got {}", folded);
+    }
+
+    #[test]
+    fn test_foldback_no_fold_needed() {
+        assert!((foldback(0.5, 1.0) - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_foldback_single_fold() {
+        assert!((foldback(1.5, 1.0) - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_foldback_extreme_input() {
+        let result = foldback(100.0, 1.0);
+        assert!(
+            result >= -1.0 && result <= 1.0,
+            "Result {} out of bounds",
+            result
+        );
+    }
+
+    #[test]
+    fn test_foldback_zero_threshold() {
+        assert_eq!(foldback(0.5, 0.0), 0.0);
+        assert_eq!(foldback(-3.0, 0.0), 0.0);
+        assert_eq!(foldback(0.0, 0.0), 0.0);
     }
 
     #[test]

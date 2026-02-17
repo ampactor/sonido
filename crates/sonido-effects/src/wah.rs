@@ -5,7 +5,7 @@
 
 use sonido_core::{
     Effect, EnvelopeFollower, ParamDescriptor, ParamFlags, ParamId, ParamScale, ParamUnit,
-    ParameterInfo, SmoothedParam, StateVariableFilter, SvfOutput,
+    SmoothedParam, StateVariableFilter, SvfOutput, impl_params,
 };
 
 /// Wah mode selection.
@@ -266,97 +266,73 @@ impl Effect for Wah {
     }
 }
 
-impl ParameterInfo for Wah {
-    fn param_count(&self) -> usize {
-        5
-    }
+impl_params! {
+    Wah, this {
+        [0] ParamDescriptor {
+                name: "Frequency",
+                short_name: "Freq",
+                unit: ParamUnit::Hertz,
+                min: 200.0,
+                max: 2000.0,
+                default: 800.0,
+                step: 10.0,
+                ..ParamDescriptor::mix()
+            }
+            .with_id(ParamId(600), "wah_freq")
+            .with_scale(ParamScale::Logarithmic),
+            get: this.frequency.target(),
+            set: |v| this.set_frequency(v);
 
-    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
-        match index {
-            0 => Some(
-                ParamDescriptor {
-                    name: "Frequency",
-                    short_name: "Freq",
-                    unit: ParamUnit::Hertz,
-                    min: 200.0,
-                    max: 2000.0,
-                    default: 800.0,
-                    step: 10.0,
-                    ..ParamDescriptor::mix()
-                }
-                .with_id(ParamId(600), "wah_freq")
-                .with_scale(ParamScale::Logarithmic),
-            ),
-            1 => Some(
-                ParamDescriptor {
-                    name: "Resonance",
-                    short_name: "Reso",
-                    unit: ParamUnit::None,
-                    min: 1.0,
-                    max: 10.0,
-                    default: 5.0,
-                    step: 0.1,
-                    ..ParamDescriptor::mix()
-                }
-                .with_id(ParamId(601), "wah_reso"),
-            ),
-            2 => Some(
-                ParamDescriptor {
-                    name: "Sensitivity",
-                    short_name: "Sens",
-                    unit: ParamUnit::Percent,
-                    min: 0.0,
-                    max: 100.0,
-                    default: 50.0,
-                    step: 1.0,
-                    ..ParamDescriptor::mix()
-                }
-                .with_id(ParamId(602), "wah_sens"),
-            ),
-            3 => Some(
-                ParamDescriptor {
-                    name: "Mode",
-                    short_name: "Mode",
-                    unit: ParamUnit::None,
-                    min: 0.0,
-                    max: 1.0,
-                    default: 0.0,
-                    step: 1.0,
-                    ..ParamDescriptor::mix()
-                }
-                .with_id(ParamId(603), "wah_mode")
-                .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED)),
-            ),
-            4 => Some(
-                sonido_core::gain::output_param_descriptor().with_id(ParamId(604), "wah_output"),
-            ),
-            _ => None,
-        }
-    }
+        [1] ParamDescriptor {
+                name: "Resonance",
+                short_name: "Reso",
+                unit: ParamUnit::None,
+                min: 1.0,
+                max: 10.0,
+                default: 5.0,
+                step: 0.1,
+                ..ParamDescriptor::mix()
+            }
+            .with_id(ParamId(601), "wah_reso"),
+            get: this.resonance.target(),
+            set: |v| this.set_resonance(v);
 
-    fn get_param(&self, index: usize) -> f32 {
-        match index {
-            0 => self.frequency.target(),
-            1 => self.resonance.target(),
-            2 => self.sensitivity.target() * 100.0,
-            3 => match self.mode {
+        [2] ParamDescriptor {
+                name: "Sensitivity",
+                short_name: "Sens",
+                unit: ParamUnit::Percent,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+                step: 1.0,
+                ..ParamDescriptor::mix()
+            }
+            .with_id(ParamId(602), "wah_sens"),
+            get: this.sensitivity.target() * 100.0,
+            set: |v| this.set_sensitivity(v / 100.0);
+
+        [3] ParamDescriptor {
+                name: "Mode",
+                short_name: "Mode",
+                unit: ParamUnit::None,
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+                step: 1.0,
+                ..ParamDescriptor::mix()
+            }
+            .with_id(ParamId(603), "wah_mode")
+            .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED)),
+            get: match this.mode {
                 WahMode::Auto => 0.0,
                 WahMode::Manual => 1.0,
             },
-            4 => sonido_core::gain::output_level_db(&self.output_level),
-            _ => 0.0,
-        }
-    }
+            set: |v| this.set_mode_index(v as usize);
 
-    fn set_param(&mut self, index: usize, value: f32) {
-        match index {
-            0 => self.set_frequency(value),
-            1 => self.set_resonance(value),
-            2 => self.set_sensitivity(value / 100.0),
-            3 => self.set_mode_index(value as usize),
-            4 => sonido_core::gain::set_output_level_db(&mut self.output_level, value),
-            _ => {}
-        }
+        [4] sonido_core::gain::output_param_descriptor()
+                .with_id(ParamId(604), "wah_output"),
+            get: sonido_core::gain::output_level_db(&this.output_level),
+            set: |v| sonido_core::gain::set_output_level_db(&mut this.output_level, v);
     }
 }
 
@@ -365,6 +341,7 @@ mod tests {
     use super::*;
     #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
+    use sonido_core::ParameterInfo;
     #[cfg(feature = "std")]
     use std::vec::Vec;
 

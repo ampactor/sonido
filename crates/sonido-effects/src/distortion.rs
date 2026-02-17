@@ -25,8 +25,8 @@
 //! - **Level** (-20-0 dB): Output level compensation.
 
 use sonido_core::{
-    Effect, OnePole, ParamDescriptor, ParamFlags, ParamId, ParamScale, ParamUnit, ParameterInfo,
-    SmoothedParam, asymmetric_clip, db_to_linear, foldback, hard_clip, linear_to_db, soft_clip,
+    Effect, OnePole, ParamDescriptor, ParamFlags, ParamId, ParamScale, ParamUnit, SmoothedParam,
+    asymmetric_clip, db_to_linear, foldback, hard_clip, linear_to_db, soft_clip,
 };
 
 /// Waveshaping algorithm selection.
@@ -293,91 +293,47 @@ impl Effect for Distortion {
     }
 }
 
-impl ParameterInfo for Distortion {
-    fn param_count(&self) -> usize {
-        4
-    }
+sonido_core::impl_params! {
+    Distortion, this {
+        [0] ParamDescriptor::gain_db("Drive", "Drive", 0.0, 40.0, 12.0)
+                .with_id(ParamId(200), "dist_drive"),
+            get: this.drive_db(),
+            set: |v| this.set_drive_db(v);
 
-    fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
-        match index {
-            0 => Some(
-                ParamDescriptor::gain_db("Drive", "Drive", 0.0, 40.0, 12.0)
-                    .with_id(ParamId(200), "dist_drive"),
-            ),
-            1 => Some(
-                ParamDescriptor {
-                    name: "Tone",
-                    short_name: "Tone",
-                    unit: ParamUnit::Hertz,
-                    min: 500.0,
-                    max: 10000.0,
-                    default: 4000.0,
-                    step: 100.0,
-                    ..ParamDescriptor::mix()
-                }
+        [1] ParamDescriptor::custom("Tone", "Tone", 500.0, 10000.0, 4000.0)
+                .with_unit(ParamUnit::Hertz)
+                .with_step(100.0)
                 .with_id(ParamId(201), "dist_tone")
                 .with_scale(ParamScale::Logarithmic),
-            ),
-            2 => Some(
-                ParamDescriptor::gain_db("Level", "Level", -20.0, 0.0, -6.0)
-                    .with_id(ParamId(202), "dist_level"),
-            ),
-            3 => Some(
-                ParamDescriptor {
-                    name: "Waveshape",
-                    short_name: "Shape",
-                    unit: ParamUnit::None,
-                    min: 0.0,
-                    max: 3.0,
-                    default: 0.0,
-                    step: 1.0,
-                    ..ParamDescriptor::mix()
-                }
+            get: this.tone_hz(),
+            set: |v| this.set_tone_hz(v);
+
+        [2] ParamDescriptor::gain_db("Level", "Level", -20.0, 0.0, -6.0)
+                .with_id(ParamId(202), "dist_level"),
+            get: this.level_db(),
+            set: |v| this.set_level_db(v);
+
+        [3] ParamDescriptor::custom("Waveshape", "Shape", 0.0, 3.0, 0.0)
+                .with_step(1.0)
                 .with_id(ParamId(203), "dist_shape")
                 .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED))
-                .with_step_labels(&[
-                    "Soft Clip",
-                    "Hard Clip",
-                    "Foldback",
-                    "Asymmetric",
-                ]),
-            ),
-            _ => None,
-        }
-    }
-
-    fn get_param(&self, index: usize) -> f32 {
-        match index {
-            0 => self.drive_db(),
-            1 => self.tone_hz(),
-            2 => self.level_db(),
-            3 => self.waveshape as u8 as f32,
-            _ => 0.0,
-        }
-    }
-
-    fn set_param(&mut self, index: usize, value: f32) {
-        match index {
-            0 => self.set_drive_db(value.clamp(0.0, 40.0)),
-            1 => self.set_tone_hz(value.clamp(500.0, 10000.0)),
-            2 => self.set_level_db(value.clamp(-20.0, 0.0)),
-            3 => {
-                let shape = match value as u8 {
+                .with_step_labels(&["Soft Clip", "Hard Clip", "Foldback", "Asymmetric"]),
+            get: this.waveshape as u8 as f32,
+            set: |v| {
+                this.waveshape = match v as u8 {
                     0 => WaveShape::SoftClip,
                     1 => WaveShape::HardClip,
                     2 => WaveShape::Foldback,
                     _ => WaveShape::Asymmetric,
-                };
-                self.set_waveshape(shape);
-            }
-            _ => {}
-        }
+                }
+            };
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sonido_core::ParameterInfo;
 
     #[test]
     fn test_distortion_basic() {
@@ -389,6 +345,18 @@ mod tests {
             let output = dist.process(0.1);
             assert!(output.is_finite());
         }
+    }
+
+    #[test]
+    fn test_distortion_waveshape_clamp() {
+        let mut dist = Distortion::new(48000.0);
+        // Out-of-range value should be clamped to max (3.0 = Asymmetric)
+        dist.set_param(3, 99.0);
+        assert_eq!(dist.get_param(3), 3.0);
+
+        // Negative value should clamp to 0 (SoftClip)
+        dist.set_param(3, -5.0);
+        assert_eq!(dist.get_param(3), 0.0);
     }
 
     #[test]

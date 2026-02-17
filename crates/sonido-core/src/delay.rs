@@ -73,6 +73,8 @@ pub struct InterpolatedDelay {
     buffer: Vec<f32>,
     /// Write position in buffer
     write_pos: usize,
+    /// Interpolation method for fractional delay reads
+    interpolation: Interpolation,
 }
 
 impl InterpolatedDelay {
@@ -91,6 +93,7 @@ impl InterpolatedDelay {
         Self {
             buffer: vec![0.0; max_delay_samples],
             write_pos: 0,
+            interpolation: Interpolation::Linear,
         }
     }
 
@@ -100,7 +103,17 @@ impl InterpolatedDelay {
         Self::new(max_samples)
     }
 
-    /// Reads a delayed sample with linear interpolation.
+    /// Sets the interpolation method for fractional delay reads.
+    ///
+    /// - [`Interpolation::None`]: Truncate to nearest sample (lowest CPU)
+    /// - [`Interpolation::Linear`]: Interpolate between 2 samples (default)
+    /// - [`Interpolation::Cubic`]: 4-point cubic interpolation (best quality,
+    ///   recommended for modulated effects like chorus/flanger)
+    pub fn set_interpolation(&mut self, interp: Interpolation) {
+        self.interpolation = interp;
+    }
+
+    /// Reads a delayed sample with the configured interpolation method.
     ///
     /// # Arguments
     ///
@@ -111,39 +124,49 @@ impl InterpolatedDelay {
     pub fn read(&self, delay_samples: f32) -> f32 {
         debug_assert!(delay_samples >= 0.0);
 
-        let buffer_len = self.buffer.len();
-        let delay_clamped = delay_samples.min((buffer_len - 1) as f32);
+        let len = self.buffer.len();
+        let delay_clamped = delay_samples.min((len - 1) as f32);
 
-        // Calculate read position (going backwards from last written sample)
         let delay_int = delay_clamped as usize;
-        let delay_frac = delay_clamped - delay_int as f32;
+        let frac = delay_clamped - delay_int as f32;
 
-        // Calculate position of last written sample
-        let last_written = if self.write_pos == 0 {
-            buffer_len - 1
-        } else {
-            self.write_pos - 1
-        };
+        // read_pos = (write_pos + len - delay_int - 1) % len
+        // This points to the sample `delay_int` samples before the last written.
+        let read_pos = (self.write_pos + len - delay_int - 1) % len;
 
-        // Read position (going back from last written)
-        let read_pos = if last_written >= delay_int {
-            last_written - delay_int
-        } else {
-            buffer_len + last_written - delay_int
-        };
+        match self.interpolation {
+            Interpolation::None => self.buffer[read_pos],
 
-        // Next sample position for interpolation (one sample further back)
-        let next_pos = if read_pos == 0 {
-            buffer_len - 1
-        } else {
-            read_pos - 1
-        };
+            Interpolation::Linear => {
+                let next_pos = (read_pos + len - 1) % len;
+                let a = self.buffer[read_pos];
+                let b = self.buffer[next_pos];
+                a + (b - a) * frac
+            }
 
-        // Linear interpolation: y = y0 + (y1 - y0) * frac
-        let sample0 = self.buffer[read_pos];
-        let sample1 = self.buffer[next_pos];
+            Interpolation::Cubic => {
+                // 4-point cubic Lagrange interpolation
+                let p0 = (read_pos + 1) % len;
+                let p1 = read_pos;
+                let p2 = (read_pos + len - 1) % len;
+                let p3 = (read_pos + len - 2) % len;
 
-        sample0 + (sample1 - sample0) * delay_frac
+                let y0 = self.buffer[p0];
+                let y1 = self.buffer[p1];
+                let y2 = self.buffer[p2];
+                let y3 = self.buffer[p3];
+
+                let t = frac;
+                let t2 = t * t;
+                let t3 = t2 * t;
+
+                let a0 = y3 - y2 - y0 + y1;
+                let a1 = y0 - y1 - a0;
+                let a2 = y2 - y0;
+
+                a0 * t3 + a1 * t2 + a2 * t + y1
+            }
+        }
     }
 
     /// Writes a sample to the delay line and advances the write position.
@@ -371,5 +394,104 @@ mod tests {
     #[should_panic]
     fn test_delay_zero_size_panics() {
         let _delay = InterpolatedDelay::new(0);
+    }
+
+    #[test]
+    fn test_interpolated_delay_default_is_linear() {
+        let delay = InterpolatedDelay::new(16);
+        assert_eq!(delay.interpolation, Interpolation::Linear);
+    }
+
+    #[test]
+    fn test_interpolated_delay_none_interpolation() {
+        let mut delay = InterpolatedDelay::new(16);
+        delay.set_interpolation(Interpolation::None);
+
+        // Write a ramp: 0, 1, 2, 3, 4
+        for i in 0..5 {
+            delay.write(i as f32);
+        }
+
+        // Fractional delay should truncate — read at 1.7 should give sample at delay 1
+        let output = delay.read(1.7);
+        assert_eq!(output, 3.0); // delay 1 = sample index 3 (second-to-last written)
+    }
+
+    #[test]
+    fn test_interpolated_delay_cubic_smooth() {
+        let mut delay = InterpolatedDelay::new(64);
+        delay.set_interpolation(Interpolation::Cubic);
+
+        // Write a sinusoidal signal
+        for i in 0..32 {
+            let sample = libm::sinf(i as f32 * core::f32::consts::TAU / 16.0);
+            delay.write(sample);
+        }
+
+        // Read at fractional delays — cubic should produce smooth output
+        let v1 = delay.read(5.0);
+        let v2 = delay.read(5.25);
+        let v3 = delay.read(5.5);
+        let v4 = delay.read(5.75);
+        let v5 = delay.read(6.0);
+
+        // Verify monotonicity or smoothness: differences should be small
+        let diffs = [
+            (v2 - v1).abs(),
+            (v3 - v2).abs(),
+            (v4 - v3).abs(),
+            (v5 - v4).abs(),
+        ];
+        for d in &diffs {
+            assert!(*d < 1.0, "Jump too large: {d}");
+        }
+    }
+
+    #[test]
+    fn test_interpolated_delay_cubic_vs_linear_accuracy() {
+        // For a smooth signal, cubic should be more accurate than linear
+        // at fractional delay positions
+        let mut delay_lin = InterpolatedDelay::new(64);
+        let mut delay_cub = InterpolatedDelay::new(64);
+        delay_cub.set_interpolation(Interpolation::Cubic);
+
+        // Write identical low-frequency sine (smooth, well-suited for interpolation)
+        for i in 0..32 {
+            let sample = libm::sinf(i as f32 * core::f32::consts::TAU / 32.0);
+            delay_lin.write(sample);
+            delay_cub.write(sample);
+        }
+
+        // True value at fractional position via direct sine computation
+        // delay=5.5 means 5.5 samples before last written (sample 31)
+        // That's sample index 31-5.5 = 25.5, i.e. sin(25.5 * TAU/32)
+        let true_val = libm::sinf(25.5 * core::f32::consts::TAU / 32.0);
+
+        let lin_val = delay_lin.read(5.5);
+        let cub_val = delay_cub.read(5.5);
+
+        let lin_err = (lin_val - true_val).abs();
+        let cub_err = (cub_val - true_val).abs();
+
+        assert!(
+            cub_err <= lin_err,
+            "Cubic error ({cub_err}) should be <= linear error ({lin_err})"
+        );
+    }
+
+    #[test]
+    fn test_interpolated_delay_cubic_wrap_around() {
+        // Verify cubic works when buffer indices wrap around
+        let mut delay = InterpolatedDelay::new(8);
+        delay.set_interpolation(Interpolation::Cubic);
+
+        // Write enough samples to wrap
+        for i in 0..12 {
+            delay.write(i as f32);
+        }
+
+        // Read near the wrap boundary — should not panic
+        let output = delay.read(6.5);
+        assert!(output.is_finite());
     }
 }
