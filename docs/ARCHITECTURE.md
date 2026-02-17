@@ -5,7 +5,7 @@
 Sonido is a production-grade DSP library designed for multi-target deployment:
 - **Desktop**: CLI and GUI applications
 - **Embedded**: Electrosmith Daisy / Hothouse hardware
-- **Plugins**: VST3/AU (future)
+- **Plugins**: CLAP via clack (future), VST3/AU via clap-wrapper
 
 The library is built with stereo-first processing and no_std compatibility at its core.
 
@@ -15,16 +15,23 @@ The library is built with stereo-first processing and no_std compatibility at it
 ┌───────────────────────────────────────────────────────────────────────────┐
 │                           Applications                                     │
 │  ┌─────────────┐  ┌─────────────┐  ┌───────────┐  ┌──────────────┐        │
-│  │ sonido-cli  │  │ sonido-gui  │  │ VST3/AU   │  │sonido-hothouse│        │
+│  │ sonido-cli  │  │ sonido-gui  │  │ CLAP/VST  │  │sonido-hothouse│        │
 │  │  (binary)   │  │  (egui)     │  │ (future)  │  │  (embedded)   │        │
 │  └──────┬──────┘  └──────┬──────┘  └─────┬─────┘  └──────┬───────┘        │
 └─────────┼────────────────┼───────────────┼───────────────┼────────────────┘
           │                │               │               │
-          └────────────────┼───────────────┼───────────────┘
-                           │               │
-          ┌────────────────┴───────────────┴────────────────┐
-          │                                                 │
-          ▼                                                 ▼
+          └────────────────┤               │               │
+                           │               │               │
+                    ┌──────┴──────┐        │               │
+                    │sonido-gui-  │        │               │
+                    │   core      │        │               │
+                    │(widgets,    │────────┘               │
+                    │ effect UIs, │                         │
+                    │ ParamBridge)│                         │
+                    └──────┬──────┘                         │
+          ┌────────────────┴───────────────────────────────┘
+          │                                                │
+          ▼                                                ▼
 ┌─────────────────────┐                    ┌─────────────────────────────────┐
 │   sonido-config     │                    │        sonido-platform          │
 │  Presets + Config   │                    │  PlatformController + Mapping   │
@@ -282,24 +289,37 @@ Command-line interface tying everything together.
 - `bandpass`: Extract frequency band with configurable filter order
 - `hilbert`: Compute instantaneous phase and amplitude
 
+### sonido-gui-core
+
+Shared GUI infrastructure for both standalone and plugin UIs. Contains everything needed to render effect parameter panels in any egui host.
+
+**Key modules:**
+- `param_bridge.rs`: `ParamBridge` trait — the abstraction boundary between GUI and audio thread. Includes `begin_set`/`end_set` gesture protocol for CLAP/VST3 undo grouping and automation recording.
+- `effects_ui/`: Per-effect parameter panels (15 effects + `EffectPanel` dispatcher)
+- `widgets/`: Knob, LevelMeter, BypassToggle, FootswitchToggle
+- `theme.rs`: Dark theme shared across all targets
+
+**Why a separate gui-core?** Plugin hosts (CLAP via clack, VST3 via clap-wrapper) need effect UIs but not cpal audio streams, preset management, or ChainManager. By isolating widgets, effect panels, and the ParamBridge trait into gui-core, a future `sonido-plugin` crate can depend on gui-core alone and provide its own `ParamBridge` implementation backed by host parameters.
+
 ### sonido-gui
 
-Real-time audio effects processor with professional GUI built on egui.
+Standalone real-time audio effects processor built on egui + cpal.
 
 **Key modules:**
 - `app.rs`: Main application state, UI layout, audio thread management
-- `audio_bridge.rs`: Lock-free communication between UI and audio thread
-- `chain_view.rs`: Drag-and-drop effect chain builder
+- `audio_bridge.rs`: Lock-free communication between UI and audio thread (EffectOrder, AtomicParam)
+- `atomic_param_bridge.rs`: `ParamBridge` implementation using AtomicU32 per parameter
+- `chain_view.rs`: Drag-and-drop effect chain with reorder, bypass, add/remove
+- `chain_manager.rs`: Transactional add/remove/reorder of effects
 - `preset_manager.rs`: Preset save/load with categories
-- `effects_ui/`: Per-effect parameter panels (knobs, sliders)
-- `widgets/`: Custom UI components (Knob, LevelMeter)
-- `theme.rs`: Dark theme configuration
+- `file_player.rs`: WAV file playback (native + wasm)
 
 **Architecture:**
 - UI thread: egui rendering at 60fps
 - Audio thread: Real-time processing via cpal
 - Communication: `crossbeam-channel` + atomic params for lock-free updates
 - Metering: Peak/RMS levels with configurable decay
+- Single-effect mode: `--effect <name>` launches simplified UI with one effect
 
 ## Data Flow
 
@@ -437,6 +457,12 @@ pub trait ParameterInfo {
 
     /// Sets value of parameter at index.
     fn set_param(&mut self, index: usize, value: f32);
+
+    /// Returns stable ParamId for parameter at index (default impl).
+    fn param_id(&self, index: usize) -> Option<ParamId>;
+
+    /// Looks up parameter index by stable ParamId (default impl).
+    fn param_index_by_id(&self, id: ParamId) -> Option<usize>;
 }
 
 pub struct ParamDescriptor {
@@ -447,6 +473,11 @@ pub struct ParamDescriptor {
     pub max: f32,
     pub default: f32,
     pub step: f32,                // Encoder increment
+    pub id: ParamId,              // Stable numeric ID (for CLAP/VST3)
+    pub string_id: &'static str, // Stable string ID (for presets)
+    pub scale: ParamScale,        // Linear, Logarithmic, or Power(exp)
+    pub flags: ParamFlags,        // AUTOMATABLE, STEPPED, HIDDEN, READ_ONLY
+    pub group: &'static str,     // Parameter group (e.g., "filter")
 }
 ```
 
