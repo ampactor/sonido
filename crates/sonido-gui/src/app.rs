@@ -4,7 +4,6 @@ use crate::atomic_param_bridge::AtomicParamBridge;
 use crate::audio_bridge::{AudioBridge, EffectOrder, MeteringData};
 use crate::chain_manager::{ChainCommand, ChainManager};
 use crate::chain_view::ChainView;
-use crate::effects_ui;
 use crate::file_player::FilePlayer;
 use crate::preset_manager::PresetManager;
 use crate::theme::Theme;
@@ -14,6 +13,7 @@ use egui::{
     Align, CentralPanel, Color32, Context, Frame, Layout, Margin, Rect, TopBottomPanel, UiBuilder,
     pos2, vec2,
 };
+use sonido_gui_core::effects_ui;
 use sonido_gui_core::{ParamBridge, SlotIndex};
 use sonido_registry::EffectRegistry;
 use std::sync::Arc;
@@ -80,6 +80,9 @@ pub struct SonidoApp {
     cpu_usage: f32,
     audio_error: Option<String>,
 
+    /// When set, the app runs in single-effect mode (no chain view).
+    single_effect: bool,
+
     // Preset dialog (native only — no filesystem on wasm)
     #[cfg(not(target_arch = "wasm32"))]
     show_save_dialog: bool,
@@ -91,20 +94,49 @@ pub struct SonidoApp {
 
 impl SonidoApp {
     /// Create a new application instance.
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    ///
+    /// If `effect` is `Some("name")`, launches in single-effect mode with a
+    /// simplified UI showing only that effect (no chain view, no presets).
+    pub fn new(cc: &eframe::CreationContext<'_>, effect: Option<&str>) -> Self {
         let registry = Arc::new(EffectRegistry::new());
-        let bridge = Arc::new(AtomicParamBridge::new(&registry, DEFAULT_CHAIN, 48000.0));
 
-        // Effects that start bypassed
-        bridge.set_default_bypass(SlotIndex(3), true); // gate
-        bridge.set_default_bypass(SlotIndex(4), true); // eq
-        bridge.set_default_bypass(SlotIndex(5), true); // wah
-        bridge.set_default_bypass(SlotIndex(7), true); // flanger
-        bridge.set_default_bypass(SlotIndex(8), true); // phaser
-        bridge.set_default_bypass(SlotIndex(9), true); // tremolo
+        let single_effect = effect.is_some();
+        let chain: &[&str] = if let Some(name) = effect {
+            // Validate that the effect exists in the registry
+            assert!(
+                registry.create(name, 48000.0).is_some(),
+                "Unknown effect: {name}. Available: {:?}",
+                registry
+                    .all_effects()
+                    .iter()
+                    .map(|e| e.id)
+                    .collect::<Vec<_>>()
+            );
+            // Leak into 'static — lives for the process lifetime (app runs once)
+            let leaked: &'static str = Box::leak(name.to_owned().into_boxed_str());
+            Box::leak(vec![leaked].into_boxed_slice())
+        } else {
+            DEFAULT_CHAIN
+        };
+        let bridge = Arc::new(AtomicParamBridge::new(&registry, chain, 48000.0));
+
+        if !single_effect {
+            // Effects that start bypassed (full chain mode only)
+            bridge.set_default_bypass(SlotIndex(3), true); // gate
+            bridge.set_default_bypass(SlotIndex(4), true); // eq
+            bridge.set_default_bypass(SlotIndex(5), true); // wah
+            bridge.set_default_bypass(SlotIndex(7), true); // flanger
+            bridge.set_default_bypass(SlotIndex(8), true); // phaser
+            bridge.set_default_bypass(SlotIndex(9), true); // tremolo
+        }
 
         let audio_bridge = AudioBridge::new();
         let transport_tx = audio_bridge.transport_sender();
+
+        let mut chain_view = ChainView::new();
+        if single_effect {
+            chain_view.set_selected(SlotIndex(0));
+        }
 
         let mut app = Self {
             audio_bridge,
@@ -115,7 +147,7 @@ impl SonidoApp {
             bridge,
             registry,
             theme: Theme::default(),
-            chain_view: ChainView::new(),
+            chain_view,
             file_player: FilePlayer::new(transport_tx),
             preset_manager: PresetManager::new(),
             cached_panel: None,
@@ -123,6 +155,7 @@ impl SonidoApp {
             buffer_size: 512,
             cpu_usage: 0.0,
             audio_error: None,
+            single_effect,
             #[cfg(not(target_arch = "wasm32"))]
             show_save_dialog: false,
             #[cfg(not(target_arch = "wasm32"))]
@@ -599,24 +632,28 @@ impl eframe::App for SonidoApp {
                         .layout(Layout::top_down(Align::LEFT)),
                 );
 
-                // Effect chain strip
-                child.group(|ui| {
-                    ui.vertical_centered(|ui| {
-                        ui.label(
-                            egui::RichText::new("EFFECT CHAIN")
-                                .small()
-                                .color(Color32::from_rgb(150, 150, 160)),
-                        );
-                        ui.add_space(4.0);
-                        self.chain_view.ui(ui, &*self.bridge, &self.registry);
+                if self.single_effect {
+                    // Single-effect mode: show only the effect panel, no chain strip
+                    self.render_effect_panel(&mut child, SlotIndex(0));
+                } else {
+                    // Full chain mode: chain strip + selected effect panel
+                    child.group(|ui| {
+                        ui.vertical_centered(|ui| {
+                            ui.label(
+                                egui::RichText::new("EFFECT CHAIN")
+                                    .small()
+                                    .color(Color32::from_rgb(150, 150, 160)),
+                            );
+                            ui.add_space(4.0);
+                            self.chain_view.ui(ui, &*self.bridge, &self.registry);
+                        });
                     });
-                });
 
-                child.add_space(16.0);
+                    child.add_space(16.0);
 
-                // Selected effect panel
-                if let Some(slot) = self.chain_view.selected() {
-                    self.render_effect_panel(&mut child, slot);
+                    if let Some(slot) = self.chain_view.selected() {
+                        self.render_effect_panel(&mut child, slot);
+                    }
                 }
             }
 

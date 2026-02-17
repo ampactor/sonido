@@ -33,6 +33,13 @@ struct Args {
     /// Buffer size in samples (default: 512)
     #[arg(long, default_value = "512")]
     buffer_size: u32,
+
+    /// Launch in single-effect mode with the given effect name.
+    ///
+    /// Shows a simplified UI with only one effect and no chain view.
+    /// Effect names match the registry IDs: distortion, reverb, compressor, etc.
+    #[arg(long)]
+    effect: Option<String>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -61,10 +68,11 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
 
+    let effect = args.effect.clone();
     eframe::run_native(
         "Sonido",
         options,
-        Box::new(|cc| Ok(Box::new(SonidoApp::new(cc)))),
+        Box::new(move |cc| Ok(Box::new(SonidoApp::new(cc, effect.as_deref())))),
     )
 }
 
@@ -91,7 +99,7 @@ fn main() {
             .start(
                 canvas,
                 eframe::WebOptions::default(),
-                Box::new(|cc| Ok(Box::new(SonidoApp::new(cc)))),
+                Box::new(|cc| Ok(Box::new(SonidoApp::new(cc, None)))),
             )
             .await
             .expect("failed to start eframe");

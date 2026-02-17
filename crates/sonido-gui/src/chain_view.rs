@@ -44,6 +44,11 @@ impl ChainView {
         self.selected
     }
 
+    /// Set the selected slot.
+    pub fn set_selected(&mut self, slot: SlotIndex) {
+        self.selected = Some(slot);
+    }
+
     /// Clear the current selection.
     pub fn clear_selection(&mut self) {
         self.selected = None;
