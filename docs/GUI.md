@@ -68,6 +68,7 @@ OPTIONS:
     --output <NAME>        Output audio device name (uses default if not specified)
     --sample-rate <N>      Sample rate in Hz (default: 48000)
     --buffer-size <N>      Buffer size in samples (default: 512)
+    --effect <NAME>        Launch in single-effect mode (e.g., distortion, reverb)
     -h, --help             Print help information
     -V, --version          Print version information
 ```
@@ -86,6 +87,10 @@ sonido-gui --input "USB Audio" --output "Built-in Output"
 
 # Higher sample rate
 sonido-gui --sample-rate 96000
+
+# Single-effect mode (simplified UI with one effect, no chain strip)
+sonido-gui --effect distortion
+sonido-gui --effect reverb
 ```
 
 ## User Interface
@@ -374,9 +379,15 @@ Effects are added and removed at runtime via `ChainCommand` messages sent throug
 
 These operations ensure the three structures (ChainManager slots, AtomicParamBridge slots, EffectOrder indices) stay consistent.
 
-### Widget Consolidation
+### Widget and Effect UI Consolidation
 
-Toggle widgets (`BypassToggle`, `FootswitchToggle`) are defined in `sonido-gui-core` (the canonical source) and re-exported by `sonido-gui::widgets`. This prevents duplication between standalone and plugin UIs.
+All shared GUI components live in `sonido-gui-core`:
+- **Widgets**: `Knob`, `LevelMeter`, `BypassToggle`, `FootswitchToggle` — re-exported by `sonido-gui::widgets`
+- **Effect UIs**: 15 effect parameter panels + `EffectPanel` dispatcher — used by both standalone and future plugin UIs
+- **Theme**: Dark theme shared across all targets
+- **ParamBridge**: Trait with `begin_set`/`end_set` gesture protocol for CLAP/VST3 host integration
+
+This architecture means a future `sonido-plugin` crate only depends on `sonido-gui-core`, not the full standalone application.
 
 ## Troubleshooting
 

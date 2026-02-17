@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Foundation + GUI Architecture Restructure
+
+#### Parameter System Hardening (sonido-core)
+- `ParamScale` enum: Linear, Logarithmic, Power(exp) — non-linear parameter normalization for plugin hosts
+- `ParamId(u32)`: Stable numeric parameter identifiers for CLAP/VST3 automation and preset persistence
+- `ParamFlags`: Bitflags (AUTOMATABLE, STEPPED, HIDDEN, READ_ONLY) for plugin host communication
+- `ParamDescriptor` new fields: `id`, `string_id`, `scale`, `flags`, `group`
+- Builder methods: `.with_id()`, `.with_scale()`, `.with_flags()`, `.with_group()`
+- `ParameterInfo` trait: `param_id()` and `param_index_by_id()` default methods
+- Stable IDs assigned to all 15 effects (base IDs: Preamp=100, Distortion=200, ..., Reverb=1500)
+
+#### ParamBridge Gesture Protocol (sonido-gui-core)
+- `begin_set`/`end_set` methods on `ParamBridge` trait for CLAP/VST3 undo grouping
+- Updated docs to reference clack for CLAP plugins (replacing nih-plug references)
+
+#### GUI Restructure
+- Effect UIs (15 panels + dispatcher) moved from sonido-gui to sonido-gui-core
+- Widget dedup: knob, meter, theme canonical in gui-core, re-exported by gui
+- ComboBox ID collision fixes (5 effects) for multi-instance safety
+- `--effect <name>` standalone single-effect mode for sonido-gui
+
 ### Added — Architecture Tightening (Phases 1-5)
 
 #### Phase 5: Integration & Property Tests (c46871b)

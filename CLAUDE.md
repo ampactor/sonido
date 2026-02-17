@@ -184,8 +184,13 @@ pub trait ParameterInfo {
     fn param_info(&self, index: usize) -> Option<ParamDescriptor>;
     fn get_param(&self, index: usize) -> f32;
     fn set_param(&mut self, index: usize, value: f32);
+    // Default impls for stable ID lookup:
+    fn param_id(&self, index: usize) -> Option<ParamId>;
+    fn param_index_by_id(&self, id: ParamId) -> Option<usize>;
 }
 ```
+
+`ParamDescriptor` fields: `name`, `short_name`, `min`, `max`, `default`, `unit` (ParamUnit), `id` (ParamId), `string_id`, `scale` (ParamScale), `flags` (ParamFlags), `group`. Use factory constructors + builder chaining.
 
 **Effect Registry** - Create effects by name. Returns `Box<dyn EffectWithParams + Send>` (combines `Effect` + `ParameterInfo`):
 ```rust
@@ -308,7 +313,9 @@ cd crates/sonido-gui && trunk serve                        # Dev server at :8080
 | State variable filter | crates/sonido-core/src/svf.rs |
 | Envelope follower | crates/sonido-core/src/envelope.rs |
 | Oversampling | crates/sonido-core/src/oversample.rs |
+| Delay line | crates/sonido-core/src/delay.rs |
 | ModulationSource trait | crates/sonido-core/src/modulation.rs |
+| LFO | crates/sonido-core/src/lfo.rs |
 | TempoManager/NoteDivision | crates/sonido-core/src/tempo.rs |
 | Effect Registry | crates/sonido-registry/src/lib.rs |
 | Reverb | crates/sonido-effects/src/reverb.rs |
@@ -320,6 +327,12 @@ cd crates/sonido-gui && trunk serve                        # Dev server at :8080
 | Parametric EQ | crates/sonido-effects/src/parametric_eq.rs |
 | Tape Saturation | crates/sonido-effects/src/tape_saturation.rs |
 | MultiVibrato | crates/sonido-effects/src/multi_vibrato.rs |
+| Distortion | crates/sonido-effects/src/distortion.rs |
+| Compressor | crates/sonido-effects/src/compressor.rs |
+| Chorus | crates/sonido-effects/src/chorus.rs |
+| Delay | crates/sonido-effects/src/delay.rs |
+| Phaser | crates/sonido-effects/src/phaser.rs |
+| Flanger | crates/sonido-effects/src/flanger.rs |
 | CombFilter/AllpassFilter | crates/sonido-core/src/comb.rs, allpass.rs |
 | DcBlocker | crates/sonido-core/src/dc_blocker.rs |
 | flush_denormal | crates/sonido-core/src/math.rs |
@@ -341,20 +354,34 @@ cd crates/sonido-gui && trunk serve                        # Dev server at :8080
 | Preset manager | crates/sonido-gui/src/preset_manager.rs |
 | Audio bridge | crates/sonido-gui/src/audio_bridge.rs |
 | File player | crates/sonido-gui/src/file_player.rs |
-| Effect UIs | crates/sonido-gui/src/effects_ui/ |
+| Effect UIs | crates/sonido-gui-core/src/effects_ui/ |
 | CLI commands | crates/sonido-cli/src/main.rs |
 | CLI analyze commands | crates/sonido-cli/src/commands/analyze.rs |
 | Audio engine | crates/sonido-io/src/engine.rs |
 | Audio stream | crates/sonido-io/src/stream.rs |
+| Regression tests | crates/sonido-effects/tests/regression.rs |
 | DSP Theory Reference | docs/DSP_FUNDAMENTALS.md |
 | Architecture Decisions | docs/DESIGN_DECISIONS.md |
 | DSP Quality Standard | docs/DSP_QUALITY_STANDARD.md |
 | Daisy Seed Integration | docs/DAISY_SEED.md |
+| Effects Reference | docs/EFFECTS_REFERENCE.md |
+| Architecture Overview | docs/ARCHITECTURE.md |
+| Synthesis | docs/SYNTHESIS.md |
+| Biosignal Analysis | docs/BIOSIGNAL_ANALYSIS.md |
+| CFC/PAC Analysis | docs/CFC_ANALYSIS.md |
+| Hardware Guide | docs/HARDWARE.md |
+| CLI Guide | docs/CLI_GUIDE.md |
+| GUI Docs | docs/GUI.md |
+| Getting Started | docs/GETTING_STARTED.md |
+| Changelog | docs/CHANGELOG.md |
 
 ## Conventions
 
 - SmoothedParam: use preset constructors (`fast`/`standard`/`slow`/`interpolated`), call `advance()` per sample
-- ParamDescriptor: use factories (`::mix()`, `::depth()`, `::feedback()`) for common params
+- ParamDescriptor: use factories (`::mix()`, `::depth()`, `::feedback()`) for common params, chain `.with_id()`, `.with_scale()`, `.with_flags()`, `.with_group()`
+- ParamId: stable IDs assigned per effect (base: Preamp=100, Distortion=200, ..., Reverb=1500), sequential params from base
+- ParamScale: `Logarithmic` for frequency params, `Linear` default, `Power(exp)` for custom curves
+- ParamFlags: `AUTOMATABLE` (default), `STEPPED` for enum/discrete params, `HIDDEN`, `READ_ONLY`
 - Output level: all effects expose `output` as last ParameterInfo index, use `gain::output_level_param()`
 - Dry/wet mix: use `wet_dry_mix()` / `wet_dry_mix_stereo()` from math.rs
 - libm for no_std math, std::f32 with std feature
