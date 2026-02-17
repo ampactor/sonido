@@ -168,3 +168,33 @@ impl Widget for FootswitchToggle<'_> {
         response
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bypass_toggle_default_size() {
+        let mut active = true;
+        let toggle = BypassToggle::new(&mut active, "Test");
+        assert_eq!(toggle.size, 20.0);
+        assert_eq!(toggle.label, "Test");
+        assert!(*toggle.active);
+    }
+
+    #[test]
+    fn bypass_toggle_custom_size() {
+        let mut active = false;
+        let toggle = BypassToggle::new(&mut active, "FX").size(32.0);
+        assert_eq!(toggle.size, 32.0);
+        assert!(!*toggle.active);
+    }
+
+    #[test]
+    fn footswitch_toggle_stores_state() {
+        let mut active = true;
+        let toggle = FootswitchToggle::new(&mut active, "Drive");
+        assert!(toggle.active == &true);
+        assert_eq!(toggle.label, "Drive");
+    }
+}

@@ -267,3 +267,73 @@ impl Widget for GainReductionMeter {
         response
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn level_meter_defaults() {
+        let meter = LevelMeter::new(0.8, 0.5);
+        assert_eq!(meter.peak, 0.8);
+        assert_eq!(meter.rms, 0.5);
+        assert_eq!(meter.width, 24.0);
+        assert_eq!(meter.height, 120.0);
+        assert!(!meter.horizontal);
+        assert!(meter.label.is_empty());
+    }
+
+    #[test]
+    fn level_meter_clamps_inputs() {
+        let meter = LevelMeter::new(5.0, -1.0);
+        assert_eq!(meter.peak, 1.5);
+        assert_eq!(meter.rms, 0.0);
+    }
+
+    #[test]
+    fn level_meter_builder() {
+        let meter = LevelMeter::new(0.5, 0.3)
+            .label("L")
+            .size(32.0, 200.0)
+            .horizontal();
+        assert_eq!(meter.label, "L");
+        assert_eq!(meter.width, 32.0);
+        assert_eq!(meter.height, 200.0);
+        assert!(meter.horizontal);
+    }
+
+    #[test]
+    fn level_to_color_thresholds() {
+        let green = LevelMeter::level_to_color(0.5);
+        let yellow = LevelMeter::level_to_color(0.8);
+        let red = LevelMeter::level_to_color(1.0);
+        assert_eq!(green, Color32::from_rgb(80, 200, 80));
+        assert_eq!(yellow, Color32::from_rgb(220, 200, 60));
+        assert_eq!(red, Color32::from_rgb(220, 60, 60));
+    }
+
+    #[test]
+    fn gain_reduction_meter_defaults() {
+        let meter = GainReductionMeter::new(6.0);
+        assert_eq!(meter.reduction_db, 6.0);
+        assert_eq!(meter.max_reduction, 20.0);
+        assert_eq!(meter.width, 24.0);
+        assert_eq!(meter.height, 80.0);
+    }
+
+    #[test]
+    fn gain_reduction_meter_clamps_negative() {
+        let meter = GainReductionMeter::new(-3.0);
+        assert_eq!(meter.reduction_db, 0.0);
+    }
+
+    #[test]
+    fn gain_reduction_meter_builder() {
+        let meter = GainReductionMeter::new(10.0)
+            .max_reduction(30.0)
+            .size(16.0, 60.0);
+        assert_eq!(meter.max_reduction, 30.0);
+        assert_eq!(meter.width, 16.0);
+        assert_eq!(meter.height, 60.0);
+    }
+}
