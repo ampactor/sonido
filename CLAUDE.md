@@ -50,6 +50,7 @@ When you modify a source file, you **must** update every documentation target li
 | `crates/sonido-effects/src/phaser.rs` | `docs/EFFECTS_REFERENCE.md` (Phaser) | Allpass stage count, sweep range |
 | `crates/sonido-effects/src/flanger.rs` | `docs/EFFECTS_REFERENCE.md` (Flanger) | Feedback polarity, delay range |
 | `crates/sonido-effects/src/*.rs` (any new effect) | `docs/EFFECTS_REFERENCE.md`, `README.md` (features + count), this file (Key Files) | Full effect entry with parameters, DSP theory, example |
+| `crates/sonido-core/src/math.rs` | `docs/DSP_FUNDAMENTALS.md` (Gain Staging, Soft Limiting) | Mix/gain helpers, safety limiters, dB conversions |
 | `crates/sonido-effects/src/*.rs`, `crates/sonido-core/src/gain.rs` | `docs/DSP_QUALITY_STANDARD.md` | Quality rules, compliance table, measurement protocol |
 | `crates/sonido-synth/src/oscillator.rs` | `docs/SYNTHESIS.md`, `docs/DSP_FUNDAMENTALS.md` (PolyBLEP), `docs/DESIGN_DECISIONS.md` ADR-014 | Waveforms, poly_blep correction, anti-aliasing |
 | `crates/sonido-synth/src/envelope.rs` | `docs/SYNTHESIS.md` | ADSR stages, curve shapes, gate behavior |
@@ -368,8 +369,19 @@ cd crates/sonido-gui && trunk serve                        # Dev server at :8080
 | Audio bridge | crates/sonido-gui/src/audio_bridge.rs |
 | File player | crates/sonido-gui/src/file_player.rs |
 | Effect UIs | crates/sonido-gui-core/src/effects_ui/ |
+| GUI theme overrides | crates/sonido-gui/src/theme.rs |
 | CLI commands | crates/sonido-cli/src/main.rs |
 | CLI analyze commands | crates/sonido-cli/src/commands/analyze.rs |
+| CLI common utilities | crates/sonido-cli/src/commands/common.rs |
+| CLI effects command | crates/sonido-cli/src/commands/effects.rs |
+| CLI process command | crates/sonido-cli/src/commands/process.rs |
+| CLI info command | crates/sonido-cli/src/commands/info.rs |
+| CLI devices command | crates/sonido-cli/src/commands/devices.rs |
+| CLI generate commands | crates/sonido-cli/src/commands/generate.rs |
+| CLI presets command | crates/sonido-cli/src/commands/presets.rs |
+| CLI play command | crates/sonido-cli/src/commands/play.rs |
+| CLI compare command | crates/sonido-cli/src/commands/compare.rs |
+| CLI realtime command | crates/sonido-cli/src/commands/realtime.rs |
 | Audio engine | crates/sonido-io/src/engine.rs |
 | Audio stream | crates/sonido-io/src/stream.rs |
 | Regression tests | crates/sonido-effects/tests/regression.rs |
@@ -386,6 +398,11 @@ cd crates/sonido-gui && trunk serve                        # Dev server at :8080
 | CLI Guide | docs/CLI_GUIDE.md |
 | GUI Docs | docs/GUI.md |
 | Getting Started | docs/GETTING_STARTED.md |
+| Testing Guide | docs/TESTING.md |
+| Contributing Guide | docs/CONTRIBUTING.md |
+| Library Testing | docs/LIBRARY_TESTING.md |
+| CLI Testing | docs/CLI_TESTING.md |
+| Benchmarks | docs/BENCHMARKS.md |
 | Changelog | docs/CHANGELOG.md |
 
 ## Conventions

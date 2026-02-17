@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — DSP Safety (d7126ff)
+
+#### sonido-core
+- `soft_limit()` / `soft_limit_stereo()` added to `math.rs` — knee-based safety limiter using tanh compression (90% knee, ceiling-bounded output)
+
+#### sonido-effects
+- Applied `soft_limit(1.0)` before output level stage in 5 effects: `Preamp`, `Compressor`, `ParametricEq`, `LowPassFilter`, `Wah`
+- These effects could exceed 0 dBFS under extreme parameter combinations; now hard-bounded at ceiling
+- Golden regression files regenerated for all affected effects
+
 ### Changed — Core Hardening (8dbcda3)
 
 #### `impl_params!` Macro (sonido-core)

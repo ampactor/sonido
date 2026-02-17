@@ -19,6 +19,7 @@ This document explains the digital signal processing theory behind Sonido's impl
 - [Modulation Effects](#modulation-effects)
 - [Tempo Synchronization](#tempo-synchronization)
 - [Gain Staging](#gain-staging)
+- [Soft Limiting (Safety Stage)](#soft-limiting-safety-stage)
 - [Shared DSP Vocabulary](#shared-dsp-vocabulary)
 - [Denormal Protection](#denormal-protection)
 - [Numerical Considerations](#numerical-considerations)
@@ -746,6 +747,52 @@ pub fn wet_dry_mix(dry: f32, wet: f32, mix: f32) -> f32 {
 ```
 
 The `wet_dry_mix_stereo()` variant applies the same crossfade to both channels. These helpers are semantically identical to the inline form but eliminate duplication and make the mix operation self-documenting.
+
+---
+
+## Soft Limiting (Safety Stage)
+
+**Source:** `crates/sonido-core/src/math.rs`
+
+A safety limiter applied as the final processing stage before the output level parameter. Its purpose is to guarantee bounded output under all parameter combinations — it is a backstop, not a musical effect.
+
+### Algorithm
+
+The limiter uses a knee-based design with hyperbolic tangent compression:
+
+```
+          ┌─ x                                      if |x| ≤ threshold
+f(x) =   │
+          └─ sign(x) · (threshold + headroom · tanh((|x| - threshold) / headroom))   otherwise
+```
+
+Where:
+- `threshold = ceiling × 0.9` (knee onset at 90% of ceiling)
+- `headroom = ceiling - threshold` (10% of ceiling reserved for compression)
+- `ceiling` = maximum output magnitude (typically 1.0 for 0 dBFS)
+
+### Transfer Function Properties
+
+- **Transparent below knee:** Signals below 90% of ceiling pass through unmodified
+- **Smooth transition:** The tanh function provides a continuously differentiable knee — no discontinuities that would produce clicks or harmonic artifacts
+- **Hard ceiling guarantee:** As `|x| → ∞`, `tanh → 1.0`, so output asymptotically approaches but never exceeds `ceiling`
+- **Odd symmetry:** `f(-x) = -f(x)` — no even-harmonic generation from the limiter itself
+
+### Usage Pattern
+
+Applied in effects where nonlinear processing or resonant filters can produce unbounded gain:
+
+```rust
+// In effect process loop — after DSP, before output level
+let limited = soft_limit(sample, 1.0);
+let output = limited * self.output_level.advance();
+```
+
+Five effects use this pattern: `Preamp`, `Compressor`, `ParametricEq`, `LowPassFilter`, `Wah`. Effects with inherently bounded output (e.g., `wet_dry_mix` with normalized inputs) do not need it.
+
+### Reference
+
+Knee-based soft limiting framework: Giannoulis et al., "Digital Dynamic Range Compressor Design — A Tutorial and Analysis," *J. Audio Eng. Soc.* 60(6), 2012.
 
 ---
 
