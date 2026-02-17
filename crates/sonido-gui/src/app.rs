@@ -24,25 +24,6 @@ use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
-/// Default effect chain order — matches the slot indices used by `AtomicParamBridge`.
-const DEFAULT_CHAIN: &[&str] = &[
-    "preamp",       // 0
-    "distortion",   // 1
-    "compressor",   // 2
-    "gate",         // 3
-    "eq",           // 4
-    "wah",          // 5
-    "chorus",       // 6
-    "flanger",      // 7
-    "phaser",       // 8
-    "tremolo",      // 9
-    "delay",        // 10
-    "filter",       // 11
-    "multivibrato", // 12
-    "tape",         // 13
-    "reverb",       // 14
-];
-
 /// Main application state.
 pub struct SonidoApp {
     // Audio
@@ -116,7 +97,7 @@ impl SonidoApp {
             // Leak a single-element slice — lives for the process lifetime
             Box::leak(vec![desc.id].into_boxed_slice())
         } else {
-            DEFAULT_CHAIN
+            registry.default_chain_ids()
         };
         let bridge = Arc::new(AtomicParamBridge::new(&registry, chain, 48000.0));
 
@@ -965,7 +946,7 @@ fn build_audio_streams(
     };
 
     // Create effect chain from shared registry
-    let chain = ChainManager::new(registry, DEFAULT_CHAIN, sample_rate);
+    let chain = ChainManager::new(registry, registry.default_chain_ids(), sample_rate);
 
     // Stereo audio buffer (interleaved L, R pairs)
     let (tx, rx) = crossbeam_channel::bounded::<f32>(16384);
