@@ -595,6 +595,22 @@ mod tests {
         }
     }
 
+    #[test]
+    fn param_count_matches_implementation() {
+        let registry = EffectRegistry::new();
+        for descriptor in registry.all_effects() {
+            let effect = registry.create(descriptor.id, 48000.0).unwrap();
+            assert_eq!(
+                descriptor.param_count,
+                effect.effect_param_count(),
+                "EffectDescriptor.param_count ({}) != ParameterInfo::param_count() ({}) for '{}'",
+                descriptor.param_count,
+                effect.effect_param_count(),
+                descriptor.id,
+            );
+        }
+    }
+
     /// Roundtrip test: create every registered effect, process an impulse followed
     /// by 1023 silence samples, verify all outputs are finite. Catches registration
     /// mismatches, uninitialized state, and NaN/inf propagation.

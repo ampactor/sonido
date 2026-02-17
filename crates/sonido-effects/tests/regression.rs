@@ -497,6 +497,249 @@ fn test_parametric_eq_defaults_regression() {
         .expect("ParametricEq defaults regression test failed");
 }
 
+// Stereo regression tests
+//
+// These verify that true-stereo effects produce decorrelated L/R output
+// and remain stable across changes. Each test uses `process_block_stereo`
+// and saves separate golden files per channel.
+
+/// Generate a deterministic stereo test signal.
+///
+/// Left channel: identical to `generate_test_signal()` (440+880+1320 Hz sines).
+/// Right channel: same frequencies with 90° phase offset for deterministic
+/// L/R decorrelation while preserving identical spectral content.
+fn generate_test_signal_stereo(size: usize) -> (Vec<f32>, Vec<f32>) {
+    let left = generate_test_signal(size);
+    let right = (0..size)
+        .map(|i| {
+            let t = i as f32 / SAMPLE_RATE;
+            let phase_offset = std::f32::consts::FRAC_PI_2;
+            let fundamental = (2.0 * std::f32::consts::PI * 440.0 * t + phase_offset).sin();
+            let harmonic2 = 0.3 * (2.0 * std::f32::consts::PI * 880.0 * t + phase_offset).sin();
+            let harmonic3 = 0.2 * (2.0 * std::f32::consts::PI * 1320.0 * t + phase_offset).sin();
+            (fundamental + harmonic2 + harmonic3) * 0.5
+        })
+        .collect();
+    (left, right)
+}
+
+/// Normalized cross-correlation between two signals.
+///
+/// Returns a value in \[-1, 1\] where 1.0 means identical signals.
+/// Used to verify that true-stereo effects produce decorrelated L/R output.
+fn cross_correlation(a: &[f32], b: &[f32]) -> f32 {
+    let ab: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
+    let aa: f32 = a.iter().map(|x| x * x).sum();
+    let bb: f32 = b.iter().map(|x| x * x).sum();
+    ab / (aa.sqrt() * bb.sqrt())
+}
+
+/// Decorrelation threshold for true-stereo effects.
+///
+/// A cross-correlation below 0.99 between L/R outputs confirms that the
+/// effect produces meaningfully different content per channel (different
+/// delay taps, LFO phases, comb tunings, etc.) rather than processing
+/// each channel identically.
+const STEREO_DECORRELATION_THRESHOLD: f32 = 0.99;
+
+/// Run regression test for a stereo effect.
+///
+/// Processes input through `process_block_stereo`, saves/loads separate golden
+/// files for each channel, and verifies decorrelation between L/R outputs.
+fn run_regression_test_stereo<E: Effect>(
+    effect_name: &str,
+    mut effect: E,
+    left_in: &[f32],
+    right_in: &[f32],
+) -> Result<(), String> {
+    let len = left_in.len();
+    let mut left_out = vec![0.0; len];
+    let mut right_out = vec![0.0; len];
+    effect.process_block_stereo(left_in, right_in, &mut left_out, &mut right_out);
+
+    // Sanity checks (always run, even during regeneration)
+    for (ch_name, ch_out) in [("left", &left_out), ("right", &right_out)] {
+        for (i, &s) in ch_out.iter().enumerate() {
+            if s.is_nan() || s.is_infinite() {
+                return Err(format!(
+                    "{} stereo {}: NaN/Inf at sample {}",
+                    effect_name, ch_name, i
+                ));
+            }
+            if s.abs() > 10.0 {
+                return Err(format!(
+                    "{} stereo {}: sample {} out of bounds ({:.4})",
+                    effect_name, ch_name, i, s
+                ));
+            }
+        }
+        let has_signal = ch_out.iter().any(|&s| s.abs() > 1e-6);
+        if !has_signal {
+            return Err(format!(
+                "{} stereo {}: output is silent",
+                effect_name, ch_name
+            ));
+        }
+    }
+
+    let left_name = format!("{}_stereo_left", effect_name);
+    let right_name = format!("{}_stereo_right", effect_name);
+
+    if should_regenerate() {
+        save_golden(&left_name, &left_out)
+            .map_err(|e| format!("Failed to save golden file: {}", e))?;
+        save_golden(&right_name, &right_out)
+            .map_err(|e| format!("Failed to save golden file: {}", e))?;
+        println!("Regenerated stereo golden files for {}", effect_name);
+
+        // Verify decorrelation even during regeneration
+        let corr = cross_correlation(&left_out, &right_out);
+        if corr >= STEREO_DECORRELATION_THRESHOLD {
+            return Err(format!(
+                "{} stereo: L/R cross-correlation {:.6} >= {} (not decorrelated)",
+                effect_name, corr, STEREO_DECORRELATION_THRESHOLD
+            ));
+        }
+
+        return Ok(());
+    }
+
+    // Load expected output for both channels
+    let expected_left = load_golden(&left_name).map_err(|e| {
+        format!(
+            "Failed to load golden file for {} (run with REGENERATE_GOLDEN=1 to create): {}",
+            left_name, e
+        )
+    })?;
+    let expected_right = load_golden(&right_name).map_err(|e| {
+        format!(
+            "Failed to load golden file for {} (run with REGENERATE_GOLDEN=1 to create): {}",
+            right_name, e
+        )
+    })?;
+
+    let mut errors = Vec::new();
+
+    // Verify both channels against golden files
+    for (ch_name, output, expected) in [
+        ("left", &left_out, &expected_left),
+        ("right", &right_out, &expected_right),
+    ] {
+        if output.len() != expected.len() {
+            errors.push(format!(
+                "{} channel: length mismatch (got {}, expected {})",
+                ch_name,
+                output.len(),
+                expected.len()
+            ));
+            continue;
+        }
+
+        let mse_val = mse(output, expected);
+        let snr = snr_db(expected, output);
+        let correlation = spectral_correlation(output, expected, 2048.min(output.len()));
+
+        if mse_val > MSE_THRESHOLD {
+            errors.push(format!(
+                "{} channel: MSE {} exceeds threshold {}",
+                ch_name, mse_val, MSE_THRESHOLD
+            ));
+        }
+        if snr < SNR_THRESHOLD_DB && snr.is_finite() {
+            errors.push(format!(
+                "{} channel: SNR {:.1} dB below threshold {:.1} dB",
+                ch_name, snr, SNR_THRESHOLD_DB
+            ));
+        }
+        if correlation < SPECTRAL_CORRELATION_THRESHOLD {
+            errors.push(format!(
+                "{} channel: spectral correlation {:.6} below threshold {:.6}",
+                ch_name, correlation, SPECTRAL_CORRELATION_THRESHOLD
+            ));
+        }
+    }
+
+    // Decorrelation check
+    let corr = cross_correlation(&left_out, &right_out);
+    if corr >= STEREO_DECORRELATION_THRESHOLD {
+        errors.push(format!(
+            "L/R cross-correlation {:.6} >= {} (not decorrelated)",
+            corr, STEREO_DECORRELATION_THRESHOLD
+        ));
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} stereo regression detected:\n  - {}",
+            effect_name,
+            errors.join("\n  - ")
+        ))
+    }
+}
+
+#[test]
+fn test_chorus_stereo_regression() {
+    let mut effect = Chorus::new(SAMPLE_RATE);
+    effect.set_rate(2.0);
+    effect.set_depth(0.7);
+    effect.set_mix(0.5);
+    let (left, right) = generate_test_signal_stereo(TEST_DURATION_SAMPLES);
+    run_regression_test_stereo("chorus", effect, &left, &right)
+        .expect("Chorus stereo regression test failed");
+}
+
+#[test]
+fn test_reverb_stereo_regression() {
+    let mut effect = Reverb::new(SAMPLE_RATE);
+    effect.set_room_size(0.7);
+    effect.set_decay(0.6);
+    effect.set_damping(0.3);
+    effect.set_predelay_ms(10.0);
+    effect.set_mix(0.5);
+    // Use impulse input — consistent with existing mono reverb test
+    let left = generate_impulse(TEST_DURATION_SAMPLES);
+    let right = generate_impulse(TEST_DURATION_SAMPLES);
+    run_regression_test_stereo("reverb", effect, &left, &right)
+        .expect("Reverb stereo regression test failed");
+}
+
+#[test]
+fn test_delay_stereo_regression() {
+    let mut effect = Delay::new(SAMPLE_RATE);
+    effect.set_delay_time_ms(20.0);
+    effect.set_feedback(0.5);
+    effect.set_mix(0.5);
+    effect.set_ping_pong(true); // Exercise cross-channel feedback path
+    let (left, right) = generate_test_signal_stereo(TEST_DURATION_SAMPLES);
+    run_regression_test_stereo("delay", effect, &left, &right)
+        .expect("Delay stereo regression test failed");
+}
+
+#[test]
+fn test_phaser_stereo_regression() {
+    let mut effect = Phaser::new(SAMPLE_RATE);
+    effect.set_rate(1.0);
+    effect.set_depth(0.8);
+    effect.set_feedback(0.5);
+    let (left, right) = generate_test_signal_stereo(TEST_DURATION_SAMPLES);
+    run_regression_test_stereo("phaser", effect, &left, &right)
+        .expect("Phaser stereo regression test failed");
+}
+
+#[test]
+fn test_flanger_stereo_regression() {
+    let mut effect = Flanger::new(SAMPLE_RATE);
+    effect.set_rate(0.5);
+    effect.set_depth(0.7);
+    effect.set_feedback(0.5);
+    effect.set_mix(0.5);
+    let (left, right) = generate_test_signal_stereo(TEST_DURATION_SAMPLES);
+    run_regression_test_stereo("flanger", effect, &left, &right)
+        .expect("Flanger stereo regression test failed");
+}
+
 /// Run all regression tests and provide summary
 #[test]
 fn test_regression_summary() {
