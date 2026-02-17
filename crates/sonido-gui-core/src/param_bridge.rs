@@ -124,3 +124,143 @@ pub trait ParamBridge: Send + Sync {
     /// Standalone implementations should leave the default no-op.
     fn end_set(&self, _slot: SlotIndex, _param: ParamIndex) {}
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    struct MockParamBridge {
+        values: Mutex<Vec<Vec<f32>>>,
+        bypassed: Mutex<Vec<bool>>,
+        effect_ids: Vec<String>,
+    }
+
+    impl MockParamBridge {
+        fn new(slots: &[(&str, &[f32])]) -> Self {
+            Self {
+                values: Mutex::new(slots.iter().map(|(_, v)| v.to_vec()).collect()),
+                bypassed: Mutex::new(vec![false; slots.len()]),
+                effect_ids: slots.iter().map(|(id, _)| (*id).to_owned()).collect(),
+            }
+        }
+    }
+
+    impl ParamBridge for MockParamBridge {
+        fn slot_count(&self) -> usize {
+            self.effect_ids.len()
+        }
+
+        fn effect_id(&self, slot: SlotIndex) -> &str {
+            self.effect_ids.get(slot.0).map_or("", String::as_str)
+        }
+
+        fn param_count(&self, slot: SlotIndex) -> usize {
+            self.values.lock().unwrap().get(slot.0).map_or(0, Vec::len)
+        }
+
+        fn param_descriptor(
+            &self,
+            _slot: SlotIndex,
+            _param: ParamIndex,
+        ) -> Option<ParamDescriptor> {
+            None
+        }
+
+        fn get(&self, slot: SlotIndex, param: ParamIndex) -> f32 {
+            self.values
+                .lock()
+                .unwrap()
+                .get(slot.0)
+                .and_then(|s| s.get(param.0))
+                .copied()
+                .unwrap_or(0.0)
+        }
+
+        fn set(&self, slot: SlotIndex, param: ParamIndex, value: f32) {
+            if let Some(slot_vals) = self.values.lock().unwrap().get_mut(slot.0) {
+                if let Some(v) = slot_vals.get_mut(param.0) {
+                    *v = value;
+                }
+            }
+        }
+
+        fn is_bypassed(&self, slot: SlotIndex) -> bool {
+            self.bypassed
+                .lock()
+                .unwrap()
+                .get(slot.0)
+                .copied()
+                .unwrap_or(false)
+        }
+
+        fn set_bypassed(&self, slot: SlotIndex, bypassed: bool) {
+            if let Some(b) = self.bypassed.lock().unwrap().get_mut(slot.0) {
+                *b = bypassed;
+            }
+        }
+    }
+
+    #[test]
+    fn mock_get_set_roundtrip() {
+        let bridge = MockParamBridge::new(&[("distortion", &[0.5, 1.0, 0.7])]);
+        assert_eq!(bridge.get(SlotIndex(0), ParamIndex(0)), 0.5);
+
+        bridge.set(SlotIndex(0), ParamIndex(0), 0.9);
+        assert_eq!(bridge.get(SlotIndex(0), ParamIndex(0)), 0.9);
+    }
+
+    #[test]
+    fn mock_slot_metadata() {
+        let bridge = MockParamBridge::new(&[("reverb", &[0.5, 0.3]), ("delay", &[100.0])]);
+        assert_eq!(bridge.slot_count(), 2);
+        assert_eq!(bridge.effect_id(SlotIndex(0)), "reverb");
+        assert_eq!(bridge.effect_id(SlotIndex(1)), "delay");
+        assert_eq!(bridge.param_count(SlotIndex(0)), 2);
+        assert_eq!(bridge.param_count(SlotIndex(1)), 1);
+    }
+
+    #[test]
+    fn out_of_range_returns_defaults() {
+        let bridge = MockParamBridge::new(&[("eq", &[1.0])]);
+        assert_eq!(bridge.effect_id(SlotIndex(99)), "");
+        assert_eq!(bridge.param_count(SlotIndex(99)), 0);
+        assert_eq!(bridge.get(SlotIndex(99), ParamIndex(0)), 0.0);
+        assert_eq!(bridge.get(SlotIndex(0), ParamIndex(99)), 0.0);
+        assert!(!bridge.is_bypassed(SlotIndex(99)));
+    }
+
+    #[test]
+    fn bypass_roundtrip() {
+        let bridge = MockParamBridge::new(&[("chorus", &[0.5])]);
+        assert!(!bridge.is_bypassed(SlotIndex(0)));
+        bridge.set_bypassed(SlotIndex(0), true);
+        assert!(bridge.is_bypassed(SlotIndex(0)));
+        bridge.set_bypassed(SlotIndex(0), false);
+        assert!(!bridge.is_bypassed(SlotIndex(0)));
+    }
+
+    #[test]
+    fn begin_end_set_default_are_noops() {
+        let bridge = MockParamBridge::new(&[("filter", &[500.0])]);
+        // Default impls — just verify they don't panic.
+        bridge.begin_set(SlotIndex(0), ParamIndex(0));
+        bridge.set(SlotIndex(0), ParamIndex(0), 800.0);
+        bridge.end_set(SlotIndex(0), ParamIndex(0));
+        assert_eq!(bridge.get(SlotIndex(0), ParamIndex(0)), 800.0);
+    }
+
+    #[test]
+    fn slot_index_display_and_from() {
+        let s = SlotIndex::from(3usize);
+        assert_eq!(s.0, 3);
+        assert_eq!(format!("{s}"), "3");
+    }
+
+    #[test]
+    fn param_index_display_and_from() {
+        let p = ParamIndex::from(7usize);
+        assert_eq!(p.0, 7);
+        assert_eq!(format!("{p}"), "7");
+    }
+}

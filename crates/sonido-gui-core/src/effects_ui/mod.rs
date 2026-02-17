@@ -113,3 +113,93 @@ pub fn create_panel(effect_id: &str) -> Option<Box<dyn EffectPanel>> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL_EFFECT_IDS: [&str; 15] = [
+        "preamp",
+        "distortion",
+        "compressor",
+        "gate",
+        "eq",
+        "wah",
+        "chorus",
+        "flanger",
+        "phaser",
+        "tremolo",
+        "delay",
+        "filter",
+        "multivibrato",
+        "tape",
+        "reverb",
+    ];
+
+    #[test]
+    fn create_panel_returns_some_for_all_known_ids() {
+        for id in &ALL_EFFECT_IDS {
+            assert!(
+                create_panel(id).is_some(),
+                "create_panel({id:?}) returned None"
+            );
+        }
+    }
+
+    #[test]
+    fn create_panel_returns_none_for_unknown_id() {
+        assert!(create_panel("nonexistent").is_none());
+        assert!(create_panel("").is_none());
+        assert!(create_panel("PREAMP").is_none());
+    }
+
+    #[test]
+    fn panel_names() {
+        let expected: [(&str, &str); 15] = [
+            ("preamp", "Preamp"),
+            ("distortion", "Distortion"),
+            ("compressor", "Compressor"),
+            ("gate", "Gate"),
+            ("eq", "Parametric EQ"),
+            ("wah", "Wah"),
+            ("chorus", "Chorus"),
+            ("flanger", "Flanger"),
+            ("phaser", "Phaser"),
+            ("tremolo", "Tremolo"),
+            ("delay", "Delay"),
+            ("filter", "Filter"),
+            ("multivibrato", "Vibrato"),
+            ("tape", "Tape"),
+            ("reverb", "Reverb"),
+        ];
+        for (id, name) in &expected {
+            let panel = create_panel(id).unwrap();
+            assert_eq!(panel.name(), *name, "name mismatch for {id:?}");
+        }
+    }
+
+    #[test]
+    fn panel_short_names() {
+        let expected: [(&str, &str); 15] = [
+            ("preamp", "Pre"),
+            ("distortion", "Dist"),
+            ("compressor", "Comp"),
+            ("gate", "Gate"),
+            ("eq", "EQ"),
+            ("wah", "Wah"),
+            ("chorus", "Chor"),
+            ("flanger", "Flgr"),
+            ("phaser", "Phsr"),
+            ("tremolo", "Trem"),
+            ("delay", "Dly"),
+            ("filter", "Flt"),
+            ("multivibrato", "Vib"),
+            ("tape", "Tape"),
+            ("reverb", "Rev"),
+        ];
+        for (id, short) in &expected {
+            let panel = create_panel(id).unwrap();
+            assert_eq!(panel.short_name(), *short, "short_name mismatch for {id:?}");
+        }
+    }
+}
