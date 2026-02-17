@@ -1,8 +1,8 @@
 //! Reverb effect UI panel.
 
 use crate::widgets::{BypassToggle, Knob};
+use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
-use sonido_gui_core::{ParamBridge, ParamIndex, SlotIndex};
 
 /// Reverb types matching `sonido_effects::ReverbType`.
 const REVERB_TYPES: &[&str] = &["Room", "Hall"];
@@ -34,7 +34,7 @@ impl ReverbPanel {
                 ui.label("Type:");
                 let current = bridge.get(slot, ParamIndex(6)) as u32 as usize;
                 let selected = REVERB_TYPES.get(current).unwrap_or(&"Room");
-                egui::ComboBox::from_id_salt("reverb_type")
+                egui::ComboBox::from_id_salt(("reverb_type", slot.0))
                     .selected_text(*selected)
                     .show_ui(ui, |ui| {
                         for (i, name) in REVERB_TYPES.iter().enumerate() {

@@ -1,8 +1,8 @@
 //! Tremolo effect UI panel.
 
 use crate::widgets::{BypassToggle, Knob};
+use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
-use sonido_gui_core::{ParamBridge, ParamIndex, SlotIndex};
 
 /// Waveform types for tremolo.
 const WAVEFORMS: &[&str] = &["Sine", "Triangle", "Square", "S&H"];
@@ -33,7 +33,7 @@ impl TremoloPanel {
                 ui.label("Wave:");
                 let current = bridge.get(slot, ParamIndex(2)) as u32 as usize;
                 let selected = WAVEFORMS.get(current).unwrap_or(&"Sine");
-                egui::ComboBox::from_id_salt("tremolo_waveform")
+                egui::ComboBox::from_id_salt(("tremolo_waveform", slot.0))
                     .selected_text(*selected)
                     .show_ui(ui, |ui| {
                         for (i, name) in WAVEFORMS.iter().enumerate() {

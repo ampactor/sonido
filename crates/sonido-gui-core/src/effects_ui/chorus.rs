@@ -1,21 +1,21 @@
-//! Flanger effect UI panel.
+//! Chorus effect UI panel.
 
 use crate::widgets::{BypassToggle, Knob};
+use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
-use sonido_gui_core::{ParamBridge, ParamIndex, SlotIndex};
 
-/// UI panel for the flanger effect.
-pub struct FlangerPanel;
+/// UI panel for the chorus effect.
+pub struct ChorusPanel;
 
-impl FlangerPanel {
-    /// Create a new flanger panel.
+impl ChorusPanel {
+    /// Create a new chorus panel.
     pub fn new() -> Self {
         Self
     }
 
-    /// Render the flanger effect controls.
+    /// Render the chorus effect controls.
     ///
-    /// Param indices: 0 = rate (Hz), 1 = depth (%), 2 = feedback (%), 3 = mix (%).
+    /// Param indices: 0 = rate (Hz), 1 = depth (%), 2 = mix (%).
     pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: SlotIndex) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
@@ -32,13 +32,13 @@ impl FlangerPanel {
                 let desc = bridge.param_descriptor(slot, ParamIndex(0));
                 let (min, max, default) = desc
                     .as_ref()
-                    .map_or((0.05, 5.0, 0.5), |d| (d.min, d.max, d.default));
+                    .map_or((0.1, 10.0, 1.0), |d| (d.min, d.max, d.default));
                 let mut rate = bridge.get(slot, ParamIndex(0));
                 if ui
                     .add(
                         Knob::new(&mut rate, min, max, "RATE")
                             .default(default)
-                            .format_hz(),
+                            .format(|v| format!("{v:.2} Hz")),
                     )
                     .changed()
                 {
@@ -66,31 +66,12 @@ impl FlangerPanel {
 
                 ui.add_space(16.0);
 
-                // Feedback (param 2) — percent (0–95)
+                // Mix (param 2) — percent (0–100)
                 let desc = bridge.param_descriptor(slot, ParamIndex(2));
                 let (min, max, default) = desc
                     .as_ref()
-                    .map_or((0.0, 95.0, 50.0), |d| (d.min, d.max, d.default));
-                let mut feedback = bridge.get(slot, ParamIndex(2));
-                if ui
-                    .add(
-                        Knob::new(&mut feedback, min, max, "FDBK")
-                            .default(default)
-                            .format(|v| format!("{v:.0}%")),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(2), feedback);
-                }
-
-                ui.add_space(16.0);
-
-                // Mix (param 3) — percent (0–100)
-                let desc = bridge.param_descriptor(slot, ParamIndex(3));
-                let (min, max, default) = desc
-                    .as_ref()
                     .map_or((0.0, 100.0, 50.0), |d| (d.min, d.max, d.default));
-                let mut mix = bridge.get(slot, ParamIndex(3));
+                let mut mix = bridge.get(slot, ParamIndex(2));
                 if ui
                     .add(
                         Knob::new(&mut mix, min, max, "MIX")
@@ -99,14 +80,14 @@ impl FlangerPanel {
                     )
                     .changed()
                 {
-                    bridge.set(slot, ParamIndex(3), mix);
+                    bridge.set(slot, ParamIndex(2), mix);
                 }
             });
         });
     }
 }
 
-impl Default for FlangerPanel {
+impl Default for ChorusPanel {
     fn default() -> Self {
         Self::new()
     }

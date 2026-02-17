@@ -2,7 +2,7 @@
 //!
 //! [`ParamBridge`] abstracts over the parameter storage mechanism, enabling
 //! the same GUI widgets to work in both the standalone dashboard (backed by
-//! atomic floats) and VST/CLAP plugins (backed by nih-plug `FloatParam`).
+//! atomic floats) and CLAP/VST3 plugins (backed by clack host params).
 //!
 //! # Architecture
 //!
@@ -11,15 +11,25 @@
 //! the [`ParameterInfo`](sonido_core::ParameterInfo) convention from sonido-core.
 //!
 //! ```text
-//! GUI widgets ──► ParamBridge::set(slot, param, value)
+//! GUI widgets ──► begin_set(slot, param)
+//!                 set(slot, param, value)   ← may be called multiple times (drag)
+//!                 end_set(slot, param)
 //!                         │
 //!                    ┌────┴────┐
-//!                    │ Atomic  │  (standalone)
-//!                    │ NihPlug │  (plugin)
+//!                    │ Atomic  │  (standalone — begin/end are no-ops)
+//!                    │ Clack   │  (CLAP plugin — begin/end map to gesture events)
 //!                    └────┬────┘
 //!                         │
 //! Audio thread ◄── ParamBridge::get(slot, param)
 //! ```
+//!
+//! # Gesture Protocol
+//!
+//! Plugin hosts (CLAP, VST3) require explicit gesture begin/end notifications
+//! around parameter changes for proper undo grouping and automation recording.
+//! Call [`begin_set`](ParamBridge::begin_set) before the first `set` in a drag
+//! gesture, and [`end_set`](ParamBridge::end_set) after the last. For standalone
+//! use, both are no-ops by default.
 
 use core::fmt;
 use sonido_core::ParamDescriptor;
@@ -100,4 +110,17 @@ pub trait ParamBridge: Send + Sync {
     ///
     /// Out-of-range indices are silently ignored.
     fn set_bypassed(&self, slot: SlotIndex, bypassed: bool);
+
+    /// Signal the start of a parameter adjustment gesture (e.g., mouse down on a knob).
+    ///
+    /// Plugin hosts use this for undo grouping and automation recording.
+    /// Standalone implementations should leave the default no-op.
+    /// Must be paired with a matching [`end_set`](Self::end_set) call.
+    fn begin_set(&self, _slot: SlotIndex, _param: ParamIndex) {}
+
+    /// Signal the end of a parameter adjustment gesture (e.g., mouse up on a knob).
+    ///
+    /// Must be preceded by a matching [`begin_set`](Self::begin_set) call.
+    /// Standalone implementations should leave the default no-op.
+    fn end_set(&self, _slot: SlotIndex, _param: ParamIndex) {}
 }
