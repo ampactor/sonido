@@ -324,7 +324,7 @@ output = buffer[n] + frac * (buffer[n-1] - buffer[n])
 
 This is computationally cheap (one multiply, two additions) and adequate for most delay effects.
 
-**Cubic interpolation** (`delay.rs:224-242`): Uses four adjacent samples for a smoother reconstruction. The `FixedDelayLine` implementation provides this option:
+**Cubic interpolation** (Lagrange 3rd-order): Uses four adjacent samples for a smoother reconstruction. Both `InterpolatedDelay` and `FixedDelayLine` support this via `set_interpolation(Interpolation::Cubic)`:
 
 ```rust
 let a0 = y3 - y2 - y0 + y1;
@@ -343,7 +343,7 @@ Cubic interpolation reduces the high-frequency roll-off inherent in linear inter
 | Memory | Heap-allocated (`Vec<f32>`) | Stack-allocated (`[f32; N]`) |
 | Size | Runtime-determined | Compile-time constant |
 | Use case | General effects | Embedded / `no_std` targets |
-| Interpolation | Linear only | None, Linear, or Cubic |
+| Interpolation | None, Linear, or Cubic (default: Linear) | None, Linear, or Cubic |
 
 ---
 
@@ -563,7 +563,7 @@ Each waveshaping algorithm has a distinct harmonic character determined by the s
 
 **Asymmetric functions**: Functions that are not odd-symmetric produce even harmonics (2nd, 4th, 6th...) in addition to odd ones. Even harmonics are perceived as "warm" and "musical," characteristic of vacuum tube distortion.
 
-**Foldback distortion**: When the input exceeds a threshold, the signal folds back rather than clipping. This produces a rich, complex harmonic spectrum with both even and odd harmonics. The wavefolder behavior creates more harmonics as drive increases, rather than just compressing the signal as a clipper does.
+**Foldback distortion**: When the input exceeds a threshold, the signal folds back rather than clipping. This produces a rich, complex harmonic spectrum with both even and odd harmonics. The wavefolder behavior creates more harmonics as drive increases, rather than just compressing the signal as a clipper does. Implementation uses a bounded iterative loop (16 max iterations) rather than recursion, ensuring safety on embedded targets with limited stack (e.g., Daisy Seed).
 
 ### Oversampling Integration
 
@@ -620,7 +620,7 @@ LFOs use phase accumulation: a phase variable increments by `frequency / sample_
 
 **Source:** `crates/sonido-core/src/modulation.rs`
 
-The `ModulationSource` trait unifies LFOs, envelope followers, and any other time-varying signal under a common interface:
+The `ModulationSource` trait unifies autonomous generators (LFOs, ADSR envelopes, audio-rate modulators) under a common interface. `EnvelopeFollower` does not implement this trait — it requires audio input via `process()` and is not autonomous:
 
 ```rust
 pub trait ModulationSource {
