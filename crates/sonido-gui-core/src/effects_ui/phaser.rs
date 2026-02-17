@@ -1,8 +1,8 @@
 //! Phaser effect UI panel.
 
 use crate::widgets::{BypassToggle, Knob};
+use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
-use sonido_gui_core::{ParamBridge, ParamIndex, SlotIndex};
 
 /// UI panel for the phaser effect.
 pub struct PhaserPanel;
@@ -30,7 +30,7 @@ impl PhaserPanel {
                 // Stages selector (param 2)
                 ui.label("Stages:");
                 let current_stages = bridge.get(slot, ParamIndex(2)) as usize;
-                egui::ComboBox::from_id_salt("phaser_stages")
+                egui::ComboBox::from_id_salt(("phaser_stages", slot.0))
                     .selected_text(format!("{current_stages}"))
                     .show_ui(ui, |ui| {
                         for stages in [2, 4, 6, 8, 10, 12] {

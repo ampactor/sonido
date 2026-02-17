@@ -37,8 +37,8 @@ pub use tape::TapePanel;
 pub use tremolo::TremoloPanel;
 pub use wah::WahPanel;
 
+use crate::{ParamBridge, SlotIndex};
 use egui::Ui;
-use sonido_gui_core::{ParamBridge, SlotIndex};
 
 /// Trait for effect UI panels.
 ///

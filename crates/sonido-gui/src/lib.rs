@@ -8,7 +8,6 @@ pub mod atomic_param_bridge;
 pub mod audio_bridge;
 pub mod chain_manager;
 pub mod chain_view;
-pub mod effects_ui;
 pub mod file_player;
 pub mod preset_manager;
 pub mod theme;

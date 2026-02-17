@@ -1,8 +1,8 @@
 //! Distortion effect UI panel.
 
 use crate::widgets::{BypassToggle, Knob};
+use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
-use sonido_gui_core::{ParamBridge, ParamIndex, SlotIndex};
 
 /// Waveshape types matching `sonido_effects::WaveShape`.
 const WAVESHAPES: &[&str] = &["Soft Clip", "Hard Clip", "Foldback", "Asymmetric"];
@@ -33,7 +33,7 @@ impl DistortionPanel {
                 ui.label("Type:");
                 let current = bridge.get(slot, ParamIndex(3)) as u32 as usize;
                 let selected = WAVESHAPES.get(current).unwrap_or(&"Soft Clip");
-                egui::ComboBox::from_id_salt("waveshape")
+                egui::ComboBox::from_id_salt(("waveshape", slot.0))
                     .selected_text(*selected)
                     .show_ui(ui, |ui| {
                         for (i, name) in WAVESHAPES.iter().enumerate() {

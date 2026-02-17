@@ -1,8 +1,8 @@
 //! Filter effect UI panel.
 
 use crate::widgets::{BypassToggle, Knob};
+use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
-use sonido_gui_core::{ParamBridge, ParamIndex, SlotIndex};
 
 /// UI panel for the low-pass filter effect.
 pub struct FilterPanel;

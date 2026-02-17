@@ -1,8 +1,8 @@
 //! Wah effect UI panel.
 
 use crate::widgets::{BypassToggle, Knob};
+use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
-use sonido_gui_core::{ParamBridge, ParamIndex, SlotIndex};
 
 /// Wah mode names.
 const WAH_MODES: &[&str] = &["Auto", "Manual"];
@@ -33,7 +33,7 @@ impl WahPanel {
                 ui.label("Mode:");
                 let current = bridge.get(slot, ParamIndex(3)) as u32 as usize;
                 let selected = WAH_MODES.get(current).unwrap_or(&"Auto");
-                egui::ComboBox::from_id_salt("wah_mode")
+                egui::ComboBox::from_id_salt(("wah_mode", slot.0))
                     .selected_text(*selected)
                     .show_ui(ui, |ui| {
                         for (i, name) in WAH_MODES.iter().enumerate() {
