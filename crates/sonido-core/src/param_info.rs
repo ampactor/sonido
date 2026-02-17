@@ -60,6 +60,9 @@
 //!
 //! This module is fully `no_std` compatible with no heap allocations required.
 
+#[cfg(not(feature = "std"))]
+use alloc::{format, string::String};
+
 /// Scaling curve for parameter normalization.
 ///
 /// Determines how a parameter's plain value maps to normalized \[0.0, 1.0\] space.
@@ -448,6 +451,13 @@ pub struct ParamDescriptor {
     /// Must be unique across all modulatable parameters in the plugin.
     /// Mirrors nih-plug's `poly_modulation_id()` approach.
     pub modulation_id: Option<u32>,
+
+    /// Step labels for discrete/enum parameters.
+    ///
+    /// When present, `labels[i]` maps to value `min + i * step`.
+    /// Used by [`format_value()`](Self::format_value) for CLAP `value_to_text()`
+    /// and VST3 parameter display.
+    pub step_labels: Option<&'static [&'static str]>,
 }
 
 impl ParamDescriptor {
@@ -469,6 +479,7 @@ impl ParamDescriptor {
             flags: ParamFlags::AUTOMATABLE,
             group: "",
             modulation_id: None,
+            step_labels: None,
         }
     }
 
@@ -490,6 +501,7 @@ impl ParamDescriptor {
             flags: ParamFlags::AUTOMATABLE,
             group: "",
             modulation_id: None,
+            step_labels: None,
         }
     }
 
@@ -512,6 +524,7 @@ impl ParamDescriptor {
             flags: ParamFlags::AUTOMATABLE,
             group: "",
             modulation_id: None,
+            step_labels: None,
         }
     }
 
@@ -545,6 +558,7 @@ impl ParamDescriptor {
             flags: ParamFlags::AUTOMATABLE,
             group: "",
             modulation_id: None,
+            step_labels: None,
         }
     }
 
@@ -578,6 +592,7 @@ impl ParamDescriptor {
             flags: ParamFlags::AUTOMATABLE,
             group: "",
             modulation_id: None,
+            step_labels: None,
         }
     }
 
@@ -605,6 +620,7 @@ impl ParamDescriptor {
             flags: ParamFlags::AUTOMATABLE,
             group: "",
             modulation_id: None,
+            step_labels: None,
         }
     }
 
@@ -648,6 +664,32 @@ impl ParamDescriptor {
     /// Builder pattern — call after a factory method or struct literal.
     pub const fn with_group(mut self, group: &'static str) -> Self {
         self.group = group;
+        self
+    }
+
+    /// Sets step labels for discrete/enum parameters.
+    ///
+    /// Builder pattern — call after a factory method or struct literal.
+    /// `labels[i]` corresponds to value `min + i * step`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sonido_core::{ParamDescriptor, ParamUnit, ParamFlags};
+    ///
+    /// let desc = ParamDescriptor {
+    ///     name: "Shape", short_name: "Shape",
+    ///     unit: ParamUnit::None,
+    ///     min: 0.0, max: 3.0, default: 0.0, step: 1.0,
+    ///     ..ParamDescriptor::mix()
+    /// }
+    /// .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED))
+    /// .with_step_labels(&["Soft Clip", "Hard Clip", "Foldback", "Asymmetric"]);
+    /// assert_eq!(desc.format_value(0.0), "Soft Clip");
+    /// assert_eq!(desc.format_value(2.0), "Foldback");
+    /// ```
+    pub const fn with_step_labels(mut self, labels: &'static [&'static str]) -> Self {
+        self.step_labels = Some(labels);
         self
     }
 
@@ -761,6 +803,88 @@ impl ParamDescriptor {
                 let curved = libm::powf(normalized, exp);
                 self.min + curved * (self.max - self.min)
             }
+        }
+    }
+
+    /// Formats a parameter value as human-readable text for DAW display.
+    ///
+    /// Stepped parameters with [`step_labels`](Self::step_labels) return the label
+    /// string. Continuous parameters format by [`ParamUnit`] with appropriate
+    /// precision and unit suffixes. Large values auto-scale (Hz → kHz, ms → s).
+    ///
+    /// Maps directly to CLAP `value_to_text()` and VST3 parameter display.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sonido_core::ParamDescriptor;
+    ///
+    /// let desc = ParamDescriptor::gain_db("Gain", "Gain", -60.0, 12.0, 0.0);
+    /// assert_eq!(desc.format_value(-6.0), "-6.0 dB");
+    ///
+    /// let desc = ParamDescriptor::rate_hz(20.0, 20000.0, 1000.0);
+    /// assert_eq!(desc.format_value(1500.0), "1.5 kHz");
+    /// ```
+    pub fn format_value(&self, value: f32) -> String {
+        if let Some(labels) = self.step_labels {
+            let idx = ((value - self.min) / self.step.max(1.0)) as usize;
+            return String::from(*labels.get(idx).unwrap_or(&"?"));
+        }
+        match self.unit {
+            ParamUnit::Decibels => format!("{:.1} dB", value),
+            ParamUnit::Hertz if value >= 1000.0 => format!("{:.1} kHz", value / 1000.0),
+            ParamUnit::Hertz => format!("{:.0} Hz", value),
+            ParamUnit::Milliseconds if value >= 1000.0 => format!("{:.2} s", value / 1000.0),
+            ParamUnit::Milliseconds => format!("{:.0} ms", value),
+            ParamUnit::Percent => format!("{:.0}%", value),
+            ParamUnit::Ratio => format!("{:.1}:1", value),
+            ParamUnit::None => format!("{:.2}", value),
+        }
+    }
+
+    /// Parses human-readable text back to a parameter value.
+    ///
+    /// Handles step labels (case-insensitive match) and numeric values with
+    /// unit suffixes. Auto-converts scaled units (kHz → Hz, s → ms).
+    ///
+    /// Maps directly to CLAP `text_to_value()` and VST3 string-to-parameter.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sonido_core::ParamDescriptor;
+    ///
+    /// let desc = ParamDescriptor::gain_db("Gain", "Gain", -60.0, 12.0, 0.0);
+    /// assert_eq!(desc.parse_value("-6.0 dB"), Some(-6.0));
+    ///
+    /// let desc = ParamDescriptor::rate_hz(20.0, 20000.0, 1000.0);
+    /// assert_eq!(desc.parse_value("1.5 kHz"), Some(1500.0));
+    /// ```
+    pub fn parse_value(&self, text: &str) -> Option<f32> {
+        if let Some(labels) = self.step_labels
+            && let Some(i) = labels
+                .iter()
+                .position(|l| l.eq_ignore_ascii_case(text.trim()))
+        {
+            return Some(self.min + i as f32 * self.step.max(1.0));
+        }
+        // Strip known suffixes and parse
+        let cleaned = text
+            .trim()
+            .trim_end_matches(" dB")
+            .trim_end_matches(" Hz")
+            .trim_end_matches(" kHz")
+            .trim_end_matches(" ms")
+            .trim_end_matches(" s")
+            .trim_end_matches('%')
+            .trim_end_matches(":1")
+            .trim();
+        let val: f32 = cleaned.parse().ok()?;
+        // Handle kHz → Hz, s → ms conversions
+        if text.contains("kHz") || (text.ends_with(" s") && !text.ends_with(" ms")) {
+            Some(val * 1000.0)
+        } else {
+            Some(val)
         }
     }
 }
@@ -1159,6 +1283,7 @@ mod tests {
         assert_eq!(desc.flags, ParamFlags::AUTOMATABLE);
         assert_eq!(desc.group, "");
         assert_eq!(desc.modulation_id, None);
+        assert_eq!(desc.step_labels, None);
     }
 
     #[test]
@@ -1176,5 +1301,169 @@ mod tests {
 
         let desc_none = ParamDescriptor::mix();
         assert_eq!(desc_none.modulation_id, None);
+    }
+
+    #[test]
+    fn test_with_step_labels_builder() {
+        let labels: &[&str] = &["Soft", "Hard", "Fold"];
+        let desc = ParamDescriptor {
+            name: "Shape",
+            short_name: "Shape",
+            unit: ParamUnit::None,
+            min: 0.0,
+            max: 2.0,
+            default: 0.0,
+            step: 1.0,
+            ..ParamDescriptor::mix()
+        }
+        .with_step_labels(labels);
+        assert_eq!(desc.step_labels, Some(labels));
+    }
+
+    #[test]
+    fn test_format_value_decibels() {
+        let desc = ParamDescriptor::gain_db("Gain", "Gain", -60.0, 12.0, 0.0);
+        assert_eq!(desc.format_value(-6.0), "-6.0 dB");
+        assert_eq!(desc.format_value(0.0), "0.0 dB");
+        assert_eq!(desc.format_value(12.0), "12.0 dB");
+    }
+
+    #[test]
+    fn test_format_value_hertz() {
+        let desc = ParamDescriptor::rate_hz(20.0, 20000.0, 1000.0);
+        assert_eq!(desc.format_value(440.0), "440 Hz");
+        assert_eq!(desc.format_value(1500.0), "1.5 kHz");
+        assert_eq!(desc.format_value(20000.0), "20.0 kHz");
+    }
+
+    #[test]
+    fn test_format_value_milliseconds() {
+        let desc = ParamDescriptor::time_ms("Time", "Time", 1.0, 2000.0, 250.0);
+        assert_eq!(desc.format_value(250.0), "250 ms");
+        assert_eq!(desc.format_value(1500.0), "1.50 s");
+        assert_eq!(desc.format_value(5.0), "5 ms");
+    }
+
+    #[test]
+    fn test_format_value_percent() {
+        let desc = ParamDescriptor::mix();
+        assert_eq!(desc.format_value(50.0), "50%");
+        assert_eq!(desc.format_value(0.0), "0%");
+        assert_eq!(desc.format_value(100.0), "100%");
+    }
+
+    #[test]
+    fn test_format_value_ratio() {
+        let desc = ParamDescriptor {
+            unit: ParamUnit::Ratio,
+            ..ParamDescriptor::mix()
+        };
+        assert_eq!(desc.format_value(4.0), "4.0:1");
+        assert_eq!(desc.format_value(1.0), "1.0:1");
+    }
+
+    #[test]
+    fn test_format_value_none() {
+        let desc = ParamDescriptor {
+            unit: ParamUnit::None,
+            ..ParamDescriptor::mix()
+        };
+        assert_eq!(desc.format_value(0.5), "0.50");
+    }
+
+    #[test]
+    fn test_format_value_step_labels() {
+        let desc = ParamDescriptor {
+            name: "Shape",
+            short_name: "Shape",
+            unit: ParamUnit::None,
+            min: 0.0,
+            max: 3.0,
+            default: 0.0,
+            step: 1.0,
+            ..ParamDescriptor::mix()
+        }
+        .with_step_labels(&["Soft Clip", "Hard Clip", "Foldback", "Asymmetric"]);
+
+        assert_eq!(desc.format_value(0.0), "Soft Clip");
+        assert_eq!(desc.format_value(1.0), "Hard Clip");
+        assert_eq!(desc.format_value(2.0), "Foldback");
+        assert_eq!(desc.format_value(3.0), "Asymmetric");
+        // Out of range returns "?"
+        assert_eq!(desc.format_value(4.0), "?");
+    }
+
+    #[test]
+    fn test_parse_value_decibels() {
+        let desc = ParamDescriptor::gain_db("Gain", "Gain", -60.0, 12.0, 0.0);
+        assert_eq!(desc.parse_value("-6.0 dB"), Some(-6.0));
+        assert_eq!(desc.parse_value("0.0 dB"), Some(0.0));
+        assert_eq!(desc.parse_value("-6.0"), Some(-6.0));
+    }
+
+    #[test]
+    fn test_parse_value_hertz() {
+        let desc = ParamDescriptor::rate_hz(20.0, 20000.0, 1000.0);
+        assert_eq!(desc.parse_value("440 Hz"), Some(440.0));
+        assert_eq!(desc.parse_value("1.5 kHz"), Some(1500.0));
+    }
+
+    #[test]
+    fn test_parse_value_milliseconds() {
+        let desc = ParamDescriptor::time_ms("Time", "Time", 1.0, 2000.0, 250.0);
+        assert_eq!(desc.parse_value("250 ms"), Some(250.0));
+        assert_eq!(desc.parse_value("1.5 s"), Some(1500.0));
+    }
+
+    #[test]
+    fn test_parse_value_percent() {
+        let desc = ParamDescriptor::mix();
+        assert_eq!(desc.parse_value("50%"), Some(50.0));
+    }
+
+    #[test]
+    fn test_parse_value_ratio() {
+        let desc = ParamDescriptor {
+            unit: ParamUnit::Ratio,
+            ..ParamDescriptor::mix()
+        };
+        assert_eq!(desc.parse_value("4.0:1"), Some(4.0));
+    }
+
+    #[test]
+    fn test_parse_value_step_labels() {
+        let desc = ParamDescriptor {
+            name: "Shape",
+            short_name: "Shape",
+            unit: ParamUnit::None,
+            min: 0.0,
+            max: 3.0,
+            default: 0.0,
+            step: 1.0,
+            ..ParamDescriptor::mix()
+        }
+        .with_step_labels(&["Soft Clip", "Hard Clip", "Foldback", "Asymmetric"]);
+
+        assert_eq!(desc.parse_value("Hard Clip"), Some(1.0));
+        assert_eq!(desc.parse_value("hard clip"), Some(1.0)); // case-insensitive
+        assert_eq!(desc.parse_value("Foldback"), Some(2.0));
+        assert_eq!(desc.parse_value("Unknown"), None); // no numeric fallback
+    }
+
+    #[test]
+    fn test_parse_value_invalid() {
+        let desc = ParamDescriptor::mix();
+        assert_eq!(desc.parse_value("not a number"), None);
+    }
+
+    #[test]
+    fn test_format_parse_roundtrip() {
+        let desc = ParamDescriptor::gain_db("Gain", "Gain", -60.0, 12.0, 0.0);
+        let text = desc.format_value(-6.0);
+        assert_eq!(desc.parse_value(&text), Some(-6.0));
+
+        let desc = ParamDescriptor::mix();
+        let text = desc.format_value(75.0);
+        assert_eq!(desc.parse_value(&text), Some(75.0));
     }
 }

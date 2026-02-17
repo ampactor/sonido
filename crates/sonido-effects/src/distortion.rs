@@ -334,7 +334,13 @@ impl ParameterInfo for Distortion {
                     ..ParamDescriptor::mix()
                 }
                 .with_id(ParamId(203), "dist_shape")
-                .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED)),
+                .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED))
+                .with_step_labels(&[
+                    "Soft Clip",
+                    "Hard Clip",
+                    "Foldback",
+                    "Asymmetric",
+                ]),
             ),
             _ => None,
         }

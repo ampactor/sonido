@@ -797,3 +797,53 @@ All block overrides are verified to produce identical output to the per-sample p
 
 - **SIMD intrinsics**: Explicit SIMD would provide guaranteed vectorization but requires `unsafe`, is platform-specific, and breaks `no_std` portability. Deferred until profiling shows autovectorization is insufficient.
 - **Overriding all 15 effects**: Diminishing returns for simple effects (Preamp, Gate, Filter) where the per-sample cost is already minimal. Maintenance burden outweighs benefit.
+
+## ADR-022: Parameter System Hardening for Plugin Integration
+
+### Context
+
+Sonido's parameter system was designed for standalone GUI use (runtime name-based lookup, per-sample smoothing, index-based access). Plugin hosts (CLAP, VST3) impose stricter requirements:
+
+- **Stable identity**: Parameters must survive reordering and persist across sessions. CLAP requires `clap_id` (u32), VST3 requires `ParamID` (u32).
+- **Scaling metadata**: Hosts need to know the normalization curve to render parameter arcs and handle mouse gestures. CLAP has `CLAP_PARAM_IS_STEPPED`, `CLAP_PARAM_IS_AUTOMATABLE`, etc.
+- **Text display**: CLAP mandates `value_to_text()` / `text_to_value()` callbacks. VST3 has `getParamStringByValue()` / `getParamValueByString()`. Without these, hosts display raw floats with no units.
+- **Modulation routing**: CLAP supports non-destructive modulation (`CLAP_PARAM_IS_MODULATABLE`) where the base value is preserved. This requires a per-parameter modulation ID.
+
+### Decision
+
+Extend `ParamDescriptor` with plugin-oriented metadata and methods:
+
+| Addition | Purpose | CLAP mapping | VST3 mapping |
+|----------|---------|-------------|-------------|
+| `ParamId(u32)` | Stable identity | `clap_id` | `ParamID` |
+| `string_id: &'static str` | Debug/serialization | — | — |
+| `ParamScale` (Linear/Log/Power) | Normalization curve | `CLAP_PARAM_IS_STEPPED` (implicit) | `stepCount` |
+| `ParamFlags` (AUTOMATABLE, STEPPED, HIDDEN, READ_ONLY, MODULATABLE) | Host capability bits | `clap_param_info_flags` | `ParameterInfo::flags` |
+| `modulation_id: Option<u32>` | CLAP modulation routing | `CLAP_PARAM_IS_MODULATABLE` | — (no equivalent) |
+| `step_labels: Option<&'static [&'static str]>` | Enum text display | `value_to_text()` | `getParamStringByValue()` |
+| `format_value() → String` | Generic text display | `value_to_text()` | `getParamStringByValue()` |
+| `parse_value() → Option<f32>` | Text-to-value parsing | `text_to_value()` | `getParamValueByString()` |
+
+Stable IDs follow a base+offset convention per effect (Preamp=100, Distortion=200, ..., Reverb=1500) with sequential params from the base.
+
+### Rationale
+
+- **ParamId is u32, not string**: Both CLAP and VST3 use numeric IDs. String IDs are supplementary for debugging. Numeric IDs are cheaper to compare and hash.
+- **ParamFlags as bitflags**: Direct mapping to CLAP's `clap_param_info_flags`. Custom bitflag type (not `bitflags` crate) keeps `no_std` and zero-dep.
+- **step_labels is `&'static [&'static str]`**: Static lifetime matches the param descriptor's `&'static str` fields. No allocation for label storage. Labels are known at compile time for all current effects.
+- **format_value/parse_value on ParamDescriptor**: Methods live on the descriptor, not a separate trait, because all formatting info (unit, min, max, step, labels) is already in the descriptor. No vtable dispatch needed.
+- **alloc, not std**: `format_value()` returns `alloc::string::String`, which is available in both `std` and `no_std` (with `extern crate alloc`). No feature gate needed.
+- **MODULATABLE flag**: CLAP-specific. VST3 treats all parameter changes as automation. The flag is harmless in VST3 wrappers (simply ignored).
+- **modulation_id**: Separate from ParamId because CLAP's modulation routing needs its own namespace. Mirrors nih-plug's `poly_modulation_id()`.
+
+### Alternatives Considered
+
+- **Runtime string IDs only (no numeric ParamId)**: Fragile across reordering, expensive to hash per-audio-frame. Both CLAP and VST3 require numeric IDs.
+- **Trait-method formatting (virtual dispatch)**: Would require `dyn` dispatch for text formatting and forces `alloc` into the trait definition. The descriptor-method approach is simpler and equally powerful since all formatting info is already in `ParamDescriptor`.
+- **Callback fn pointers for formatting**: Can't capture state, awkward ergonomics in no_std. `step_labels` + unit-based formatting covers 100% of current effects.
+- **Dynamic enum lists (Vec of labels)**: Would require heap allocation in the descriptor. Static `&[&str]` is sufficient since all current enums are known at compile time. Effects needing dynamic labels can override `EffectWithParams::effect_format_value()`.
+
+### Tradeoffs
+
+- `step_labels` is static — effects with runtime-dynamic enum lists would need to override `effect_format_value()` on the `EffectWithParams` trait.
+- `format_value()` returns `String` (heap allocation), acceptable for GUI/host display paths but not audio-thread safe. Plugin wrappers should call it from the main thread or cache results.
