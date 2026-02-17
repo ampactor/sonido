@@ -7,8 +7,8 @@
 
 use core::f32::consts::PI;
 use sonido_core::{
-    Effect, Lfo, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, fast_exp2, fast_log2,
-    fast_tan, flush_denormal, wet_dry_mix,
+    Effect, Lfo, ParamDescriptor, ParamFlags, ParamId, ParamUnit, ParameterInfo, SmoothedParam,
+    fast_exp2, fast_log2, fast_tan, flush_denormal, wet_dry_mix,
 };
 
 /// Maximum number of allpass stages.
@@ -393,20 +393,27 @@ impl ParameterInfo for Phaser {
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
         match index {
-            0 => Some(ParamDescriptor::rate_hz(0.05, 5.0, 0.3)),
-            1 => Some(ParamDescriptor::depth()),
-            2 => Some(ParamDescriptor {
-                name: "Stages",
-                short_name: "Stg",
-                unit: ParamUnit::None,
-                min: 2.0,
-                max: 12.0,
-                default: 6.0,
-                step: 2.0,
-            }),
-            3 => Some(ParamDescriptor::feedback()),
-            4 => Some(ParamDescriptor::mix()),
-            5 => Some(sonido_core::gain::output_param_descriptor()),
+            0 => Some(ParamDescriptor::rate_hz(0.05, 5.0, 0.3).with_id(ParamId(900), "phsr_rate")),
+            1 => Some(ParamDescriptor::depth().with_id(ParamId(901), "phsr_depth")),
+            2 => Some(
+                ParamDescriptor {
+                    name: "Stages",
+                    short_name: "Stg",
+                    unit: ParamUnit::None,
+                    min: 2.0,
+                    max: 12.0,
+                    default: 6.0,
+                    step: 2.0,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(902), "phsr_stages")
+                .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED)),
+            ),
+            3 => Some(ParamDescriptor::feedback().with_id(ParamId(903), "phsr_feedback")),
+            4 => Some(ParamDescriptor::mix().with_id(ParamId(904), "phsr_mix")),
+            5 => Some(
+                sonido_core::gain::output_param_descriptor().with_id(ParamId(905), "phsr_output"),
+            ),
             _ => None,
         }
     }

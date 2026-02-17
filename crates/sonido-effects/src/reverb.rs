@@ -5,8 +5,8 @@
 
 use libm::{ceilf, roundf};
 use sonido_core::{
-    AllpassFilter, CombFilter, Effect, InterpolatedDelay, ParamDescriptor, ParamUnit,
-    ParameterInfo, SmoothedParam, wet_dry_mix, wet_dry_mix_stereo,
+    AllpassFilter, CombFilter, Effect, InterpolatedDelay, ParamDescriptor, ParamFlags, ParamId,
+    ParamUnit, ParameterInfo, SmoothedParam, wet_dry_mix, wet_dry_mix_stereo,
 };
 
 /// Freeverb comb filter delay times (at 44.1kHz reference).
@@ -565,62 +565,89 @@ impl ParameterInfo for Reverb {
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
         match index {
-            0 => Some(ParamDescriptor {
-                name: "Room Size",
-                short_name: "Room",
-                unit: ParamUnit::Percent,
-                min: 0.0,
-                max: 100.0,
-                default: 50.0,
-                step: 1.0,
-            }),
-            1 => Some(ParamDescriptor {
-                name: "Decay",
-                short_name: "Decay",
-                unit: ParamUnit::Percent,
-                min: 0.0,
-                max: 100.0,
-                default: 50.0,
-                step: 1.0,
-            }),
-            2 => Some(ParamDescriptor {
-                name: "Damping",
-                short_name: "Damping",
-                unit: ParamUnit::Percent,
-                min: 0.0,
-                max: 100.0,
-                default: 50.0,
-                step: 1.0,
-            }),
-            3 => Some(ParamDescriptor {
-                name: "Pre-Delay",
-                short_name: "PreDly",
-                unit: ParamUnit::Milliseconds,
-                min: 0.0,
-                max: 100.0,
-                default: 10.0,
-                step: 1.0,
-            }),
-            4 => Some(ParamDescriptor::mix()),
-            5 => Some(ParamDescriptor {
-                name: "Stereo Width",
-                short_name: "Width",
-                unit: ParamUnit::Percent,
-                min: 0.0,
-                max: 100.0,
-                default: 100.0,
-                step: 1.0,
-            }),
-            6 => Some(ParamDescriptor {
-                name: "Reverb Type",
-                short_name: "Type",
-                unit: ParamUnit::None,
-                min: 0.0,
-                max: 1.0,
-                default: 0.0,
-                step: 1.0,
-            }),
-            7 => Some(sonido_core::gain::output_param_descriptor()),
+            0 => Some(
+                ParamDescriptor {
+                    name: "Room Size",
+                    short_name: "Room",
+                    unit: ParamUnit::Percent,
+                    min: 0.0,
+                    max: 100.0,
+                    default: 50.0,
+                    step: 1.0,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(1500), "rev_room_size"),
+            ),
+            1 => Some(
+                ParamDescriptor {
+                    name: "Decay",
+                    short_name: "Decay",
+                    unit: ParamUnit::Percent,
+                    min: 0.0,
+                    max: 100.0,
+                    default: 50.0,
+                    step: 1.0,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(1501), "rev_decay"),
+            ),
+            2 => Some(
+                ParamDescriptor {
+                    name: "Damping",
+                    short_name: "Damping",
+                    unit: ParamUnit::Percent,
+                    min: 0.0,
+                    max: 100.0,
+                    default: 50.0,
+                    step: 1.0,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(1502), "rev_damping"),
+            ),
+            3 => Some(
+                ParamDescriptor {
+                    name: "Pre-Delay",
+                    short_name: "PreDly",
+                    unit: ParamUnit::Milliseconds,
+                    min: 0.0,
+                    max: 100.0,
+                    default: 10.0,
+                    step: 1.0,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(1503), "rev_predelay"),
+            ),
+            4 => Some(ParamDescriptor::mix().with_id(ParamId(1504), "rev_mix")),
+            5 => Some(
+                ParamDescriptor {
+                    name: "Stereo Width",
+                    short_name: "Width",
+                    unit: ParamUnit::Percent,
+                    min: 0.0,
+                    max: 100.0,
+                    default: 100.0,
+                    step: 1.0,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(1505), "rev_width"),
+            ),
+            6 => Some(
+                ParamDescriptor {
+                    name: "Reverb Type",
+                    short_name: "Type",
+                    unit: ParamUnit::None,
+                    min: 0.0,
+                    max: 1.0,
+                    default: 0.0,
+                    step: 1.0,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(1506), "rev_type")
+                .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED)),
+            ),
+            7 => Some(
+                sonido_core::gain::output_param_descriptor().with_id(ParamId(1507), "rev_output"),
+            ),
             _ => None,
         }
     }

@@ -22,7 +22,7 @@
 //! the audio path) but exposes a dB interface for parameter get/set. The range
 //! is [`OUTPUT_MIN_DB`] to [`OUTPUT_MAX_DB`] (−20 to +20 dB), clamped on set.
 
-use crate::{ParamDescriptor, ParamUnit, SmoothedParam, db_to_linear, linear_to_db};
+use crate::{ParamDescriptor, SmoothedParam, db_to_linear, linear_to_db};
 
 /// Minimum output level in dB.
 pub const OUTPUT_MIN_DB: f32 = -20.0;
@@ -53,15 +53,7 @@ pub fn output_level_db(param: &SmoothedParam) -> f32 {
 ///
 /// Use as the **last** `ParameterInfo` index for every effect.
 pub fn output_param_descriptor() -> ParamDescriptor {
-    ParamDescriptor {
-        name: "Output",
-        short_name: "Out",
-        unit: ParamUnit::Decibels,
-        min: OUTPUT_MIN_DB,
-        max: OUTPUT_MAX_DB,
-        default: 0.0,
-        step: 0.5,
-    }
+    ParamDescriptor::gain_db("Output", "Out", OUTPUT_MIN_DB, OUTPUT_MAX_DB, 0.0)
 }
 
 /// Exact wet-signal compensation for feedback comb resonance.
@@ -124,7 +116,7 @@ mod tests {
         let desc = output_param_descriptor();
         assert_eq!(desc.name, "Output");
         assert_eq!(desc.default, 0.0);
-        assert_eq!(desc.unit, ParamUnit::Decibels);
+        assert_eq!(desc.unit, crate::ParamUnit::Decibels);
     }
 
     #[test]

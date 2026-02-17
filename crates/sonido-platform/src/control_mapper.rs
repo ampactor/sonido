@@ -307,7 +307,6 @@ impl<const N: usize> Default for ControlMapper<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ParamUnit;
 
     // Test effect for ParameterInfo
     struct TestEffect {
@@ -331,24 +330,8 @@ mod tests {
 
         fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
             match index {
-                0 => Some(ParamDescriptor {
-                    name: "Gain",
-                    short_name: "Gain",
-                    unit: ParamUnit::Decibels,
-                    min: -60.0,
-                    max: 12.0,
-                    default: 0.0,
-                    step: 0.1,
-                }),
-                1 => Some(ParamDescriptor {
-                    name: "Frequency",
-                    short_name: "Freq",
-                    unit: ParamUnit::Hertz,
-                    min: 20.0,
-                    max: 20000.0,
-                    default: 1000.0,
-                    step: 1.0,
-                }),
+                0 => Some(ParamDescriptor::gain_db("Gain", "Gain", -60.0, 12.0, 0.0)),
+                1 => Some(ParamDescriptor::rate_hz(20.0, 20000.0, 1000.0)),
                 _ => None,
             }
         }

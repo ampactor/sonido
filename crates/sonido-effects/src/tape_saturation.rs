@@ -4,8 +4,8 @@
 //! even harmonic enhancement, and high frequency rolloff.
 
 use sonido_core::{
-    Effect, OnePole, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, db_to_linear,
-    fast_exp2, linear_to_db,
+    Effect, OnePole, ParamDescriptor, ParamId, ParamScale, ParamUnit, ParameterInfo, SmoothedParam,
+    db_to_linear, fast_exp2, linear_to_db,
 };
 
 /// Tape saturation effect
@@ -196,51 +196,72 @@ impl ParameterInfo for TapeSaturation {
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
         match index {
-            0 => Some(ParamDescriptor {
-                name: "Drive",
-                short_name: "Drive",
-                unit: ParamUnit::Decibels,
-                min: 0.0,
-                max: 24.0,
-                default: 6.0,
-                step: 0.5,
-            }),
-            1 => Some(ParamDescriptor {
-                name: "Saturation",
-                short_name: "Sat",
-                unit: ParamUnit::Percent,
-                min: 0.0,
-                max: 100.0,
-                default: 50.0,
-                step: 1.0,
-            }),
-            2 => Some(ParamDescriptor {
-                name: "Output",
-                short_name: "Output",
-                unit: ParamUnit::Decibels,
-                min: -12.0,
-                max: 12.0,
-                default: -6.0,
-                step: 0.5,
-            }),
-            3 => Some(ParamDescriptor {
-                name: "HF Rolloff",
-                short_name: "HFRoll",
-                unit: ParamUnit::Hertz,
-                min: 1000.0,
-                max: 20000.0,
-                default: 12000.0,
-                step: 100.0,
-            }),
-            4 => Some(ParamDescriptor {
-                name: "Bias",
-                short_name: "Bias",
-                unit: ParamUnit::None,
-                min: -0.2,
-                max: 0.2,
-                default: 0.0,
-                step: 0.01,
-            }),
+            0 => Some(
+                ParamDescriptor {
+                    name: "Drive",
+                    short_name: "Drive",
+                    unit: ParamUnit::Decibels,
+                    min: 0.0,
+                    max: 24.0,
+                    default: 6.0,
+                    step: 0.5,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(1400), "tape_drive"),
+            ),
+            1 => Some(
+                ParamDescriptor {
+                    name: "Saturation",
+                    short_name: "Sat",
+                    unit: ParamUnit::Percent,
+                    min: 0.0,
+                    max: 100.0,
+                    default: 50.0,
+                    step: 1.0,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(1401), "tape_saturation"),
+            ),
+            2 => Some(
+                ParamDescriptor {
+                    name: "Output",
+                    short_name: "Output",
+                    unit: ParamUnit::Decibels,
+                    min: -12.0,
+                    max: 12.0,
+                    default: -6.0,
+                    step: 0.5,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(1402), "tape_output"),
+            ),
+            3 => Some(
+                ParamDescriptor {
+                    name: "HF Rolloff",
+                    short_name: "HFRoll",
+                    unit: ParamUnit::Hertz,
+                    min: 1000.0,
+                    max: 20000.0,
+                    default: 12000.0,
+                    step: 100.0,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(1403), "tape_hf_rolloff")
+                .with_scale(ParamScale::Logarithmic),
+            ),
+            4 => Some(
+                ParamDescriptor {
+                    name: "Bias",
+                    short_name: "Bias",
+                    unit: ParamUnit::None,
+                    min: -0.2,
+                    max: 0.2,
+                    default: 0.0,
+                    step: 0.01,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(1404), "tape_bias"),
+            ),
             _ => None,
         }
     }

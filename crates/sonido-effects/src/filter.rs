@@ -1,8 +1,8 @@
 //! Biquad-based filter effects.
 
 use sonido_core::{
-    Biquad, Effect, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, gain,
-    lowpass_coefficients,
+    Biquad, Effect, ParamDescriptor, ParamId, ParamScale, ParamUnit, ParameterInfo, SmoothedParam,
+    gain, lowpass_coefficients,
 };
 
 /// Low-pass filter effect with smoothed parameter control.
@@ -137,25 +137,34 @@ impl ParameterInfo for LowPassFilter {
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
         match index {
-            0 => Some(ParamDescriptor {
-                name: "Cutoff",
-                short_name: "Cutoff",
-                unit: ParamUnit::Hertz,
-                min: 20.0,
-                max: 20000.0,
-                default: 1000.0,
-                step: 1.0,
-            }),
-            1 => Some(ParamDescriptor {
-                name: "Resonance",
-                short_name: "Reso",
-                unit: ParamUnit::Ratio,
-                min: 0.1,
-                max: 20.0,
-                default: 0.707,
-                step: 0.01,
-            }),
-            2 => Some(gain::output_param_descriptor()),
+            0 => Some(
+                ParamDescriptor {
+                    name: "Cutoff",
+                    short_name: "Cutoff",
+                    unit: ParamUnit::Hertz,
+                    min: 20.0,
+                    max: 20000.0,
+                    default: 1000.0,
+                    step: 1.0,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(1200), "flt_cutoff")
+                .with_scale(ParamScale::Logarithmic),
+            ),
+            1 => Some(
+                ParamDescriptor {
+                    name: "Resonance",
+                    short_name: "Reso",
+                    unit: ParamUnit::Ratio,
+                    min: 0.1,
+                    max: 20.0,
+                    default: 0.707,
+                    step: 0.01,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(1201), "flt_resonance"),
+            ),
+            2 => Some(gain::output_param_descriptor().with_id(ParamId(1202), "flt_output")),
             _ => None,
         }
     }

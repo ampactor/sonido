@@ -2,8 +2,8 @@
 
 use libm::ceilf;
 use sonido_core::{
-    Effect, InterpolatedDelay, Lfo, ParamDescriptor, ParameterInfo, SmoothedParam, wet_dry_mix,
-    wet_dry_mix_stereo,
+    Effect, InterpolatedDelay, Lfo, ParamDescriptor, ParamId, ParameterInfo, SmoothedParam,
+    wet_dry_mix, wet_dry_mix_stereo,
 };
 
 /// Chorus effect with dual voices.
@@ -251,10 +251,12 @@ impl ParameterInfo for Chorus {
 
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
         match index {
-            0 => Some(ParamDescriptor::rate_hz(0.1, 10.0, 1.0)),
-            1 => Some(ParamDescriptor::depth()),
-            2 => Some(ParamDescriptor::mix()),
-            3 => Some(sonido_core::gain::output_param_descriptor()),
+            0 => Some(ParamDescriptor::rate_hz(0.1, 10.0, 1.0).with_id(ParamId(700), "chor_rate")),
+            1 => Some(ParamDescriptor::depth().with_id(ParamId(701), "chor_depth")),
+            2 => Some(ParamDescriptor::mix().with_id(ParamId(702), "chor_mix")),
+            3 => Some(
+                sonido_core::gain::output_param_descriptor().with_id(ParamId(703), "chor_output"),
+            ),
             _ => None,
         }
     }

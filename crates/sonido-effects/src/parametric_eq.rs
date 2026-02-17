@@ -3,8 +3,8 @@
 //! Uses RBJ cookbook peaking EQ filters for precise frequency shaping.
 
 use sonido_core::{
-    Biquad, Effect, ParamDescriptor, ParamUnit, ParameterInfo, SmoothedParam, gain,
-    peaking_eq_coefficients,
+    Biquad, Effect, ParamDescriptor, ParamId, ParamScale, ParamUnit, ParameterInfo, SmoothedParam,
+    gain, peaking_eq_coefficients,
 };
 
 /// Number of samples between biquad coefficient recalculations during parameter
@@ -458,90 +458,102 @@ impl ParameterInfo for ParametricEq {
     fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
         match index {
             // Low band
-            0 => Some(ParamDescriptor {
-                name: "Low Frequency",
-                short_name: "LowFreq",
-                unit: ParamUnit::Hertz,
-                min: 20.0,
-                max: 500.0,
-                default: 100.0,
-                step: 1.0,
-            }),
-            1 => Some(ParamDescriptor {
-                name: "Low Gain",
-                short_name: "LowGain",
-                unit: ParamUnit::Decibels,
-                min: -12.0,
-                max: 12.0,
-                default: 0.0,
-                step: 0.5,
-            }),
-            2 => Some(ParamDescriptor {
-                name: "Low Q",
-                short_name: "LowQ",
-                unit: ParamUnit::None,
-                min: 0.5,
-                max: 5.0,
-                default: 1.0,
-                step: 0.1,
-            }),
+            0 => Some(
+                ParamDescriptor {
+                    name: "Low Frequency",
+                    short_name: "LowFreq",
+                    unit: ParamUnit::Hertz,
+                    min: 20.0,
+                    max: 500.0,
+                    default: 100.0,
+                    step: 1.0,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(500), "eq_low_freq")
+                .with_scale(ParamScale::Logarithmic),
+            ),
+            1 => Some(
+                ParamDescriptor::gain_db("Low Gain", "LowGain", -12.0, 12.0, 0.0)
+                    .with_id(ParamId(501), "eq_low_gain"),
+            ),
+            2 => Some(
+                ParamDescriptor {
+                    name: "Low Q",
+                    short_name: "LowQ",
+                    unit: ParamUnit::None,
+                    min: 0.5,
+                    max: 5.0,
+                    default: 1.0,
+                    step: 0.1,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(502), "eq_low_q"),
+            ),
             // Mid band
-            3 => Some(ParamDescriptor {
-                name: "Mid Frequency",
-                short_name: "MidFreq",
-                unit: ParamUnit::Hertz,
-                min: 200.0,
-                max: 5000.0,
-                default: 1000.0,
-                step: 10.0,
-            }),
-            4 => Some(ParamDescriptor {
-                name: "Mid Gain",
-                short_name: "MidGain",
-                unit: ParamUnit::Decibels,
-                min: -12.0,
-                max: 12.0,
-                default: 0.0,
-                step: 0.5,
-            }),
-            5 => Some(ParamDescriptor {
-                name: "Mid Q",
-                short_name: "MidQ",
-                unit: ParamUnit::None,
-                min: 0.5,
-                max: 5.0,
-                default: 1.0,
-                step: 0.1,
-            }),
+            3 => Some(
+                ParamDescriptor {
+                    name: "Mid Frequency",
+                    short_name: "MidFreq",
+                    unit: ParamUnit::Hertz,
+                    min: 200.0,
+                    max: 5000.0,
+                    default: 1000.0,
+                    step: 10.0,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(503), "eq_mid_freq")
+                .with_scale(ParamScale::Logarithmic),
+            ),
+            4 => Some(
+                ParamDescriptor::gain_db("Mid Gain", "MidGain", -12.0, 12.0, 0.0)
+                    .with_id(ParamId(504), "eq_mid_gain"),
+            ),
+            5 => Some(
+                ParamDescriptor {
+                    name: "Mid Q",
+                    short_name: "MidQ",
+                    unit: ParamUnit::None,
+                    min: 0.5,
+                    max: 5.0,
+                    default: 1.0,
+                    step: 0.1,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(505), "eq_mid_q"),
+            ),
             // High band
-            6 => Some(ParamDescriptor {
-                name: "High Frequency",
-                short_name: "HighFreq",
-                unit: ParamUnit::Hertz,
-                min: 1000.0,
-                max: 15000.0,
-                default: 5000.0,
-                step: 100.0,
-            }),
-            7 => Some(ParamDescriptor {
-                name: "High Gain",
-                short_name: "HighGain",
-                unit: ParamUnit::Decibels,
-                min: -12.0,
-                max: 12.0,
-                default: 0.0,
-                step: 0.5,
-            }),
-            8 => Some(ParamDescriptor {
-                name: "High Q",
-                short_name: "HighQ",
-                unit: ParamUnit::None,
-                min: 0.5,
-                max: 5.0,
-                default: 1.0,
-                step: 0.1,
-            }),
-            9 => Some(gain::output_param_descriptor()),
+            6 => Some(
+                ParamDescriptor {
+                    name: "High Frequency",
+                    short_name: "HighFreq",
+                    unit: ParamUnit::Hertz,
+                    min: 1000.0,
+                    max: 15000.0,
+                    default: 5000.0,
+                    step: 100.0,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(506), "eq_high_freq")
+                .with_scale(ParamScale::Logarithmic),
+            ),
+            7 => Some(
+                ParamDescriptor::gain_db("High Gain", "HighGain", -12.0, 12.0, 0.0)
+                    .with_id(ParamId(507), "eq_high_gain"),
+            ),
+            8 => Some(
+                ParamDescriptor {
+                    name: "High Q",
+                    short_name: "HighQ",
+                    unit: ParamUnit::None,
+                    min: 0.5,
+                    max: 5.0,
+                    default: 1.0,
+                    step: 0.1,
+                    ..ParamDescriptor::mix()
+                }
+                .with_id(ParamId(508), "eq_high_q"),
+            ),
+            9 => Some(gain::output_param_descriptor().with_id(ParamId(509), "eq_output")),
             _ => None,
         }
     }
