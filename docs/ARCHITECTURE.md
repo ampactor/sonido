@@ -572,3 +572,93 @@ cargo test --no-default-features -p sonido-effects
 # Embedded (future)
 cargo build -p sonido-hothouse --target thumbv7em-none-eabihf --release
 ```
+
+## Parameter Threading Model
+
+This section documents the full parameter data flow for plugin wrapper developers
+(CLAP, VST3, nih-plug).
+
+### Ownership Model
+
+`EffectWithParams` is `Send` but not `Sync` — the effect instance lives exclusively
+on the audio thread. Cross-thread parameter access uses `AtomicParamBridge`, never
+direct shared references to the effect.
+
+### Data Flow
+
+```
+GUI thread                     Audio thread
+    │                               │
+    ├─ ParamBridge::set(idx, val)   │
+    │   └─ AtomicU32::store(Release)│
+    │   └─ dirty_flag.store(true)   │
+    │                               │
+    │                    sync_to_chain() ─┤
+    │                    │ dirty_flag.swap(false, Acquire)
+    │                    │ for each slot:
+    │                    │   val = AtomicU32::load(Relaxed)
+    │                    │   effect.set_param(idx, val)
+    │                    │   SmoothedParam smooths internally
+    │                               │
+    │                    process_stereo() ─┤
+    │                    │ SmoothedParam::advance() per sample
+```
+
+### Memory Ordering
+
+| Operation | Ordering | Rationale |
+|-----------|----------|-----------|
+| GUI write (param value) | `Release` | Ensures the value is visible before the dirty flag |
+| GUI write (dirty flag) | `Release` | Pairs with audio thread's `Acquire` |
+| Audio read (dirty flag) | `Acquire` | Synchronizes with all `Release` stores |
+| Audio read (individual params) | `Relaxed` | Safe after dirty flag `Acquire` provides happens-before |
+
+### Gesture Protocol
+
+CLAP and VST3 hosts group parameter edits for undo/redo. The `ParamBridge` trait
+exposes `begin_set(index)` / `end_set(index)` to bracket a gesture:
+
+```rust
+bridge.begin_set(0);          // host: "user started dragging knob 0"
+bridge.set(0, new_value);     // one or more value changes
+bridge.end_set(0);            // host: "user released knob 0"
+```
+
+The `AtomicParamBridge` in `sonido-gui` tracks gesture state per-parameter.
+Plugin wrappers map these directly to CLAP `request_begin_adjust` /
+`request_end_adjust` and VST3 `beginEdit` / `endEdit`.
+
+### Structural Changes
+
+Adding, removing, or reordering effects in the chain is NOT a parameter operation.
+These mutations flow through an unbounded `mpsc` command channel (`ChainCommand`):
+
+- **GUI thread**: sends `ChainCommand::Add`, `Remove`, `Reorder`
+- **Audio thread**: drains the channel at the top of each process callback,
+  applies mutations to the effect chain before processing
+
+This avoids locking the audio thread — the channel is lock-free on the send side
+and drained cooperatively on the receive side.
+
+### SmoothedParam Interaction
+
+`AtomicParamBridge` transports raw parameter values (f32 → u32 bit-cast → AtomicU32).
+Smoothing happens *inside* the effect after `set_param()`: each effect's
+`SmoothedParam::set_target()` is called, and `advance()` produces the smoothed
+value per sample in the process loop. The bridge never sees smoothed values.
+
+### Plugin Wrapper Contract
+
+Plugin wrappers (CLAP, VST3, nih-plug) must observe these rules:
+
+1. **Call `set_param()` from the audio thread only.** Use `AtomicParamBridge` or
+   equivalent for cross-thread transport.
+2. **Use `begin_set`/`end_set` for host gestures.** Omitting these breaks undo
+   grouping in DAWs.
+3. **Call `effect_format_value()`/`effect_parse_value()` from the main thread.**
+   These allocate (`String`) and must not be called on the audio thread.
+4. **Map `ParamId` to host parameter IDs 1:1.** The stable numeric ID is the
+   canonical identity for automation recording and preset persistence.
+5. **Respect `ParamFlags`**: `STEPPED` → integer step count, `HIDDEN` → omit from
+   generic UI, `MODULATABLE` → register for CLAP modulation, `READ_ONLY` → no
+   host automation.

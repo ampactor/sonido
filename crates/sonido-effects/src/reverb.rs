@@ -643,7 +643,8 @@ impl ParameterInfo for Reverb {
                     ..ParamDescriptor::mix()
                 }
                 .with_id(ParamId(1506), "rev_type")
-                .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED)),
+                .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED))
+                .with_step_labels(&["Room", "Hall"]),
             ),
             7 => Some(
                 sonido_core::gain::output_param_descriptor().with_id(ParamId(1507), "rev_output"),

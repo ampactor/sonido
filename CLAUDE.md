@@ -190,7 +190,7 @@ pub trait ParameterInfo {
 }
 ```
 
-`ParamDescriptor` fields: `name`, `short_name`, `min`, `max`, `default`, `unit` (ParamUnit), `id` (ParamId), `string_id`, `scale` (ParamScale), `flags` (ParamFlags), `group`. Use factory constructors + builder chaining.
+`ParamDescriptor` fields: `name`, `short_name`, `min`, `max`, `default`, `unit` (ParamUnit), `id` (ParamId), `string_id`, `scale` (ParamScale), `flags` (ParamFlags), `group`, `modulation_id`, `step_labels`. Use factory constructors + builder chaining. `format_value()` / `parse_value()` for CLAP/VST3 text display.
 
 **Effect Registry** - Create effects by name. Returns `Box<dyn EffectWithParams + Send>` (combines `Effect` + `ParameterInfo`):
 ```rust

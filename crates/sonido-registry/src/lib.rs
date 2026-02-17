@@ -51,7 +51,7 @@
 extern crate alloc;
 
 #[cfg(not(feature = "std"))]
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, string::String, vec::Vec};
 
 use sonido_core::{Effect, ParamDescriptor, ParameterInfo};
 use sonido_effects::{
@@ -451,6 +451,18 @@ pub trait EffectWithParams: Effect {
 
     /// Set parameter value by index.
     fn effect_set_param(&mut self, index: usize, value: f32);
+
+    /// Format a parameter value as display text.
+    ///
+    /// Delegates to [`ParamDescriptor::format_value()`]. Returns `None`
+    /// if the index is out of range.
+    fn effect_format_value(&self, index: usize, value: f32) -> Option<String>;
+
+    /// Parse display text back to a parameter value.
+    ///
+    /// Delegates to [`ParamDescriptor::parse_value()`]. Returns `None`
+    /// if the index is out of range or parsing fails.
+    fn effect_parse_value(&self, index: usize, text: &str) -> Option<f32>;
 }
 
 // Implement EffectWithParams for all types that implement both Effect and ParameterInfo
@@ -469,6 +481,15 @@ impl<T: Effect + ParameterInfo> EffectWithParams for T {
 
     fn effect_set_param(&mut self, index: usize, value: f32) {
         self.set_param(index, value)
+    }
+
+    fn effect_format_value(&self, index: usize, value: f32) -> Option<String> {
+        self.param_info(index).map(|desc| desc.format_value(value))
+    }
+
+    fn effect_parse_value(&self, index: usize, text: &str) -> Option<f32> {
+        self.param_info(index)
+            .and_then(|desc| desc.parse_value(text))
     }
 }
 
