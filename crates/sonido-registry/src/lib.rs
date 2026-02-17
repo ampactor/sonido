@@ -432,6 +432,30 @@ impl EffectRegistry {
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
+
+    /// Default effect chain in signal-flow order (gain stage → dynamics → EQ → modulation → time → reverb).
+    ///
+    /// Used by the GUI to initialize the effect chain. The ordering reflects
+    /// standard guitar pedalboard convention.
+    pub fn default_chain_ids(&self) -> &'static [&'static str] {
+        &[
+            "preamp",       // Utility — gain stage
+            "distortion",   // Distortion
+            "compressor",   // Dynamics
+            "gate",         // Dynamics
+            "eq",           // Filter — tone shaping
+            "wah",          // Filter — sweep
+            "chorus",       // Modulation
+            "flanger",      // Modulation
+            "phaser",       // Modulation
+            "tremolo",      // Modulation
+            "delay",        // Time-based
+            "filter",       // Filter — synth-style
+            "multivibrato", // Modulation
+            "tape",         // Distortion — saturation
+            "reverb",       // Time-based — last
+        ]
+    }
 }
 
 /// Helper trait to get parameter info from a boxed effect.
