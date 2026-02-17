@@ -1,6 +1,6 @@
 //! Tape saturation effect UI panel.
 
-use crate::widgets::{BypassToggle, Knob};
+use crate::widgets::{BypassToggle, bridged_knob};
 use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
 
@@ -28,41 +28,9 @@ impl TapePanel {
             ui.add_space(12.0);
 
             ui.horizontal(|ui| {
-                // Drive (param 0)
-                let desc = bridge.param_descriptor(slot, ParamIndex(0));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((0.0, 24.0, 6.0), |d| (d.min, d.max, d.default));
-                let mut drive = bridge.get(slot, ParamIndex(0));
-                if ui
-                    .add(
-                        Knob::new(&mut drive, min, max, "DRIVE")
-                            .default(default)
-                            .format_db(),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(0), drive);
-                }
-
+                bridged_knob(ui, bridge, slot, ParamIndex(0), "DRIVE");
                 ui.add_space(16.0);
-
-                // Saturation (param 1) — percent (0–100)
-                let desc = bridge.param_descriptor(slot, ParamIndex(1));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((0.0, 100.0, 50.0), |d| (d.min, d.max, d.default));
-                let mut saturation = bridge.get(slot, ParamIndex(1));
-                if ui
-                    .add(
-                        Knob::new(&mut saturation, min, max, "SAT")
-                            .default(default)
-                            .format(|v| format!("{v:.0}%")),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(1), saturation);
-                }
+                bridged_knob(ui, bridge, slot, ParamIndex(1), "SAT");
             });
         });
     }

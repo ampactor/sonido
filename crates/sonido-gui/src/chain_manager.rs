@@ -5,7 +5,6 @@
 //! reordered without reallocating the effects themselves.
 
 use crate::atomic_param_bridge::AtomicParamBridge;
-use crate::audio_bridge::EffectOrder;
 use sonido_core::{ParamDescriptor, SmoothedParam};
 use sonido_gui_core::SlotIndex;
 use sonido_registry::{EffectRegistry, EffectWithParams};
@@ -238,12 +237,12 @@ impl ChainManager {
         Some(removed.id)
     }
 
-    /// Adds an effect and registers it in the bridge and order atomically.
+    /// Adds an effect and registers it in the bridge atomically.
     ///
-    /// Bundles three mutations that must stay in sync:
+    /// Bundles two mutations that must stay in sync:
     /// 1. Appends the effect to the chain
-    /// 2. Registers parameter descriptors in the bridge
-    /// 3. Appends the slot index to the effect order
+    /// 2. Registers parameter descriptors in the bridge (which also updates
+    ///    the shared order)
     ///
     /// Returns the new slot index.
     pub fn add_transactional(
@@ -251,32 +250,28 @@ impl ChainManager {
         id: &'static str,
         effect: Box<dyn EffectWithParams + Send>,
         bridge: &AtomicParamBridge,
-        order: &EffectOrder,
         descriptors: Vec<ParamDescriptor>,
     ) -> usize {
         let slot = self.add_effect(id, effect);
         bridge.add_slot(id, descriptors);
-        order.push();
         slot
     }
 
-    /// Removes an effect and cleans up bridge and order atomically.
+    /// Removes an effect and cleans up the bridge atomically.
     ///
-    /// Bundles three mutations that must stay in sync:
+    /// Bundles two mutations that must stay in sync:
     /// 1. Removes the effect from the chain
-    /// 2. Removes the parameter slot from the bridge
-    /// 3. Removes and remaps the slot in the effect order
+    /// 2. Removes the parameter slot from the bridge (which also updates
+    ///    the shared order)
     ///
     /// Returns the removed effect's ID, or `None` if `slot` was out of range.
     pub fn remove_transactional(
         &mut self,
         slot: SlotIndex,
         bridge: &AtomicParamBridge,
-        order: &EffectOrder,
     ) -> Option<&'static str> {
         let removed_id = self.remove_effect(slot.0)?;
         bridge.remove_slot(slot);
-        order.swap_remove(slot.0);
         Some(removed_id)
     }
 }

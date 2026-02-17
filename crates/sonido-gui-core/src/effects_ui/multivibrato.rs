@@ -1,6 +1,6 @@
 //! MultiVibrato effect UI panel.
 
-use crate::widgets::{BypassToggle, Knob};
+use crate::widgets::{BypassToggle, bridged_knob};
 use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
 
@@ -28,22 +28,7 @@ impl MultiVibratoPanel {
             ui.add_space(12.0);
 
             ui.horizontal(|ui| {
-                // Depth (param 0) — percent (0–100)
-                let desc = bridge.param_descriptor(slot, ParamIndex(0));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((0.0, 100.0, 50.0), |d| (d.min, d.max, d.default));
-                let mut depth = bridge.get(slot, ParamIndex(0));
-                if ui
-                    .add(
-                        Knob::new(&mut depth, min, max, "DEPTH")
-                            .default(default)
-                            .format(|v| format!("{v:.0}%")),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(0), depth);
-                }
+                bridged_knob(ui, bridge, slot, ParamIndex(0), "DEPTH");
             });
 
             ui.add_space(8.0);

@@ -1,6 +1,6 @@
 //! Delay effect UI panel.
 
-use crate::widgets::{BypassToggle, Knob};
+use crate::widgets::{BypassToggle, bridged_knob};
 use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
 
@@ -28,60 +28,11 @@ impl DelayPanel {
             ui.add_space(12.0);
 
             ui.horizontal(|ui| {
-                // Time (param 0)
-                let desc = bridge.param_descriptor(slot, ParamIndex(0));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((1.0, 2000.0, 300.0), |d| (d.min, d.max, d.default));
-                let mut time = bridge.get(slot, ParamIndex(0));
-                if ui
-                    .add(
-                        Knob::new(&mut time, min, max, "TIME")
-                            .default(default)
-                            .format_ms(),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(0), time);
-                }
-
+                bridged_knob(ui, bridge, slot, ParamIndex(0), "TIME");
                 ui.add_space(16.0);
-
-                // Feedback (param 1) — percent (0–95)
-                let desc = bridge.param_descriptor(slot, ParamIndex(1));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((0.0, 95.0, 50.0), |d| (d.min, d.max, d.default));
-                let mut feedback = bridge.get(slot, ParamIndex(1));
-                if ui
-                    .add(
-                        Knob::new(&mut feedback, min, max, "FEEDBACK")
-                            .default(default)
-                            .format(|v| format!("{v:.0}%")),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(1), feedback);
-                }
-
+                bridged_knob(ui, bridge, slot, ParamIndex(1), "FEEDBACK");
                 ui.add_space(16.0);
-
-                // Mix (param 2) — percent (0–100)
-                let desc = bridge.param_descriptor(slot, ParamIndex(2));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((0.0, 100.0, 50.0), |d| (d.min, d.max, d.default));
-                let mut mix = bridge.get(slot, ParamIndex(2));
-                if ui
-                    .add(
-                        Knob::new(&mut mix, min, max, "MIX")
-                            .default(default)
-                            .format(|v| format!("{v:.0}%")),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(2), mix);
-                }
+                bridged_knob(ui, bridge, slot, ParamIndex(2), "MIX");
             });
         });
     }

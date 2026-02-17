@@ -1,6 +1,6 @@
 //! Gate effect UI panel.
 
-use crate::widgets::{BypassToggle, Knob};
+use crate::widgets::{BypassToggle, bridged_knob};
 use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
 
@@ -28,75 +28,13 @@ impl GatePanel {
             ui.add_space(12.0);
 
             ui.horizontal(|ui| {
-                let desc = bridge.param_descriptor(slot, ParamIndex(0));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((-80.0, 0.0, -40.0), |d| (d.min, d.max, d.default));
-                let mut threshold = bridge.get(slot, ParamIndex(0));
-                if ui
-                    .add(
-                        Knob::new(&mut threshold, min, max, "THRESH")
-                            .default(default)
-                            .format_db(),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(0), threshold);
-                }
-
+                bridged_knob(ui, bridge, slot, ParamIndex(0), "THRESH");
                 ui.add_space(16.0);
-
-                let desc = bridge.param_descriptor(slot, ParamIndex(1));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((0.1, 50.0, 1.0), |d| (d.min, d.max, d.default));
-                let mut attack = bridge.get(slot, ParamIndex(1));
-                if ui
-                    .add(
-                        Knob::new(&mut attack, min, max, "ATTACK")
-                            .default(default)
-                            .format_ms(),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(1), attack);
-                }
-
+                bridged_knob(ui, bridge, slot, ParamIndex(1), "ATTACK");
                 ui.add_space(16.0);
-
-                let desc = bridge.param_descriptor(slot, ParamIndex(2));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((10.0, 1000.0, 100.0), |d| (d.min, d.max, d.default));
-                let mut release = bridge.get(slot, ParamIndex(2));
-                if ui
-                    .add(
-                        Knob::new(&mut release, min, max, "RELEASE")
-                            .default(default)
-                            .format_ms(),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(2), release);
-                }
-
+                bridged_knob(ui, bridge, slot, ParamIndex(2), "RELEASE");
                 ui.add_space(16.0);
-
-                let desc = bridge.param_descriptor(slot, ParamIndex(3));
-                let (min, max, default) = desc
-                    .as_ref()
-                    .map_or((0.0, 500.0, 50.0), |d| (d.min, d.max, d.default));
-                let mut hold = bridge.get(slot, ParamIndex(3));
-                if ui
-                    .add(
-                        Knob::new(&mut hold, min, max, "HOLD")
-                            .default(default)
-                            .format_ms(),
-                    )
-                    .changed()
-                {
-                    bridge.set(slot, ParamIndex(3), hold);
-                }
+                bridged_knob(ui, bridge, slot, ParamIndex(3), "HOLD");
             });
         });
     }

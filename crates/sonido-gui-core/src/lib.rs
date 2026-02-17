@@ -20,4 +20,7 @@ pub mod widgets;
 pub use effects_ui::{EffectPanel, create_panel};
 pub use param_bridge::{ParamBridge, ParamIndex, SlotIndex};
 pub use theme::Theme;
-pub use widgets::{BypassToggle, FootswitchToggle, GainReductionMeter, Knob, LevelMeter};
+pub use widgets::{
+    BypassToggle, FootswitchToggle, GainReductionMeter, Knob, LevelMeter, bridged_combo,
+    bridged_knob, bridged_knob_fmt, gesture_wrap,
+};
