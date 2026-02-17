@@ -134,6 +134,14 @@ impl ParamFlags {
     pub const HIDDEN: Self = Self(1 << 2);
     /// Parameter is read-only (metering, display only).
     pub const READ_ONLY: Self = Self(1 << 3);
+    /// Parameter supports non-destructive modulation (CLAP `CLAP_PARAM_IS_MODULATABLE`).
+    ///
+    /// Modulated value = base value + modulation offset. The base value is preserved
+    /// when the modulation source stops. No VST3 equivalent — VST3 treats all
+    /// parameter changes as automation.
+    ///
+    /// Requires `modulation_id` in the descriptor for CLAP host routing.
+    pub const MODULATABLE: Self = Self(1 << 4);
 
     /// Returns `true` if all bits in `other` are set in `self`.
     #[inline]
@@ -433,6 +441,13 @@ pub struct ParamDescriptor {
     /// Empty string means top-level (ungrouped). Used by CLAP hosts to
     /// organize parameters hierarchically.
     pub group: &'static str,
+
+    /// Optional modulation routing ID for CLAP hosts.
+    ///
+    /// When `Some`, the host can apply non-destructive modulation to this parameter.
+    /// Must be unique across all modulatable parameters in the plugin.
+    /// Mirrors nih-plug's `poly_modulation_id()` approach.
+    pub modulation_id: Option<u32>,
 }
 
 impl ParamDescriptor {
@@ -453,6 +468,7 @@ impl ParamDescriptor {
             scale: ParamScale::Linear,
             flags: ParamFlags::AUTOMATABLE,
             group: "",
+            modulation_id: None,
         }
     }
 
@@ -473,6 +489,7 @@ impl ParamDescriptor {
             scale: ParamScale::Linear,
             flags: ParamFlags::AUTOMATABLE,
             group: "",
+            modulation_id: None,
         }
     }
 
@@ -494,6 +511,7 @@ impl ParamDescriptor {
             scale: ParamScale::Linear,
             flags: ParamFlags::AUTOMATABLE,
             group: "",
+            modulation_id: None,
         }
     }
 
@@ -526,6 +544,7 @@ impl ParamDescriptor {
             scale: ParamScale::Linear,
             flags: ParamFlags::AUTOMATABLE,
             group: "",
+            modulation_id: None,
         }
     }
 
@@ -558,6 +577,7 @@ impl ParamDescriptor {
             scale: ParamScale::Linear,
             flags: ParamFlags::AUTOMATABLE,
             group: "",
+            modulation_id: None,
         }
     }
 
@@ -584,6 +604,7 @@ impl ParamDescriptor {
             scale: ParamScale::Logarithmic,
             flags: ParamFlags::AUTOMATABLE,
             group: "",
+            modulation_id: None,
         }
     }
 
@@ -627,6 +648,27 @@ impl ParamDescriptor {
     /// Builder pattern — call after a factory method or struct literal.
     pub const fn with_group(mut self, group: &'static str) -> Self {
         self.group = group;
+        self
+    }
+
+    /// Sets the modulation routing ID for CLAP host integration.
+    ///
+    /// Builder pattern — call after a factory method or struct literal.
+    /// Setting this also implies the parameter is modulatable.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sonido_core::{ParamDescriptor, ParamId, ParamFlags};
+    ///
+    /// let desc = ParamDescriptor::mix()
+    ///     .with_id(ParamId(700), "chor_mix")
+    ///     .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::MODULATABLE))
+    ///     .with_modulation_id(700);
+    /// assert_eq!(desc.modulation_id, Some(700));
+    /// ```
+    pub const fn with_modulation_id(mut self, id: u32) -> Self {
+        self.modulation_id = Some(id);
         self
     }
 
@@ -1116,5 +1158,23 @@ mod tests {
         assert_eq!(desc.scale, ParamScale::Linear);
         assert_eq!(desc.flags, ParamFlags::AUTOMATABLE);
         assert_eq!(desc.group, "");
+        assert_eq!(desc.modulation_id, None);
+    }
+
+    #[test]
+    fn test_modulatable_flag() {
+        let flags = ParamFlags::AUTOMATABLE.union(ParamFlags::MODULATABLE);
+        assert!(flags.contains(ParamFlags::MODULATABLE));
+        assert!(flags.contains(ParamFlags::AUTOMATABLE));
+        assert!(!flags.contains(ParamFlags::STEPPED));
+    }
+
+    #[test]
+    fn test_modulation_id_builder() {
+        let desc = ParamDescriptor::mix().with_modulation_id(42);
+        assert_eq!(desc.modulation_id, Some(42));
+
+        let desc_none = ParamDescriptor::mix();
+        assert_eq!(desc_none.modulation_id, None);
     }
 }

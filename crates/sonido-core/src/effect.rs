@@ -23,6 +23,35 @@
 //! - **No allocations**: All methods are designed to be called in real-time
 //!   audio contexts with zero heap allocations.
 
+/// Macro to verify an Effect impl doesn't infinite-recurse.
+///
+/// Call in your `#[cfg(test)] mod tests` after implementing Effect.
+/// Panics (stack overflow) if neither `process()` nor `process_stereo()`
+/// is overridden.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// #[cfg(test)]
+/// mod tests {
+///     use super::*;
+///     use sonido_core::assert_effect_not_recursive;
+///
+///     #[test]
+///     fn no_recursion() {
+///         assert_effect_not_recursive!(MyEffect, 48000.0);
+///     }
+/// }
+/// ```
+#[macro_export]
+macro_rules! assert_effect_not_recursive {
+    ($ty:ty, $sr:expr) => {{
+        let mut effect = <$ty>::new($sr);
+        let _ = effect.process(0.0);
+        let _ = effect.process_stereo(0.0, 0.0);
+    }};
+}
+
 /// Core trait for all audio effects.
 ///
 /// Effects process audio samples, either one at a time or in blocks.
@@ -38,6 +67,14 @@
 /// - `process_stereo()` for true stereo effects (mono will use left channel)
 ///
 /// Default implementations bridge between mono and stereo automatically.
+///
+/// # Safety Contract
+///
+/// Implementors **must** override at least one of `process()` or
+/// `process_stereo()`. Failing to override either causes infinite
+/// recursion (stack overflow). This cannot be enforced at compile
+/// time in stable Rust. Use [`assert_effect_not_recursive!`] in
+/// your test module to verify.
 ///
 /// # Example: Mono Effect
 ///
