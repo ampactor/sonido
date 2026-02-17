@@ -1166,4 +1166,148 @@ mod tests {
         assert!(chain.is_ok());
         assert_eq!(chain.unwrap().len(), 2);
     }
+
+    #[test]
+    fn parse_params_empty_string() {
+        let params = parse_params("").unwrap();
+        assert!(params.is_empty());
+    }
+
+    #[test]
+    fn parse_params_trailing_comma() {
+        let params = parse_params("drive=15,").unwrap();
+        assert_eq!(params.len(), 1);
+        assert_eq!(params.get("drive"), Some(&"15".to_string()));
+    }
+
+    #[test]
+    fn parse_params_spaces_around_equals() {
+        let params = parse_params("drive = 15, tone = 4000").unwrap();
+        assert_eq!(params.get("drive"), Some(&"15".to_string()));
+        assert_eq!(params.get("tone"), Some(&"4000".to_string()));
+    }
+
+    #[test]
+    fn parse_effect_spec_no_params() {
+        let (name, params) = parse_effect_spec("chorus").unwrap();
+        assert_eq!(name, "chorus");
+        assert!(params.is_empty());
+    }
+
+    #[test]
+    fn parse_effect_spec_whitespace() {
+        let (name, params) = parse_effect_spec("  delay  ").unwrap();
+        assert_eq!(name, "delay");
+        assert!(params.is_empty());
+    }
+
+    #[test]
+    fn parse_effect_spec_missing_colon() {
+        // Missing colon is equivalent to no params — not an error
+        let (name, params) = parse_effect_spec("reverb").unwrap();
+        assert_eq!(name, "reverb");
+        assert!(params.is_empty());
+    }
+
+    #[test]
+    fn create_effect_unknown_name() {
+        let params = HashMap::new();
+        let result = create_effect_with_params("nonexistent", 48000.0, &params);
+        assert!(matches!(result, Err(EffectError::UnknownEffect(_))));
+    }
+
+    #[test]
+    fn create_effect_unknown_param() {
+        let mut params = HashMap::new();
+        params.insert("bogus".to_string(), "1.0".to_string());
+        let result = create_effect_with_params("distortion", 48000.0, &params);
+        assert!(matches!(result, Err(EffectError::UnknownParameter { .. })));
+    }
+
+    #[test]
+    fn create_effect_invalid_numeric_value() {
+        let mut params = HashMap::new();
+        params.insert("drive".to_string(), "notanumber".to_string());
+        let result = create_effect_with_params("distortion", 48000.0, &params);
+        assert!(matches!(result, Err(EffectError::InvalidValue { .. })));
+    }
+
+    #[test]
+    fn create_effect_waveshape_enum() {
+        for shape in &["softclip", "hardclip", "foldback", "asymmetric"] {
+            let mut params = HashMap::new();
+            params.insert("waveshape".to_string(), shape.to_string());
+            assert!(create_effect_with_params("distortion", 48000.0, &params).is_ok());
+        }
+        let mut params = HashMap::new();
+        params.insert("waveshape".to_string(), "invalid".to_string());
+        assert!(create_effect_with_params("distortion", 48000.0, &params).is_err());
+    }
+
+    #[test]
+    fn create_effect_reverb_type_enum() {
+        for rt in &["room", "hall"] {
+            let mut params = HashMap::new();
+            params.insert("type".to_string(), rt.to_string());
+            assert!(create_effect_with_params("reverb", 48000.0, &params).is_ok());
+        }
+        let mut params = HashMap::new();
+        params.insert("type".to_string(), "cathedral".to_string());
+        assert!(create_effect_with_params("reverb", 48000.0, &params).is_err());
+    }
+
+    #[test]
+    fn create_effect_tremolo_waveform_enum() {
+        for wf in &["sine", "triangle", "square", "samplehold"] {
+            let mut params = HashMap::new();
+            params.insert("waveform".to_string(), wf.to_string());
+            assert!(create_effect_with_params("tremolo", 48000.0, &params).is_ok());
+        }
+        let mut params = HashMap::new();
+        params.insert("waveform".to_string(), "sawtooth".to_string());
+        assert!(create_effect_with_params("tremolo", 48000.0, &params).is_err());
+    }
+
+    #[test]
+    fn create_effect_wah_mode_enum() {
+        for mode in &["auto", "manual"] {
+            let mut params = HashMap::new();
+            params.insert("mode".to_string(), mode.to_string());
+            assert!(create_effect_with_params("wah", 48000.0, &params).is_ok());
+        }
+        let mut params = HashMap::new();
+        params.insert("mode".to_string(), "expression".to_string());
+        assert!(create_effect_with_params("wah", 48000.0, &params).is_err());
+    }
+
+    #[test]
+    fn available_effects_count() {
+        assert_eq!(available_effects().len(), 15);
+    }
+
+    #[test]
+    fn available_effects_names_match_registry() {
+        let effects = available_effects();
+        let names: Vec<&str> = effects.iter().map(|e| e.name).collect();
+        let expected = [
+            "distortion",
+            "compressor",
+            "chorus",
+            "delay",
+            "flanger",
+            "phaser",
+            "filter",
+            "multivibrato",
+            "tape",
+            "preamp",
+            "reverb",
+            "tremolo",
+            "gate",
+            "wah",
+            "eq",
+        ];
+        for name in &expected {
+            assert!(names.contains(name), "missing effect: {name}");
+        }
+    }
 }

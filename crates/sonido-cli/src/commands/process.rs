@@ -247,3 +247,83 @@ fn build_chain_slug(chain_spec: &str) -> String {
     }
     parts.join("+")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_path_preset_slug() {
+        let path =
+            generate_output_path(Path::new("input.wav"), None, None, Some("clean-boost"), &[]);
+        assert_eq!(path, PathBuf::from("input_clean-boost.wav"));
+    }
+
+    #[test]
+    fn output_path_effect_slug() {
+        let path = generate_output_path(
+            Path::new("input.wav"),
+            Some("distortion"),
+            None,
+            None,
+            &[("drive".into(), "15".into())],
+        );
+        assert_eq!(path, PathBuf::from("input_distortion_drive=15.wav"));
+    }
+
+    #[test]
+    fn output_path_chain_slug() {
+        let path = generate_output_path(
+            Path::new("input.wav"),
+            None,
+            Some("preamp:gain=6|delay:time=300"),
+            None,
+            &[],
+        );
+        assert_eq!(
+            path,
+            PathBuf::from("input_preamp_gain=6+delay_time=300.wav")
+        );
+    }
+
+    #[test]
+    fn output_path_no_effect() {
+        let path = generate_output_path(Path::new("input.wav"), None, None, None, &[]);
+        assert_eq!(path, PathBuf::from("input_processed.wav"));
+    }
+
+    #[test]
+    fn output_path_long_filename_clamped() {
+        let long_name = "a".repeat(200);
+        let chain = format!("effect:{long_name}=1");
+        let path = generate_output_path(Path::new("input.wav"), None, Some(&chain), None, &[]);
+        let filename = path.file_name().unwrap().to_string_lossy();
+        assert!(
+            filename.len() <= 200,
+            "filename length {} exceeds 200",
+            filename.len()
+        );
+        assert!(filename.ends_with(".wav"));
+    }
+
+    #[test]
+    fn chain_slug_single_effect() {
+        assert_eq!(build_chain_slug("distortion"), "distortion");
+    }
+
+    #[test]
+    fn chain_slug_pipe_separated() {
+        assert_eq!(
+            build_chain_slug("preamp|distortion|delay"),
+            "preamp+distortion+delay"
+        );
+    }
+
+    #[test]
+    fn chain_slug_with_params() {
+        assert_eq!(
+            build_chain_slug("distortion:drive=15,tone=4000"),
+            "distortion_drive=15_tone=4000"
+        );
+    }
+}

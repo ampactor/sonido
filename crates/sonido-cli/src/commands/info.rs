@@ -43,3 +43,34 @@ fn format_bytes(bytes: u64) -> String {
         format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_bytes_zero() {
+        assert_eq!(format_bytes(0), "0 B");
+    }
+
+    #[test]
+    fn format_bytes_below_kb() {
+        assert_eq!(format_bytes(512), "512 B");
+    }
+
+    #[test]
+    fn format_bytes_kb_boundary() {
+        assert_eq!(format_bytes(1024), "1.0 KB");
+    }
+
+    #[test]
+    fn format_bytes_mb_boundary() {
+        assert_eq!(format_bytes(1024 * 1024), "1.0 MB");
+    }
+
+    #[test]
+    fn format_bytes_gb_falls_through_to_mb() {
+        // No GB case in format_bytes — large values render as MB
+        assert_eq!(format_bytes(1024 * 1024 * 1024), "1024.0 MB");
+    }
+}

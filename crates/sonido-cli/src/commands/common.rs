@@ -44,3 +44,35 @@ pub fn load_preset(name: &str) -> anyhow::Result<Preset> {
         name
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_key_val_valid_pair() {
+        let (k, v) = parse_key_val("drive=15").unwrap();
+        assert_eq!(k, "drive");
+        assert_eq!(v, "15");
+    }
+
+    #[test]
+    fn parse_key_val_multiple_equals() {
+        let (k, v) = parse_key_val("key=val=ue").unwrap();
+        assert_eq!(k, "key");
+        assert_eq!(v, "val=ue");
+    }
+
+    #[test]
+    fn parse_key_val_missing_equals() {
+        let result = parse_key_val("noequals");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("expected key=value"));
+    }
+
+    #[test]
+    fn parse_key_val_empty_string() {
+        let result = parse_key_val("");
+        assert!(result.is_err());
+    }
+}
