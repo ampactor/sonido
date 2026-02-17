@@ -337,6 +337,7 @@ This mapping ensures the feedback stays below 1.0 (stable) while providing a wid
 - **Dark reverb**: damping=0.7-0.9 - Muffled, vintage sound
 - **Bright reverb**: damping=0.1-0.3 - Shimmery, modern sound
 - **Pre-delay**: 10-30ms for clarity, keeps source separate from reverb
+- **Latency**: Reverb reports 0 latency samples. Predelay is a musical parameter, not processing latency (per CLAP/VST3 spec)
 
 ### Example
 

@@ -190,7 +190,20 @@ pub trait ParameterInfo {
 }
 ```
 
-`ParamDescriptor` fields: `name`, `short_name`, `min`, `max`, `default`, `unit` (ParamUnit), `id` (ParamId), `string_id`, `scale` (ParamScale), `flags` (ParamFlags), `group`, `modulation_id`, `step_labels`. Use factory constructors + builder chaining. `format_value()` / `parse_value()` for CLAP/VST3 text display.
+`ParamDescriptor` fields: `name`, `short_name`, `min`, `max`, `default`, `unit` (ParamUnit), `id` (ParamId), `string_id`, `scale` (ParamScale), `flags` (ParamFlags), `group`, `modulation_id`, `step_labels`. Use factory constructors + builder chaining. `format_value()` / `parse_value()` for CLAP/VST3 text display. `custom()` factory for non-standard params (neutral defaults: unit None, step 0.01, Linear, AUTOMATABLE).
+
+**`impl_params!` macro** — All 15 effects use this to generate `ParameterInfo` impls. Auto-clamps setter values to descriptor bounds:
+```rust
+impl_params! {
+    MyEffect, this {
+        [0] ParamDescriptor::gain_db("Drive", "Drive", 0.0, 40.0, 12.0)
+                .with_id(ParamId(200), "my_drive"),
+            get: this.drive_db(),
+            set: |v| this.set_drive_db(v);
+    }
+}
+```
+`this` binds `self` (Rust 2024 macro hygiene). Indices are explicit (stable contract). Defined in `sonido-core/src/param_info.rs`, exported via `#[macro_export]`.
 
 **Effect Registry** - Create effects by name. Returns `Box<dyn EffectWithParams + Send>` (combines `Effect` + `ParameterInfo`):
 ```rust
@@ -201,7 +214,7 @@ effect.effect_set_param(0, 20.0);             // EffectWithParams trait
 let idx = registry.param_index_by_name("distortion", "drive"); // lookup by name
 ```
 
-**ModulationSource** - Unified interface for LFOs, envelopes, followers:
+**ModulationSource** - Unified interface for autonomous generators (LFOs, ADSR envelopes, audio-rate modulators). `EnvelopeFollower` does NOT implement this trait — it requires input via `process()` and is not autonomous:
 ```rust
 use sonido_core::{Lfo, ModulationSource};
 let mut lfo = Lfo::new(48000.0, 2.0);
@@ -239,7 +252,7 @@ Supported factors: 2 (good balance), 4 (recommended for distortion), 8 (high qua
 
 ## Adding a New Effect
 
-1. **Create file** `crates/sonido-effects/src/my_effect.rs` — implement `Effect`, `ParameterInfo`, and `Default`
+1. **Create file** `crates/sonido-effects/src/my_effect.rs` — implement `Effect` and `Default`, use `impl_params!` macro for `ParameterInfo`
 2. **Add module + re-export** in `crates/sonido-effects/src/lib.rs`:
    ```rust
    pub mod my_effect;

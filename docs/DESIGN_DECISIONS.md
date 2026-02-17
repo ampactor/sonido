@@ -452,7 +452,7 @@ Delay lines are used by many effects (chorus, flanger, delay, reverb comb filter
 
 Provide two implementations:
 
-1. **`InterpolatedDelay`**: Heap-allocated (`Vec<f32>`), variable-size, linear interpolation. General-purpose, used by most effects.
+1. **`InterpolatedDelay`**: Heap-allocated (`Vec<f32>`), variable-size, configurable interpolation (None/Linear/Cubic, default: Linear). General-purpose, used by most effects.
 2. **`FixedDelayLine<const N: usize>`**: Stack-allocated (`[f32; N]`), compile-time fixed size, configurable interpolation (None/Linear/Cubic). For embedded targets or known-size use cases.
 
 ### Rationale
@@ -460,7 +460,7 @@ Provide two implementations:
 - **`InterpolatedDelay`** is appropriate when the delay size depends on sample rate (computed at runtime) or when multiple effects with different delay requirements share code
 - **`FixedDelayLine<N>`** eliminates all heap allocation, making it suitable for bare-metal embedded where `alloc` may not be available
 - Both share the same circular buffer concept and similar API, reducing cognitive overhead
-- **`FixedDelayLine`** offers cubic interpolation, which is valuable for effects like chorus where modulated delay smoothness matters
+- Both implementations offer cubic (Lagrange 3rd-order) interpolation, which is valuable for effects like chorus and flanger where modulated delay smoothness matters. JUCE uses Lagrange3rd as the default for modulated delays
 
 ---
 

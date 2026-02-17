@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Core Hardening (8dbcda3)
+
+#### `impl_params!` Macro (sonido-core)
+- `impl_params!` declarative macro replaces ~600 lines of hand-written `ParameterInfo` impls across all 15 effects
+- Auto-clamping: `set_param()` clamps to descriptor min/max bounds automatically
+- `ParamDescriptor::custom()` factory with neutral defaults for non-standard parameters
+- `with_unit()` and `with_step()` const builders on `ParamDescriptor`
+
+#### DSP Safety (sonido-core)
+- `foldback()`: iterative implementation with 16-iteration bound (was recursive — stack overflow risk on embedded)
+- `InterpolatedDelay`: configurable interpolation (None/Linear/Cubic), default Linear. Cubic uses Lagrange 3rd-order, matching `FixedDelayLine`
+- `Lfo::value_at_phase()`: deduplicates waveform computation between `advance()` and `ModulationSource::mod_value()`
+
+#### Modulation Cleanup (sonido-core)
+- Removed `ModulationSource` impl from `EnvelopeFollower` — trait is for autonomous generators only; `EnvelopeFollower` requires audio input via `process()`
+
+#### Effects Polish (sonido-effects)
+- Reverb `latency_samples()` returns 0 — predelay is musical, not processing latency (per CLAP/VST3 spec)
+- Distortion waveshape `set_param` clamps to valid range before casting
+
 ### Added — Foundation + GUI Architecture Restructure
 
 #### Parameter System Hardening (sonido-core)
