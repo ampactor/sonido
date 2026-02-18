@@ -57,6 +57,14 @@ impl PhaserPanel {
                 ui.add_space(16.0);
                 bridged_knob(ui, bridge, slot, ParamIndex(4), "MIX");
             });
+
+            ui.add_space(8.0);
+
+            ui.horizontal(|ui| {
+                bridged_knob(ui, bridge, slot, ParamIndex(5), "MIN F");
+                ui.add_space(16.0);
+                bridged_knob(ui, bridge, slot, ParamIndex(6), "MAX F");
+            });
         });
     }
 }

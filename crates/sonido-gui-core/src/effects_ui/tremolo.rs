@@ -47,6 +47,8 @@ impl TremoloPanel {
                 bridged_knob(ui, bridge, slot, ParamIndex(0), "RATE");
                 ui.add_space(16.0);
                 bridged_knob(ui, bridge, slot, ParamIndex(1), "DEPTH");
+                ui.add_space(16.0);
+                bridged_knob(ui, bridge, slot, ParamIndex(3), "SPREAD");
             });
         });
     }

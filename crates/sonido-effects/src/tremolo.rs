@@ -65,7 +65,8 @@ impl TremoloWaveform {
 /// | 0 | Rate | 0.5–20.0 Hz | 5.0 |
 /// | 1 | Depth | 0–100% | 50.0 |
 /// | 2 | Waveform | 0–3 (Sine, Triangle, Square, SampleHold) | 0 |
-/// | 3 | Output | -20.0–20.0 dB | 0.0 |
+/// | 3 | Stereo Spread | 0–100% | 0.0 |
+/// | 4 | Output | -20.0–20.0 dB | 0.0 |
 ///
 /// # Example
 ///
@@ -83,11 +84,16 @@ impl TremoloWaveform {
 /// ```
 #[derive(Debug, Clone)]
 pub struct Tremolo {
+    /// LFO for left (and mono) channel.
     lfo: Lfo,
+    /// LFO for right channel (phase-offset for stereo spread).
+    lfo_r: Lfo,
     rate: SmoothedParam,
     depth: SmoothedParam,
     output_level: SmoothedParam,
     waveform: TremoloWaveform,
+    /// Stereo spread amount (0.0 = dual-mono, 1.0 = 180° phase offset / full auto-pan).
+    stereo_spread: f32,
     sample_rate: f32,
 }
 
@@ -97,12 +103,18 @@ impl Tremolo {
         let mut lfo = Lfo::new(sample_rate, 5.0);
         lfo.set_waveform(LfoWaveform::Sine);
 
+        let mut lfo_r = Lfo::new(sample_rate, 5.0);
+        lfo_r.set_waveform(LfoWaveform::Sine);
+        // Phase 0.0 — same as L (spread defaults to 0.0 = dual-mono)
+
         Self {
             lfo,
+            lfo_r,
             rate: SmoothedParam::standard(5.0, sample_rate),
             depth: SmoothedParam::standard(0.5, sample_rate),
             output_level: sonido_core::gain::output_level_param(sample_rate),
             waveform: TremoloWaveform::Sine,
+            stereo_spread: 0.0,
             sample_rate,
         }
     }
@@ -130,12 +142,36 @@ impl Tremolo {
     /// Set waveform type.
     pub fn set_waveform(&mut self, waveform: TremoloWaveform) {
         self.waveform = waveform;
-        self.lfo.set_waveform(waveform.to_lfo_waveform());
+        let lfo_waveform = waveform.to_lfo_waveform();
+        self.lfo.set_waveform(lfo_waveform);
+        self.lfo_r.set_waveform(lfo_waveform);
     }
 
     /// Get current waveform.
     pub fn waveform(&self) -> TremoloWaveform {
         self.waveform
+    }
+
+    /// Set stereo spread (0.0–1.0).
+    ///
+    /// At 0.0 both channels use the same LFO phase (dual-mono, default).
+    /// At 1.0 the right channel LFO is 180° out of phase (full auto-pan).
+    /// Intermediate values interpolate the phase offset linearly.
+    pub fn set_stereo_spread(&mut self, spread: f32) {
+        self.stereo_spread = spread.clamp(0.0, 1.0);
+        // Sync R LFO phase = L phase + offset
+        let offset = self.stereo_spread * 0.5;
+        let r_phase = self.lfo.phase() + offset;
+        self.lfo_r.set_phase(if r_phase >= 1.0 {
+            r_phase - 1.0
+        } else {
+            r_phase
+        });
+    }
+
+    /// Get current stereo spread (0.0–1.0).
+    pub fn stereo_spread(&self) -> f32 {
+        self.stereo_spread
     }
 }
 
@@ -147,9 +183,12 @@ impl Effect for Tremolo {
         let output_gain = self.output_level.advance();
 
         self.lfo.set_frequency(rate);
+        self.lfo_r.set_frequency(rate);
 
         // Get unipolar LFO value (0 to 1)
         let lfo_unipolar = self.lfo.advance_unipolar();
+        // Advance R LFO to keep in phase sync (value unused in mono)
+        let _ = self.lfo_r.advance_unipolar();
 
         // Calculate gain: 1.0 - (depth * (1.0 - lfo_unipolar))
         // When lfo_unipolar = 1.0, gain = 1.0
@@ -161,22 +200,30 @@ impl Effect for Tremolo {
 
     #[inline]
     fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
-        // Dual-mono: same gain applied to both channels
         let rate = self.rate.advance();
         let depth = self.depth.advance();
         let output_gain = self.output_level.advance();
 
         self.lfo.set_frequency(rate);
+        self.lfo_r.set_frequency(rate);
 
-        let lfo_unipolar = self.lfo.advance_unipolar();
-        let gain = 1.0 - (depth * (1.0 - lfo_unipolar));
+        let lfo_l = self.lfo.advance_unipolar();
+        let lfo_r = self.lfo_r.advance_unipolar();
 
-        (left * gain * output_gain, right * gain * output_gain)
+        let gain_l = 1.0 - (depth * (1.0 - lfo_l));
+        let gain_r = 1.0 - (depth * (1.0 - lfo_r));
+
+        (left * gain_l * output_gain, right * gain_r * output_gain)
+    }
+
+    fn is_true_stereo(&self) -> bool {
+        self.stereo_spread > 0.0
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
         self.lfo.set_sample_rate(sample_rate);
+        self.lfo_r.set_sample_rate(sample_rate);
         self.rate.set_sample_rate(sample_rate);
         self.depth.set_sample_rate(sample_rate);
         self.output_level.set_sample_rate(sample_rate);
@@ -184,6 +231,10 @@ impl Effect for Tremolo {
 
     fn reset(&mut self) {
         self.lfo.reset();
+        self.lfo_r.reset();
+        // Restore stereo spread phase offset on R channel
+        let offset = self.stereo_spread * 0.5;
+        self.lfo_r.set_phase(offset);
         self.rate.snap_to_target();
         self.depth.snap_to_target();
         self.output_level.snap_to_target();
@@ -217,7 +268,13 @@ impl_params! {
             get: this.waveform.to_index() as f32,
             set: |v| this.set_waveform(TremoloWaveform::from_index(v as usize));
 
-        [3] sonido_core::gain::output_param_descriptor()
+        [3] ParamDescriptor::custom("Stereo Spread", "Spread", 0.0, 100.0, 0.0)
+                .with_id(ParamId(1004), "trem_stereo_spread")
+                .with_unit(ParamUnit::Percent),
+            get: this.stereo_spread * 100.0,
+            set: |v| this.set_stereo_spread(v / 100.0);
+
+        [4] sonido_core::gain::output_param_descriptor()
                 .with_id(ParamId(1003), "trem_output"),
             get: sonido_core::gain::output_level_db(&this.output_level),
             set: |v| sonido_core::gain::set_output_level_db(&mut this.output_level, v);
@@ -323,7 +380,7 @@ mod tests {
     fn test_tremolo_parameters() {
         let mut tremolo = Tremolo::new(44100.0);
 
-        assert_eq!(tremolo.param_count(), 4);
+        assert_eq!(tremolo.param_count(), 5);
 
         // Test rate parameter
         tremolo.set_param(0, 10.0);
@@ -336,6 +393,67 @@ mod tests {
         // Test waveform parameter
         tremolo.set_param(2, 2.0); // Square
         assert!((tremolo.get_param(2) - 2.0).abs() < 0.01);
+
+        // Test stereo spread parameter (percent)
+        tremolo.set_param(3, 50.0);
+        assert!((tremolo.get_param(3) - 50.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_tremolo_stereo_spread() {
+        let mut tremolo = Tremolo::new(44100.0);
+        tremolo.set_depth(1.0);
+        tremolo.set_rate(5.0);
+        tremolo.set_stereo_spread(1.0); // full auto-pan: R is 180° offset
+
+        // Let smoothing settle
+        for _ in 0..1000 {
+            tremolo.process_stereo(1.0, 1.0);
+        }
+
+        // Collect samples — L and R should be anti-correlated at full spread
+        let mut sum_product = 0.0;
+        let n = 4410;
+        for _ in 0..n {
+            let (l, r) = tremolo.process_stereo(1.0, 1.0);
+            // Both gains are in [0, 1]. Anti-correlated: when L is high, R is low.
+            sum_product += l * r;
+        }
+
+        // With full anti-phase, the product average should be well below
+        // what identical-phase (sum_product ≈ n * avg_gain²) would give.
+        let avg = sum_product / n as f32;
+        assert!(
+            avg < 0.4,
+            "Full spread should anti-correlate L/R, avg product = {}",
+            avg
+        );
+    }
+
+    #[test]
+    fn test_tremolo_zero_spread_is_dual_mono() {
+        let mut tremolo = Tremolo::new(44100.0);
+        tremolo.set_depth(1.0);
+        tremolo.set_rate(5.0);
+        tremolo.set_stereo_spread(0.0);
+
+        // Let smoothing settle
+        for _ in 0..1000 {
+            tremolo.process_stereo(1.0, 1.0);
+        }
+
+        // With zero spread, L and R should be identical
+        for _ in 0..1000 {
+            let (l, r) = tremolo.process_stereo(1.0, 1.0);
+            assert!(
+                (l - r).abs() < 1e-6,
+                "Zero spread should produce identical L/R, got L={} R={}",
+                l,
+                r
+            );
+        }
+
+        assert!(!tremolo.is_true_stereo());
     }
 
     #[test]
