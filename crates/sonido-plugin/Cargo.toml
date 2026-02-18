@@ -22,7 +22,14 @@ clack-extensions = { git = "https://github.com/prokopyl/clack.git", features = [
     "audio-ports",
     "params",
     "state",
+    "gui",
+    "raw-window-handle_05",
 ] }
+
+sonido-gui-core = { path = "../sonido-gui-core" }
+egui-baseview = { git = "https://codeberg.org/BillyDM/egui-baseview.git", rev = "ec70c3fe" }
+baseview = { git = "https://github.com/RustAudio/baseview.git", rev = "9a0b42c09d712777b2edb4c5e0cb6baf21e988f0" }
+raw-window-handle = "0.5"
 
 serde = { workspace = true }
 serde_json = "1.0"
