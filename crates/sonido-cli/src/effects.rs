@@ -190,7 +190,7 @@ pub fn available_effects() -> Vec<EffectInfo> {
         },
         EffectInfo {
             name: "flanger",
-            description: "Classic flanger with modulated short delay",
+            description: "Classic flanger with through-zero mode and bipolar feedback",
             parameters: &[
                 ParameterInfo {
                     name: "rate",
@@ -206,15 +206,21 @@ pub fn available_effects() -> Vec<EffectInfo> {
                 },
                 ParameterInfo {
                     name: "feedback",
-                    description: "Feedback amount (0-1)",
+                    description: "Feedback amount, negative = even harmonics",
                     default: "0.5",
-                    range: "0-0.95",
+                    range: "-0.95-0.95",
                 },
                 ParameterInfo {
                     name: "mix",
                     description: "Wet/dry mix (0-1)",
                     default: "0.5",
                     range: "0-1",
+                },
+                ParameterInfo {
+                    name: "tzf",
+                    description: "Through-zero flanging mode",
+                    default: "false",
+                    range: "true/false",
                 },
                 ParameterInfo {
                     name: "output",
@@ -617,8 +623,8 @@ pub fn create_effect_with_params(
             for (key, value) in params {
                 match key.as_str() {
                     "drive" => effect.set_drive_db(parse_f32(key, value)?),
-                    "tone" => effect.set_tone_hz(parse_f32(key, value)?),
-                    "level" => effect.set_level_db(parse_f32(key, value)?),
+                    "tone" => effect.set_tone_db(parse_f32(key, value)?),
+                    "mix" => effect.set_mix(parse_f32(key, value)? / 100.0),
                     "waveshape" | "shape" => effect.set_waveshape(parse_waveshape(value)?),
                     "foldback_threshold" | "foldback" => {
                         effect.set_foldback_threshold(parse_f32(key, value)?);
@@ -710,6 +716,7 @@ pub fn create_effect_with_params(
                     "depth" => effect.set_depth(parse_f32(key, value)?),
                     "feedback" | "fdbk" => effect.set_feedback(parse_f32(key, value)?),
                     "mix" => effect.set_mix(parse_f32(key, value)?),
+                    "tzf" => effect.set_tzf(parse_f32(key, value)? > 0.5),
                     "output" => {
                         use sonido_core::ParameterInfo as _;
                         let db = parse_f32(key, value)?;
@@ -738,6 +745,8 @@ pub fn create_effect_with_params(
                     "stereo_spread" | "spread" => {
                         effect.set_stereo_spread(parse_f32(key, value)?);
                     }
+                    "min_freq" => effect.set_min_freq(parse_f32(key, value)?),
+                    "max_freq" => effect.set_max_freq(parse_f32(key, value)?),
                     "output" => {
                         use sonido_core::ParameterInfo as _;
                         let db = parse_f32(key, value)?;
@@ -875,6 +884,9 @@ pub fn create_effect_with_params(
                     "rate" => effect.set_rate(parse_f32(key, value)?),
                     "depth" => effect.set_depth(parse_f32(key, value)?),
                     "waveform" | "wave" => effect.set_waveform(parse_tremolo_waveform(value)?),
+                    "stereo_spread" | "spread" => {
+                        effect.set_stereo_spread(parse_f32(key, value)?);
+                    }
                     "output" => {
                         use sonido_core::ParameterInfo as _;
                         let db = parse_f32(key, value)?;

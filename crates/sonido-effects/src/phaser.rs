@@ -7,8 +7,8 @@
 
 use core::f32::consts::PI;
 use sonido_core::{
-    Effect, Lfo, ParamDescriptor, ParamFlags, ParamId, ParamUnit, SmoothedParam, fast_exp2,
-    fast_log2, fast_tan, flush_denormal, impl_params, wet_dry_mix,
+    Effect, Lfo, ParamDescriptor, ParamFlags, ParamId, ParamScale, ParamUnit, SmoothedParam,
+    fast_exp2, fast_log2, fast_tan, flush_denormal, impl_params, wet_dry_mix,
 };
 
 /// Maximum number of allpass stages.
@@ -31,7 +31,9 @@ const COEFF_UPDATE_INTERVAL: u32 = 32;
 /// | 2 | Stages | 2–12 | 6 |
 /// | 3 | Feedback | 0–95% | 50.0 |
 /// | 4 | Mix | 0–100% | 50.0 |
-/// | 5 | Output | -20.0–20.0 dB | 0.0 |
+/// | 5 | Min Freq | 20–2000 Hz | 200.0 |
+/// | 6 | Max Freq | 200–20000 Hz | 4000.0 |
+/// | 7 | Output | -20.0–20.0 dB | 0.0 |
 ///
 /// # Algorithm
 ///
@@ -147,10 +149,10 @@ impl FirstOrderAllpass {
 }
 
 impl Phaser {
-    /// Minimum center frequency for sweep (Hz).
-    const MIN_FREQ: f32 = 200.0;
-    /// Maximum center frequency for sweep (Hz).
-    const MAX_FREQ: f32 = 4000.0;
+    /// Default minimum center frequency for sweep (Hz).
+    const DEFAULT_MIN_FREQ: f32 = 200.0;
+    /// Default maximum center frequency for sweep (Hz).
+    const DEFAULT_MAX_FREQ: f32 = 4000.0;
 
     /// Create a new phaser effect.
     pub fn new(sample_rate: f32) -> Self {
@@ -172,8 +174,8 @@ impl Phaser {
             sample_rate,
             feedback_sample: 0.0,
             feedback_sample_r: 0.0,
-            min_freq: Self::MIN_FREQ,
-            max_freq: Self::MAX_FREQ,
+            min_freq: Self::DEFAULT_MIN_FREQ,
+            max_freq: Self::DEFAULT_MAX_FREQ,
             coeff_update_counter: 1,
         }
     }
@@ -236,6 +238,33 @@ impl Phaser {
     /// Get current wet/dry mix.
     pub fn mix(&self) -> f32 {
         self.mix.target()
+    }
+
+    /// Set minimum sweep frequency (20–2000 Hz).
+    ///
+    /// This is the lowest frequency the allpass sweep reaches when the LFO
+    /// is at its minimum. Lower values produce a deeper, wider sweep.
+    pub fn set_min_freq(&mut self, freq: f32) {
+        self.min_freq = freq.clamp(20.0, 2000.0);
+    }
+
+    /// Get current minimum sweep frequency in Hz.
+    pub fn min_freq(&self) -> f32 {
+        self.min_freq
+    }
+
+    /// Set maximum sweep frequency (200–20000 Hz, clamped to 0.45 × sample rate).
+    ///
+    /// This is the highest frequency the allpass sweep reaches when the LFO
+    /// is at its maximum. Higher values produce a brighter, more pronounced sweep.
+    pub fn set_max_freq(&mut self, freq: f32) {
+        let nyquist_limit = self.sample_rate * 0.45;
+        self.max_freq = freq.clamp(200.0, 20000.0f32.min(nyquist_limit));
+    }
+
+    /// Get current maximum sweep frequency in Hz.
+    pub fn max_freq(&self) -> f32 {
+        self.max_freq
     }
 }
 
@@ -364,6 +393,10 @@ impl Effect for Phaser {
         self.feedback.set_sample_rate(sample_rate);
         self.mix.set_sample_rate(sample_rate);
         self.output_level.set_sample_rate(sample_rate);
+
+        // Re-clamp max_freq to new Nyquist limit
+        let nyquist_limit = sample_rate * 0.45;
+        self.max_freq = self.max_freq.min(nyquist_limit);
     }
 
     fn reset(&mut self) {
@@ -423,7 +456,21 @@ impl_params! {
             get: this.mix.target() * 100.0,
             set: |v| this.set_mix(v / 100.0);
 
-        [5] sonido_core::gain::output_param_descriptor()
+        [5] ParamDescriptor::custom("Min Freq", "MinF", 20.0, 2000.0, 200.0)
+                .with_id(ParamId(906), "phsr_min_freq")
+                .with_unit(ParamUnit::Hertz)
+                .with_scale(ParamScale::Logarithmic),
+            get: this.min_freq,
+            set: |v| this.set_min_freq(v);
+
+        [6] ParamDescriptor::custom("Max Freq", "MaxF", 200.0, 20000.0, 4000.0)
+                .with_id(ParamId(907), "phsr_max_freq")
+                .with_unit(ParamUnit::Hertz)
+                .with_scale(ParamScale::Logarithmic),
+            get: this.max_freq,
+            set: |v| this.set_max_freq(v);
+
+        [7] sonido_core::gain::output_param_descriptor()
                 .with_id(ParamId(905), "phsr_output"),
             get: sonido_core::gain::output_level_db(&this.output_level),
             set: |v| sonido_core::gain::set_output_level_db(&mut this.output_level, v);
@@ -501,7 +548,7 @@ mod tests {
     fn test_phaser_parameter_info() {
         let phaser = Phaser::new(44100.0);
 
-        assert_eq!(phaser.param_count(), 6);
+        assert_eq!(phaser.param_count(), 8);
 
         let rate_info = phaser.param_info(0).unwrap();
         assert_eq!(rate_info.name, "Rate");
@@ -516,6 +563,16 @@ mod tests {
         let feedback_info = phaser.param_info(3).unwrap();
         assert_eq!(feedback_info.name, "Feedback");
         assert_eq!(feedback_info.max, 95.0);
+
+        let min_freq_info = phaser.param_info(5).unwrap();
+        assert_eq!(min_freq_info.name, "Min Freq");
+        assert_eq!(min_freq_info.min, 20.0);
+        assert_eq!(min_freq_info.max, 2000.0);
+
+        let max_freq_info = phaser.param_info(6).unwrap();
+        assert_eq!(max_freq_info.name, "Max Freq");
+        assert_eq!(max_freq_info.min, 200.0);
+        assert_eq!(max_freq_info.max, 20000.0);
     }
 
     #[test]
@@ -577,5 +634,61 @@ mod tests {
             let out = allpass.process(0.0);
             assert!(out.is_finite());
         }
+    }
+
+    #[test]
+    fn test_phaser_sweep_range_params() {
+        let mut phaser = Phaser::new(44100.0);
+
+        // Set via ParameterInfo
+        phaser.set_param(5, 100.0); // min_freq = 100 Hz
+        assert!((phaser.get_param(5) - 100.0).abs() < 0.01);
+
+        phaser.set_param(6, 8000.0); // max_freq = 8000 Hz
+        assert!((phaser.get_param(6) - 8000.0).abs() < 0.01);
+
+        // Process should still be stable
+        for _ in 0..5000 {
+            let out = phaser.process(0.5);
+            assert!(out.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_phaser_sweep_range_clamping() {
+        let mut phaser = Phaser::new(44100.0);
+
+        // min_freq below range
+        phaser.set_min_freq(5.0);
+        assert!((phaser.min_freq() - 20.0).abs() < 0.01);
+
+        // min_freq above range
+        phaser.set_min_freq(5000.0);
+        assert!((phaser.min_freq() - 2000.0).abs() < 0.01);
+
+        // max_freq clamped to 0.45 × sample_rate
+        phaser.set_max_freq(30000.0);
+        let expected = 44100.0 * 0.45;
+        assert!(
+            (phaser.max_freq() - expected).abs() < 1.0,
+            "max_freq should be clamped to 0.45 × sr, got {}",
+            phaser.max_freq()
+        );
+    }
+
+    #[test]
+    fn test_phaser_sweep_range_sample_rate_reclamp() {
+        let mut phaser = Phaser::new(96000.0);
+        phaser.set_max_freq(20000.0);
+        assert!((phaser.max_freq() - 20000.0).abs() < 0.01);
+
+        // Lower sample rate should re-clamp
+        phaser.set_sample_rate(22050.0);
+        let expected = 22050.0 * 0.45;
+        assert!(
+            phaser.max_freq() <= expected + 1.0,
+            "max_freq should be re-clamped on sample rate change, got {}",
+            phaser.max_freq()
+        );
     }
 }
