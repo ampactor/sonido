@@ -112,6 +112,9 @@ pub struct AudioBridge {
     command_rx: Receiver<ChainCommand>,
     transport_tx: Sender<TransportCommand>,
     transport_rx: Receiver<TransportCommand>,
+    chain_bypass: Arc<AtomicBool>,
+    /// Cumulative count of audio stream errors (output + input).
+    error_count: Arc<AtomicU32>,
 }
 
 impl AudioBridge {
@@ -130,6 +133,8 @@ impl AudioBridge {
             command_rx,
             transport_tx,
             transport_rx,
+            chain_bypass: Arc::new(AtomicBool::new(false)),
+            error_count: Arc::new(AtomicU32::new(0)),
         }
     }
 
@@ -203,6 +208,22 @@ impl AudioBridge {
     /// Get a clone of the transport command receiver for the audio thread.
     pub fn transport_receiver(&self) -> Receiver<TransportCommand> {
         self.transport_rx.clone()
+    }
+
+    /// Get the chain bypass flag.
+    ///
+    /// When true, the audio processor passes dry signal through with a
+    /// click-free crossfade, bypassing all effects.
+    pub fn chain_bypass(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.chain_bypass)
+    }
+
+    /// Get the cumulative audio stream error count.
+    ///
+    /// Incremented by cpal error callbacks on both input and output streams.
+    /// The GUI reads this to display a non-intrusive error indicator.
+    pub fn error_count(&self) -> Arc<AtomicU32> {
+        Arc::clone(&self.error_count)
     }
 }
 
