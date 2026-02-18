@@ -41,6 +41,7 @@
 //! | SC HPF | 20–500 Hz | Sidechain high-pass filter frequency |
 //! | Auto Makeup | Off/On | Automatic makeup gain from threshold/ratio |
 //! | Output | -20 to +20 dB | Output level |
+//! | Mix | 0–100% | Parallel compression blend (dry/compressed) |
 //!
 //! # Tips
 //!
@@ -54,7 +55,7 @@
 use sonido_core::{
     Biquad, DetectionMode, Effect, EnvelopeFollower, ParamDescriptor, ParamFlags, ParamId,
     ParamScale, ParamUnit, SmoothedParam, db_to_linear, fast_db_to_linear, fast_linear_to_db, gain,
-    highpass_coefficients, linear_to_db, math::soft_limit,
+    highpass_coefficients, linear_to_db, math::soft_limit, wet_dry_mix, wet_dry_mix_stereo,
 };
 
 /// Fixed fast release time for program-dependent release (ms).
@@ -116,6 +117,7 @@ impl GainComputer {
 /// | 7 | SC HPF Freq | 20.0–500.0 Hz | 80.0 |
 /// | 8 | Auto Makeup | 0–1 (Off/On) | 0 (Off) |
 /// | 9 | Output | -20.0–20.0 dB | 0.0 |
+/// | 10 | Mix | 0–100% | 100.0 |
 ///
 /// # Example
 ///
@@ -147,6 +149,8 @@ pub struct Compressor {
     sidechain_freq: f32,
     /// Auto makeup gain enabled.
     auto_makeup: bool,
+    /// Parallel compression mix (0.0 = dry, 1.0 = full compression).
+    mix: f32,
     sample_rate: f32,
     /// Last computed gain reduction in dB (always non-positive).
     last_gain_reduction_db: f32,
@@ -176,6 +180,7 @@ impl Compressor {
             sidechain_hpf,
             sidechain_freq: DEFAULT_SC_FREQ,
             auto_makeup: false,
+            mix: 1.0,
             sample_rate,
             last_gain_reduction_db: 0.0,
         }
@@ -261,6 +266,20 @@ impl Compressor {
         self.auto_makeup = enabled;
     }
 
+    /// Set parallel compression mix.
+    ///
+    /// Range: 0.0 (fully dry / no compression) to 1.0 (fully compressed).
+    /// At intermediate values, the compressed signal is blended with the
+    /// dry input for New York-style parallel compression.
+    pub fn set_mix(&mut self, mix: f32) {
+        self.mix = mix.clamp(0.0, 1.0);
+    }
+
+    /// Get current mix value.
+    pub fn mix(&self) -> f32 {
+        self.mix
+    }
+
     /// Returns the last computed gain reduction in dB (always non-positive).
     ///
     /// A value of 0.0 means no compression is occurring. A value of -6.0
@@ -312,8 +331,10 @@ impl Effect for Compressor {
             manual_makeup
         };
 
+        let compressed = input * gain_linear * makeup;
+        let mixed = wet_dry_mix(input, compressed, self.mix);
         let level = self.output_level.advance();
-        soft_limit(input * gain_linear * makeup * level, 1.0)
+        soft_limit(mixed * level, 1.0)
     }
 
     #[inline]
@@ -336,9 +357,14 @@ impl Effect for Compressor {
             manual_makeup
         };
 
+        let comp_gain = gain_linear * makeup;
+        let (mixed_l, mixed_r) =
+            wet_dry_mix_stereo(left, right, left * comp_gain, right * comp_gain, self.mix);
         let level = self.output_level.advance();
-        let gain = gain_linear * makeup * level;
-        (soft_limit(left * gain, 1.0), soft_limit(right * gain, 1.0))
+        (
+            soft_limit(mixed_l * level, 1.0),
+            soft_limit(mixed_r * level, 1.0),
+        )
     }
 
     /// Process a block of stereo samples with linked stereo detection.
@@ -375,6 +401,7 @@ impl Effect for Compressor {
         } else {
             1.0 // unused
         };
+        let mix = self.mix;
 
         for i in 0..left_in.len() {
             let left = left_in[i];
@@ -408,10 +435,12 @@ impl Effect for Compressor {
                 manual_makeup
             };
 
+            let comp_gain = gain_linear * makeup;
+            let (mixed_l, mixed_r) =
+                wet_dry_mix_stereo(left, right, left * comp_gain, right * comp_gain, mix);
             let level = self.output_level.advance();
-            let gain = gain_linear * makeup * level;
-            left_out[i] = soft_limit(left * gain, 1.0);
-            right_out[i] = soft_limit(right * gain, 1.0);
+            left_out[i] = soft_limit(mixed_l * level, 1.0);
+            right_out[i] = soft_limit(mixed_r * level, 1.0);
         }
     }
 
@@ -508,6 +537,11 @@ sonido_core::impl_params! {
                 .with_id(ParamId(309), "comp_output"),
             get: sonido_core::gain::output_level_db(&this.output_level),
             set: |v| sonido_core::gain::set_output_level_db(&mut this.output_level, v);
+
+        [10] ParamDescriptor { default: 100.0, ..ParamDescriptor::mix() }
+                .with_id(ParamId(310), "comp_mix"),
+            get: this.mix * 100.0,
+            set: |v| this.set_mix(v / 100.0);
     }
 }
 
@@ -617,7 +651,7 @@ mod tests {
     #[test]
     fn test_param_count() {
         let comp = Compressor::new(48000.0);
-        assert_eq!(comp.param_count(), 10);
+        assert_eq!(comp.param_count(), 11);
     }
 
     #[test]

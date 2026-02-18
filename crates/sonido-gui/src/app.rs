@@ -97,19 +97,9 @@ impl SonidoApp {
             // Leak a single-element slice — lives for the process lifetime
             Box::leak(vec![desc.id].into_boxed_slice())
         } else {
-            registry.default_chain_ids()
+            &[]
         };
         let bridge = Arc::new(AtomicParamBridge::new(&registry, chain, 48000.0));
-
-        if !single_effect {
-            // Effects that start bypassed (full chain mode only)
-            bridge.set_default_bypass(SlotIndex(3), true); // gate
-            bridge.set_default_bypass(SlotIndex(4), true); // eq
-            bridge.set_default_bypass(SlotIndex(5), true); // wah
-            bridge.set_default_bypass(SlotIndex(7), true); // flanger
-            bridge.set_default_bypass(SlotIndex(8), true); // phaser
-            bridge.set_default_bypass(SlotIndex(9), true); // tremolo
-        }
 
         let audio_bridge = AudioBridge::new();
         let transport_tx = audio_bridge.transport_sender();
@@ -946,7 +936,7 @@ fn build_audio_streams(
     };
 
     // Create effect chain from shared registry
-    let chain = ChainManager::new(registry, registry.default_chain_ids(), sample_rate);
+    let chain = ChainManager::new(registry, &[], sample_rate);
 
     // Stereo audio buffer (interleaved L, R pairs)
     let (tx, rx) = crossbeam_channel::bounded::<f32>(16384);

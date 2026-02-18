@@ -65,7 +65,7 @@ impl VibratoUnit {
 ///
 /// | Index | Name | Range | Default |
 /// |-------|------|-------|---------|
-/// | 0 | Depth | 0–200% | 100.0 |
+/// | 0 | Depth | 0–400% | 100.0 |
 /// | 1 | Mix | 0–100% | 100.0 |
 /// | 2 | Output | -20.0–20.0 dB | 0.0 |
 ///
@@ -105,12 +105,12 @@ impl MultiVibrato {
     pub fn new(sample_rate: f32) -> Self {
         // Carefully chosen rates and waveforms for organic tape character
         let configs: [(f32, f32, LfoWaveform); NUM_VIBRATOS] = [
-            (0.13, 0.8, LfoWaveform::Sine),     // Very slow drift
-            (0.31, 1.2, LfoWaveform::Triangle), // Slow wobble
-            (0.67, 0.6, LfoWaveform::Sine),     // Medium drift
-            (1.1, 0.9, LfoWaveform::Triangle),  // Flutter component
-            (2.3, 0.4, LfoWaveform::Triangle),  // Subtle fast
-            (4.7, 0.2, LfoWaveform::Triangle),  // Fastest, most subtle
+            (0.13, 1.5, LfoWaveform::Sine),     // Very slow drift
+            (0.31, 2.5, LfoWaveform::Triangle), // Slow wobble
+            (0.67, 1.2, LfoWaveform::Sine),     // Medium drift
+            (1.1, 1.8, LfoWaveform::Triangle),  // Flutter component
+            (2.3, 0.8, LfoWaveform::Triangle),  // Subtle fast
+            (4.7, 0.4, LfoWaveform::Triangle),  // Fastest, most subtle
         ];
 
         let vibratos = configs
@@ -140,7 +140,7 @@ impl MultiVibrato {
 
     /// Set master depth scale (multiplies all vibrato depths)
     pub fn set_depth(&mut self, scale: f32) {
-        self.depth_scale.set_target(scale.clamp(0.0, 2.0));
+        self.depth_scale.set_target(scale.clamp(0.0, 4.0));
     }
 
     /// Get current depth scale target
@@ -223,7 +223,7 @@ sonido_core::impl_params! {
                 short_name: "Depth",
                 unit: ParamUnit::Percent,
                 min: 0.0,
-                max: 200.0,
+                max: 400.0,
                 default: 100.0,
                 step: 1.0,
                 ..ParamDescriptor::mix()

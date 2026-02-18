@@ -181,7 +181,7 @@ impl EffectRegistry {
                 short_name: "COMP",
                 description: "Dynamics compressor with program-dependent release",
                 category: EffectCategory::Dynamics,
-                param_count: 10,
+                param_count: 11,
             },
             |sr| Box::new(Compressor::new(sr)),
         );

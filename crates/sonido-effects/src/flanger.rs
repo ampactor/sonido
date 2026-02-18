@@ -33,7 +33,7 @@ use sonido_core::{
 /// | Index | Name | Range | Default |
 /// |-------|------|-------|---------|
 /// | 0 | Rate | 0.05–5.0 Hz | 0.5 |
-/// | 1 | Depth | 0–100% | 50.0 |
+/// | 1 | Depth | 0–100% | 35.0 |
 /// | 2 | Feedback | -95–95% | 50.0 |
 /// | 3 | Mix | 0–100% | 50.0 |
 /// | 4 | TZF | Off/On | Off |
@@ -127,7 +127,7 @@ impl Flanger {
             lfo: Lfo::new(sample_rate, 0.5),
             lfo_r,
             rate: SmoothedParam::standard(0.5, sample_rate),
-            depth: SmoothedParam::standard(0.5, sample_rate),
+            depth: SmoothedParam::standard(0.35, sample_rate),
             feedback: SmoothedParam::standard(0.5, sample_rate),
             mix: SmoothedParam::standard(0.5, sample_rate),
             output_level: sonido_core::gain::output_level_param(sample_rate),
@@ -367,7 +367,7 @@ impl_params! {
             get: this.rate.target(),
             set: |v| this.set_rate(v);
 
-        [1] ParamDescriptor::depth()
+        [1] ParamDescriptor { default: 35.0, ..ParamDescriptor::depth() }
                 .with_id(ParamId(801), "flgr_depth"),
             get: this.depth.target() * 100.0,
             set: |v| this.set_depth(v / 100.0);

@@ -14,7 +14,29 @@
 use super::Knob;
 use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::{Response, Ui};
-use sonido_core::ParamUnit;
+use sonido_core::{ParamDescriptor, ParamUnit};
+
+/// Normalize a plain value to \[0, 1\] using the descriptor's scale, or linear fallback.
+fn normalize(desc: Option<&ParamDescriptor>, value: f32, min: f32, max: f32) -> f32 {
+    desc.map_or_else(
+        || {
+            if (max - min).abs() < f32::EPSILON {
+                0.0
+            } else {
+                (value - min) / (max - min)
+            }
+        },
+        |d| d.normalize(value),
+    )
+}
+
+/// Denormalize a \[0, 1\] value back to plain using the descriptor's scale, or linear fallback.
+fn denormalize(desc: Option<&ParamDescriptor>, normalized: f32, min: f32, max: f32) -> f32 {
+    desc.map_or_else(
+        || min + normalized * (max - min),
+        |d| d.denormalize(normalized),
+    )
+}
 
 /// Apply the gesture protocol to a widget response.
 ///
@@ -56,6 +78,11 @@ pub fn gesture_wrap(
 /// [`ParamUnit`], and the gesture protocol (`begin_set`/`end_set`).
 /// Double-click resets to the parameter's default value.
 ///
+/// The knob internally operates in normalized \[0, 1\] space, mapped through
+/// the parameter's [`ParamScale`](sonido_core::ParamScale). This ensures
+/// logarithmic parameters (e.g., filter cutoff 20–20 kHz) have their visual
+/// midpoint at the geometric mean (√(min×max)), not the arithmetic mean.
+///
 /// # Auto-format mapping
 ///
 /// | `ParamUnit`      | Display format              |
@@ -74,24 +101,61 @@ pub fn bridged_knob(
     label: &str,
 ) -> Response {
     let desc = bridge.param_descriptor(slot, param);
-    let (min, max, default) = desc
-        .as_ref()
-        .map_or((0.0, 1.0, 0.5), |d| (d.min, d.max, d.default));
+    let (min, max, default) = desc.map_or((0.0, 1.0, 0.5), |d| (d.min, d.max, d.default));
 
-    let mut value = bridge.get(slot, param);
-    let knob = Knob::new(&mut value, min, max, label).default(default);
+    let plain_value = bridge.get(slot, param);
 
-    let knob = match desc.as_ref().map(|d| d.unit) {
-        Some(ParamUnit::Decibels) => knob.format_db(),
-        Some(ParamUnit::Hertz) => knob.format_hz(),
-        Some(ParamUnit::Milliseconds) => knob.format_ms(),
-        Some(ParamUnit::Percent) => knob.format(|v| format!("{v:.0}%")),
-        Some(ParamUnit::Ratio) => knob.format_ratio(),
-        _ => knob,
+    // Normalize to [0, 1] using the parameter's scale curve (log, power, linear)
+    let mut normalized = normalize(desc.as_ref(), plain_value, min, max);
+    let norm_default = normalize(desc.as_ref(), default, min, max);
+
+    let knob = Knob::new(&mut normalized, 0.0, 1.0, label).default(norm_default);
+
+    // Format: denormalize back to plain value, then apply unit formatting
+    let knob = if let Some(d) = desc {
+        match d.unit {
+            ParamUnit::Decibels => knob.format(move |n| {
+                let v = d.denormalize(n);
+                format!("{v:.1} dB")
+            }),
+            ParamUnit::Hertz => knob.format(move |n| {
+                let v = d.denormalize(n);
+                if v >= 1000.0 {
+                    format!("{:.1} kHz", v / 1000.0)
+                } else {
+                    format!("{v:.0} Hz")
+                }
+            }),
+            ParamUnit::Milliseconds => knob.format(move |n| {
+                let v = d.denormalize(n);
+                if v >= 1000.0 {
+                    format!("{:.2} s", v / 1000.0)
+                } else {
+                    format!("{v:.1} ms")
+                }
+            }),
+            ParamUnit::Percent => knob.format(move |n| {
+                let v = d.denormalize(n);
+                format!("{v:.0}%")
+            }),
+            ParamUnit::Ratio => knob.format(move |n| {
+                let v = d.denormalize(n);
+                format!("{v:.1}:1")
+            }),
+            ParamUnit::None => knob.format(move |n| {
+                let v = d.denormalize(n);
+                format!("{v:.2}")
+            }),
+        }
+    } else {
+        knob
     };
 
     let response = ui.add(knob);
-    gesture_wrap(&response, bridge, slot, param, value, default);
+
+    // Denormalize back to plain value for the bridge
+    let plain_out = denormalize(desc.as_ref(), normalized, min, max);
+    gesture_wrap(&response, bridge, slot, param, plain_out, default);
     response
 }
 
@@ -99,6 +163,10 @@ pub fn bridged_knob(
 ///
 /// Use when the auto-format from [`ParamUnit`] doesn't match the desired
 /// display (e.g., custom precision, special suffix, or no unit suffix).
+///
+/// The `format` callback receives the **plain** parameter value (Hz, dB, etc.),
+/// not the normalized knob position. Scale-aware normalization is handled
+/// internally, identical to [`bridged_knob`].
 pub fn bridged_knob_fmt(
     ui: &mut Ui,
     bridge: &dyn ParamBridge,
@@ -108,17 +176,25 @@ pub fn bridged_knob_fmt(
     format: impl Fn(f32) -> String + 'static,
 ) -> Response {
     let desc = bridge.param_descriptor(slot, param);
-    let (min, max, default) = desc
-        .as_ref()
-        .map_or((0.0, 1.0, 0.5), |d| (d.min, d.max, d.default));
+    let (min, max, default) = desc.map_or((0.0, 1.0, 0.5), |d| (d.min, d.max, d.default));
 
-    let mut value = bridge.get(slot, param);
-    let knob = Knob::new(&mut value, min, max, label)
-        .default(default)
-        .format(format);
+    let plain_value = bridge.get(slot, param);
+
+    let mut normalized = normalize(desc.as_ref(), plain_value, min, max);
+    let norm_default = normalize(desc.as_ref(), default, min, max);
+
+    // Wrap user's format fn: denormalize [0,1] → plain before formatting
+    let knob = Knob::new(&mut normalized, 0.0, 1.0, label)
+        .default(norm_default)
+        .format(move |n| {
+            let plain = denormalize(desc.as_ref(), n, min, max);
+            format(plain)
+        });
 
     let response = ui.add(knob);
-    gesture_wrap(&response, bridge, slot, param, value, default);
+
+    let plain_out = denormalize(desc.as_ref(), normalized, min, max);
+    gesture_wrap(&response, bridge, slot, param, plain_out, default);
     response
 }
 

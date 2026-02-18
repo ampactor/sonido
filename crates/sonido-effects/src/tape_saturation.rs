@@ -225,7 +225,7 @@ impl TapeSaturation {
             sample_rate,
             drive: SmoothedParam::standard(db_to_linear(6.0), sample_rate),
             output_gain: SmoothedParam::standard(db_to_linear(-6.0), sample_rate),
-            saturation: SmoothedParam::standard(0.5, sample_rate),
+            saturation: SmoothedParam::standard(0.3, sample_rate),
             hf_freq: 12000.0,
             bias: 0.0,
             adaa_l: Adaa1::new(
@@ -687,7 +687,7 @@ sonido_core::impl_params! {
                 unit: ParamUnit::Percent,
                 min: 0.0,
                 max: 100.0,
-                default: 50.0,
+                default: 30.0,
                 step: 1.0,
                 ..ParamDescriptor::mix()
             }
