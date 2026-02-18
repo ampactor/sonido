@@ -90,10 +90,11 @@ const UPSAMPLE_TAPS: usize = 8;
 ///
 /// # Memory Usage
 ///
-/// Uses fixed-size arrays for filter state, suitable for `no_std`:
-/// - Input history for sinc interpolation: `UPSAMPLE_TAPS` × `f32` = 32 bytes
-/// - Downsample FIR filter state: `FILTER_TAPS` × `f32` = 192 bytes
-/// - Upsample work buffer: `MAX_OVERSAMPLE_FACTOR` × `f32` = 32 bytes
+/// Uses fixed-size arrays for filter state, suitable for `no_std`.
+/// Per-channel state is duplicated for stereo processing:
+/// - Input history for sinc interpolation: 2 × `UPSAMPLE_TAPS` × `f32` = 64 bytes
+/// - Downsample FIR filter state: 2 × `FILTER_TAPS` × `f32` = 384 bytes
+/// - Upsample work buffers: 2 × `MAX_OVERSAMPLE_FACTOR` × `f32` = 64 bytes
 ///
 /// # References
 ///
@@ -105,15 +106,29 @@ pub struct Oversampled<const FACTOR: usize, E: Effect> {
     effect: E,
     /// Base sample rate (before oversampling)
     sample_rate: f32,
-    /// Input sample history for windowed-sinc upsampling.
-    /// Stores the last UPSAMPLE_TAPS input samples as a circular buffer.
+    // -- Left channel state --
+    /// Input sample history for windowed-sinc upsampling (left channel).
+    /// Stores the last `UPSAMPLE_TAPS` input samples as a circular buffer.
     input_history: [f32; UPSAMPLE_TAPS],
-    /// Write position in the input history circular buffer.
+    /// Write position in the left input history circular buffer.
     history_pos: usize,
-    /// Downsampling filter state (delay line)
+    /// Downsampling filter state as a circular buffer (left channel).
     downsample_state: [f32; FILTER_TAPS],
-    /// Buffer for upsampled/processed signal
+    /// Write position in the left downsample circular buffer.
+    downsample_pos: usize,
+    /// Buffer for upsampled/processed signal (left channel).
     work_buffer: [f32; MAX_OVERSAMPLE_FACTOR],
+    // -- Right channel state --
+    /// Input sample history for windowed-sinc upsampling (right channel).
+    input_history_r: [f32; UPSAMPLE_TAPS],
+    /// Write position in the right input history circular buffer.
+    history_pos_r: usize,
+    /// Downsampling filter state as a circular buffer (right channel).
+    downsample_state_r: [f32; FILTER_TAPS],
+    /// Write position in the right downsample circular buffer.
+    downsample_pos_r: usize,
+    /// Buffer for upsampled/processed signal (right channel).
+    work_buffer_r: [f32; MAX_OVERSAMPLE_FACTOR],
 }
 
 impl<const FACTOR: usize, E: Effect> Oversampled<FACTOR, E> {
@@ -140,7 +155,13 @@ impl<const FACTOR: usize, E: Effect> Oversampled<FACTOR, E> {
             input_history: [0.0; UPSAMPLE_TAPS],
             history_pos: 0,
             downsample_state: [0.0; FILTER_TAPS],
+            downsample_pos: 0,
             work_buffer: [0.0; MAX_OVERSAMPLE_FACTOR],
+            input_history_r: [0.0; UPSAMPLE_TAPS],
+            history_pos_r: 0,
+            downsample_state_r: [0.0; FILTER_TAPS],
+            downsample_pos_r: 0,
+            work_buffer_r: [0.0; MAX_OVERSAMPLE_FACTOR],
         }
     }
 
@@ -199,64 +220,89 @@ impl<const FACTOR: usize, E: Effect> Oversampled<FACTOR, E> {
         }
     }
 
-    /// Upsample using windowed-sinc interpolation.
+    /// Upsample a single sample into a work buffer using windowed-sinc interpolation.
     ///
-    /// For each output sub-sample, convolves the input history with the
-    /// appropriate polyphase component of the sinc kernel. This provides
-    /// band-limited interpolation superior to linear interpolation, with
+    /// Pushes the input into the history circular buffer and convolves with
+    /// the polyphase kernel to produce FACTOR output samples. Each polyphase
+    /// sub-filter evaluates the sinc at the required fractional offset, avoiding
+    /// zero-stuffing.
+    ///
     /// >90 dB sidelobe suppression from the Blackman-Harris window.
-    ///
-    /// The polyphase decomposition avoids computing zeros: instead of
-    /// zero-stuffing and filtering, we directly evaluate the sinc kernel
-    /// at the required fractional offsets.
     #[inline]
-    fn upsample(&mut self, input: f32) {
-        // Push new sample into history
-        self.input_history[self.history_pos] = input;
-        self.history_pos = (self.history_pos + 1) % UPSAMPLE_TAPS;
-
-        let kernel = self.get_upsample_kernel();
+    fn upsample_channel(
+        input: f32,
+        history: &mut [f32; UPSAMPLE_TAPS],
+        pos: &mut usize,
+        work: &mut [f32; MAX_OVERSAMPLE_FACTOR],
+        kernel: &[[f32; UPSAMPLE_TAPS]],
+    ) {
+        history[*pos] = input;
+        *pos = (*pos + 1) % UPSAMPLE_TAPS;
 
         for p in 0..FACTOR {
             let mut sum = 0.0;
             let k = &kernel[p];
             for t in 0..UPSAMPLE_TAPS {
-                // Read from history in correct order (oldest to newest)
-                let idx = (self.history_pos + t) % UPSAMPLE_TAPS;
-                sum += self.input_history[idx] * k[t];
+                let idx = (*pos + t) % UPSAMPLE_TAPS;
+                sum += history[idx] * k[t];
             }
-            self.work_buffer[p] = sum * FACTOR as f32;
+            work[p] = sum * FACTOR as f32;
         }
     }
 
-    /// Downsample with FIR anti-aliasing filter and decimation.
+    /// Downsample FACTOR samples from a work buffer using FIR anti-aliasing.
     ///
-    /// All upsampled/processed samples are pushed through the FIR filter's
-    /// delay line, but only the final sample is used as output (decimation).
-    /// This is equivalent to filtering the entire oversampled signal and then
-    /// keeping every FACTOR-th sample, but more efficient since we only compute
-    /// the convolution sum at the decimation points.
+    /// Pushes all FACTOR processed samples into a circular buffer, then
+    /// computes a single FIR convolution at the decimation point. Uses a
+    /// write-pointer circular buffer instead of shifting the entire delay
+    /// line, reducing from `FACTOR × FILTER_TAPS` copies to `FACTOR` writes
+    /// plus `FILTER_TAPS` multiply-accumulate operations.
+    #[inline]
+    fn downsample_channel(
+        state: &mut [f32; FILTER_TAPS],
+        pos: &mut usize,
+        work: &[f32; MAX_OVERSAMPLE_FACTOR],
+        coeffs: &[f32; FILTER_TAPS],
+    ) -> f32 {
+        // Push all FACTOR samples into circular buffer
+        for sample in work.iter().take(FACTOR) {
+            state[*pos] = *sample;
+            *pos = (*pos + 1) % FILTER_TAPS;
+        }
+
+        // Single convolution at decimation point.
+        // pos points past newest; walk backwards so coeffs[0] pairs with newest.
+        let mut output = 0.0;
+        for j in 0..FILTER_TAPS {
+            let idx = (*pos + FILTER_TAPS - 1 - j) % FILTER_TAPS;
+            output += state[idx] * coeffs[j];
+        }
+        output
+    }
+
+    /// Upsample a mono sample into the left work buffer.
+    #[inline]
+    fn upsample(&mut self, input: f32) {
+        let kernel = self.get_upsample_kernel();
+        Self::upsample_channel(
+            input,
+            &mut self.input_history,
+            &mut self.history_pos,
+            &mut self.work_buffer,
+            kernel,
+        );
+    }
+
+    /// Downsample the left work buffer to a single output sample.
     #[inline]
     fn downsample(&mut self) -> f32 {
         let coeffs = self.get_coefficients();
-        let mut output = 0.0;
-
-        for i in 0..FACTOR {
-            // Shift delay line
-            for j in (1..FILTER_TAPS).rev() {
-                self.downsample_state[j] = self.downsample_state[j - 1];
-            }
-            self.downsample_state[0] = self.work_buffer[i];
-
-            // Compute filtered output on last sample (decimation point)
-            if i == FACTOR - 1 {
-                for (j, &coeff) in coeffs.iter().enumerate() {
-                    output += self.downsample_state[j] * coeff;
-                }
-            }
-        }
-
-        output
+        Self::downsample_channel(
+            &mut self.downsample_state,
+            &mut self.downsample_pos,
+            &self.work_buffer,
+            coeffs,
+        )
     }
 }
 
@@ -265,7 +311,7 @@ impl<const FACTOR: usize, E: Effect> Effect for Oversampled<FACTOR, E> {
         // Upsample via windowed-sinc interpolation
         self.upsample(input);
 
-        // Process each upsampled sample through the effect
+        // Process each upsampled sample through the effect (mono path)
         for i in 0..FACTOR {
             self.work_buffer[i] = self.effect.process(self.work_buffer[i]);
         }
@@ -274,11 +320,76 @@ impl<const FACTOR: usize, E: Effect> Effect for Oversampled<FACTOR, E> {
         self.downsample()
     }
 
+    fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+        // Upsample both channels
+        let kernel = self.get_upsample_kernel();
+        Self::upsample_channel(
+            left,
+            &mut self.input_history,
+            &mut self.history_pos,
+            &mut self.work_buffer,
+            kernel,
+        );
+        Self::upsample_channel(
+            right,
+            &mut self.input_history_r,
+            &mut self.history_pos_r,
+            &mut self.work_buffer_r,
+            kernel,
+        );
+
+        // Process each oversampled sample pair through the inner effect
+        for i in 0..FACTOR {
+            let (l, r) = self
+                .effect
+                .process_stereo(self.work_buffer[i], self.work_buffer_r[i]);
+            self.work_buffer[i] = l;
+            self.work_buffer_r[i] = r;
+        }
+
+        // Downsample both channels
+        let coeffs = self.get_coefficients();
+        let out_l = Self::downsample_channel(
+            &mut self.downsample_state,
+            &mut self.downsample_pos,
+            &self.work_buffer,
+            coeffs,
+        );
+        let out_r = Self::downsample_channel(
+            &mut self.downsample_state_r,
+            &mut self.downsample_pos_r,
+            &self.work_buffer_r,
+            coeffs,
+        );
+        (out_l, out_r)
+    }
+
     fn process_block(&mut self, input: &[f32], output: &mut [f32]) {
         debug_assert_eq!(input.len(), output.len());
         for (inp, out) in input.iter().zip(output.iter_mut()) {
             *out = self.process(*inp);
         }
+    }
+
+    fn process_block_stereo(
+        &mut self,
+        left_in: &[f32],
+        right_in: &[f32],
+        left_out: &mut [f32],
+        right_out: &mut [f32],
+    ) {
+        debug_assert_eq!(left_in.len(), right_in.len());
+        debug_assert_eq!(left_in.len(), left_out.len());
+        debug_assert_eq!(left_out.len(), right_out.len());
+        for i in 0..left_in.len() {
+            let (l, r) = self.process_stereo(left_in[i], right_in[i]);
+            left_out[i] = l;
+            right_out[i] = r;
+        }
+    }
+
+    fn is_true_stereo(&self) -> bool {
+        self.effect.is_true_stereo()
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
@@ -291,7 +402,13 @@ impl<const FACTOR: usize, E: Effect> Effect for Oversampled<FACTOR, E> {
         self.input_history = [0.0; UPSAMPLE_TAPS];
         self.history_pos = 0;
         self.downsample_state = [0.0; FILTER_TAPS];
+        self.downsample_pos = 0;
         self.work_buffer = [0.0; MAX_OVERSAMPLE_FACTOR];
+        self.input_history_r = [0.0; UPSAMPLE_TAPS];
+        self.history_pos_r = 0;
+        self.downsample_state_r = [0.0; FILTER_TAPS];
+        self.downsample_pos_r = 0;
+        self.work_buffer_r = [0.0; MAX_OVERSAMPLE_FACTOR];
         self.effect.reset();
     }
 
@@ -612,6 +729,96 @@ mod tests {
             (output - 1.0).abs() < 0.02,
             "Factor 8 passthrough should be ~1.0, got {}",
             output
+        );
+    }
+
+    /// True stereo effect: inverts right channel for L/R decorrelation.
+    struct StereoInverter;
+
+    impl Effect for StereoInverter {
+        fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
+            (left, -right)
+        }
+        fn is_true_stereo(&self) -> bool {
+            true
+        }
+        fn set_sample_rate(&mut self, _: f32) {}
+        fn reset(&mut self) {}
+    }
+
+    #[test]
+    fn stereo_oversampled_decorrelates() {
+        let mut oversampled = Oversampled::<2, _>::new(StereoInverter, SAMPLE_RATE);
+
+        // Let filter settle
+        for _ in 0..500 {
+            oversampled.process_stereo(1.0, 1.0);
+        }
+
+        let (left, right) = oversampled.process_stereo(1.0, 1.0);
+        assert!((left - 1.0).abs() < 0.05, "Left should be ~1.0, got {left}");
+        assert!(
+            (right - (-1.0)).abs() < 0.05,
+            "Right should be ~-1.0, got {right}"
+        );
+        // L != R confirms stereo processing
+        assert!(
+            (left - right).abs() > 1.0,
+            "L and R should differ, got L={left}, R={right}"
+        );
+    }
+
+    #[test]
+    fn is_true_stereo_delegates() {
+        let mono = Oversampled::<2, _>::new(Passthrough, SAMPLE_RATE);
+        assert!(!mono.is_true_stereo());
+
+        let stereo = Oversampled::<2, _>::new(StereoInverter, SAMPLE_RATE);
+        assert!(stereo.is_true_stereo());
+    }
+
+    #[test]
+    fn process_block_stereo_works() {
+        let mut oversampled = Oversampled::<2, _>::new(Gain(0.5), SAMPLE_RATE);
+
+        // Let filter settle with stereo DC
+        for _ in 0..500 {
+            oversampled.process_stereo(1.0, 0.5);
+        }
+
+        let left_in = [1.0; 8];
+        let right_in = [0.5; 8];
+        let mut left_out = [0.0; 8];
+        let mut right_out = [0.0; 8];
+
+        oversampled.process_block_stereo(&left_in, &right_in, &mut left_out, &mut right_out);
+
+        // Gain(0.5) → left ~0.5, right ~0.25
+        for &l in &left_out {
+            assert!((l - 0.5).abs() < 0.05, "Left should be ~0.5, got {l}");
+        }
+        for &r in &right_out {
+            assert!((r - 0.25).abs() < 0.05, "Right should be ~0.25, got {r}");
+        }
+    }
+
+    #[test]
+    fn stereo_passthrough_dc_unity() {
+        let mut oversampled = Oversampled::<4, _>::new(Passthrough, SAMPLE_RATE);
+
+        // Let filter settle
+        for _ in 0..500 {
+            oversampled.process_stereo(1.0, 0.5);
+        }
+
+        let (left, right) = oversampled.process_stereo(1.0, 0.5);
+        assert!(
+            (left - 1.0).abs() < 0.02,
+            "Left passthrough should be ~1.0, got {left}"
+        );
+        assert!(
+            (right - 0.5).abs() < 0.02,
+            "Right passthrough should be ~0.5, got {right}"
         );
     }
 }

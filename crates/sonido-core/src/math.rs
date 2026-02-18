@@ -117,34 +117,41 @@ pub fn hard_clip(x: f32, threshold: f32) -> f32 {
     x.clamp(-threshold, threshold)
 }
 
-/// Foldback distortion.
+/// Foldback distortion (closed-form triangle-wave reflection).
 ///
 /// When |x| exceeds threshold, the signal "folds" back instead of clipping.
 /// Creates rich harmonic content, popular in synthesizers.
 ///
-/// Uses a bounded iterative approach (max 16 iterations) instead of recursion
-/// for stack safety on embedded targets (e.g., Daisy Seed with limited stack).
+/// Uses a closed-form computation based on modular arithmetic to map any
+/// input magnitude into `[-threshold, threshold]` in constant time,
+/// replacing the previous iterative approach.
+///
+/// The folding pattern is equivalent to a triangle wave with period `2·threshold`:
+/// normalize into half-periods, take the fractional part, then flip the sign
+/// on odd half-periods.
 ///
 /// # Arguments
-/// * `x` - Input sample
-/// * `threshold` - Folding threshold
+/// * `input` - Input sample
+/// * `threshold` - Folding threshold (must be > 0; returns 0.0 if ≤ 0)
 ///
 /// # Returns
-/// Foldback-distorted output, clamped to `[-threshold, threshold]`
+/// Foldback-distorted output in `[-threshold, threshold]`
 #[inline]
-pub fn foldback(x: f32, threshold: f32) -> f32 {
+pub fn foldback(input: f32, threshold: f32) -> f32 {
+    use libm::floorf;
+
     if threshold <= 0.0 {
         return 0.0;
     }
-    let mut out = x;
-    for _ in 0..16 {
-        if out.abs() <= threshold {
-            return out;
-        }
-        let sign = out.signum();
-        out = sign * (threshold - (out.abs() - threshold));
+    if input.abs() <= threshold {
+        return input;
     }
-    out.clamp(-threshold, threshold)
+    let t2 = 2.0 * threshold;
+    let normalized = (input + threshold) / t2;
+    let folded = (normalized - floorf(normalized)) * t2 - threshold;
+    // Flip sign on odd half-periods to produce triangle-wave reflection.
+    let period = floorf(normalized) as i32;
+    if period % 2 == 0 { folded } else { -folded }
 }
 
 /// Asymmetric soft clipping.
@@ -396,6 +403,52 @@ mod tests {
         assert_eq!(foldback(0.5, 0.0), 0.0);
         assert_eq!(foldback(-3.0, 0.0), 0.0);
         assert_eq!(foldback(0.0, 0.0), 0.0);
+    }
+
+    #[test]
+    fn test_foldback_closed_form_sweep() {
+        // Verify closed-form matches expected triangle-wave foldback
+        // for a range of inputs at threshold = 1.0
+        let threshold = 1.0;
+        let cases: &[(f32, f32)] = &[
+            (0.0, 0.0),
+            (0.5, 0.5),
+            (-0.5, -0.5),
+            (1.0, 1.0),
+            (-1.0, -1.0),
+            (1.5, 0.5),
+            (-1.5, -0.5),
+            (2.0, 0.0),
+            (2.5, -0.5),
+            (3.0, -1.0),
+            (3.5, -0.5),
+            (4.0, 0.0),
+            (5.0, 1.0),
+            (-5.0, -1.0),
+            (10.0, 0.0),
+            (-10.0, 0.0),
+        ];
+        for &(input, expected) in cases {
+            let result = foldback(input, threshold);
+            assert!(
+                (result - expected).abs() < 1e-5,
+                "foldback({input}, {threshold}) = {result}, expected {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_foldback_nonunit_threshold() {
+        // Verify with threshold != 1.0
+        let threshold = 0.8;
+        // 1.0 exceeds 0.8 by 0.2, folds to 0.8 - 0.2 = 0.6
+        assert!(
+            (foldback(1.0, threshold) - 0.6).abs() < 1e-5,
+            "got {}",
+            foldback(1.0, threshold)
+        );
+        // Below threshold passes through
+        assert!((foldback(0.5, threshold) - 0.5).abs() < 1e-6);
     }
 
     #[test]

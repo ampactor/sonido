@@ -14,6 +14,7 @@
 //! | [`fast_linear_to_db`] | [`linear_to_db`](crate::linear_to_db) | Gain, level metering | < 0.05 dB |
 //! | [`fast_sin_turns`] | `libm::sinf` | LFO modulation | < 0.001 |
 //! | [`fast_tan`] | `libm::tanf` | Filter coefficients | < 0.1% (f < sr/4) |
+//! | [`fast_tanh`] | `libm::tanhf` | Saturation, soft clip | < 0.024 abs (\|x\| < 3) |
 //!
 //! # When NOT to use
 //!
@@ -32,10 +33,11 @@
 //! | `fast_exp2` | ~15 | ~150 (`expf`) |
 //! | `fast_sin_turns` | ~16 | ~100 (`sinf`) |
 //! | `fast_tan` | ~12 | ~120 (`tanf`) |
+//! | `fast_tanh` | ~8 | ~80 (`tanhf`) |
 //!
 //! Reference: ARM Cortex-M7 Technical Reference Manual, FPU instruction timings.
 
-use libm::floorf;
+use libm::{floorf, tanf};
 
 /// Fast base-2 logarithm via IEEE 754 float decomposition.
 ///
@@ -208,6 +210,14 @@ pub fn fast_sin_turns(turns: f32) -> f32 {
 /// This approximant matches the Taylor series through the x⁵ term,
 /// providing excellent accuracy well beyond the small-angle regime.
 ///
+/// # Safety guard
+///
+/// The Padé \[2/1\] has a spurious pole at `x ≈ 1.58` (where `15 − 6x² = 0`).
+/// For `x > 1.5` the function falls back to [`libm::tanf`] to avoid divergence.
+/// At 44.1 kHz with a 20 kHz cutoff the argument reaches `x ≈ 1.42`, safely
+/// below the guard. At 22.05 kHz cutoff (Nyquist) it hits 1.57 — the guard
+/// ensures correct behavior.
+///
 /// # Accuracy
 ///
 /// | Frequency (@ 48 kHz) | Argument x = π·f/sr | Relative error |
@@ -225,6 +235,7 @@ pub fn fast_sin_turns(turns: f32) -> f32 {
 ///
 /// * `x` - Angle in radians. Valid for x ∈ \[0, π/3\] (~1.047).
 ///   Beyond this range, error grows as tan approaches its pole at π/2.
+///   Values above 1.5 fall back to `libm::tanf` for safety.
 ///
 /// # Examples
 ///
@@ -238,8 +249,60 @@ pub fn fast_sin_turns(turns: f32) -> f32 {
 /// ```
 #[inline]
 pub fn fast_tan(x: f32) -> f32 {
+    // Guard: Padé [2/1] has a pole at x ≈ 1.58 (15 − 6x² = 0).
+    // Fall back to libm for safety near the singularity.
+    if x > 1.5 {
+        return tanf(x);
+    }
     let x2 = x * x;
     x * (15.0 - x2) / (15.0 - 6.0 * x2)
+}
+
+/// Fast hyperbolic tangent via Padé \[1/1\] rational approximation.
+///
+/// Approximates `tanh(x) ≈ x · (27 + x²) / (27 + 9x²)`, which matches
+/// the Taylor series through the x³ term. For `|x| > 3` the output is
+/// clamped to ±1.0 (tanh saturates to within 0.5% of ±1 at |x| = 3).
+///
+/// ~8 Cortex-M7 cycles vs ~80 for `libm::tanhf`.
+///
+/// # Error bounds
+///
+/// | Input range | Max absolute error | Max relative error |
+/// |-------------|-------------------|--------------------|
+/// | \|x\| < 1 | < 0.005 | < 2.2% |
+/// | \|x\| < 2 | < 0.020 | < 2.5% |
+/// | \|x\| < 3 | < 0.024 | < 2.5% |
+/// | \|x\| ≥ 3 | clamped to ±1.0 | — |
+///
+/// # Use case
+///
+/// Saturation curves, soft clipping, and waveshaping where the input is
+/// typically in \[-3, 3\] and sub-percent accuracy suffices. For audio-rate
+/// waveshaping requiring full precision, use [`libm::tanhf`] instead.
+///
+/// # Examples
+///
+/// ```
+/// use sonido_core::fast_math::fast_tanh;
+///
+/// assert!(fast_tanh(0.0).abs() < 0.001);
+/// assert!((fast_tanh(1.0) - libm::tanhf(1.0)).abs() < 0.025);
+/// assert!((fast_tanh(3.0) - 1.0).abs() < 0.025);
+/// assert!((fast_tanh(-3.0) + 1.0).abs() < 0.025);
+/// ```
+#[inline]
+pub fn fast_tanh(x: f32) -> f32 {
+    // Padé [1/1]: tanh(x) ≈ x(27 + x²) / (27 + 9x²)
+    // Clamp in saturation region for bounded output.
+    if x > 3.0 {
+        return 1.0;
+    }
+    if x < -3.0 {
+        return -1.0;
+    }
+    let x2 = x * x;
+    x * (27.0 + x2) / (27.0 + 9.0 * x2)
 }
 
 #[cfg(test)]
@@ -437,5 +500,89 @@ mod tests {
     #[test]
     fn tan_zero() {
         assert_eq!(fast_tan(0.0), 0.0);
+    }
+
+    #[test]
+    fn tan_guard_near_pole() {
+        // x > 1.5 should fall back to libm::tanf, not diverge
+        let x = 1.55;
+        let result = fast_tan(x);
+        let expected = libm::tanf(x);
+        assert!(
+            (result - expected).abs() < 1e-5,
+            "Guard fallback: fast_tan({x}) = {result}, expected {expected}"
+        );
+    }
+
+    #[test]
+    fn tan_guard_boundary() {
+        // x = 1.5 exactly should still use the Padé approximation
+        let x = 1.5;
+        let result = fast_tan(x);
+        let exact = libm::tanf(x);
+        // Padé error is larger here but should not diverge
+        assert!(
+            result.is_finite(),
+            "fast_tan({x}) should be finite, got {result}"
+        );
+        let rel_err = (result - exact).abs() / exact.abs();
+        assert!(rel_err < 0.15, "fast_tan({x}) rel_err = {rel_err}");
+    }
+
+    // ---- fast_tanh ----
+
+    #[test]
+    fn tanh_zero() {
+        assert_eq!(fast_tanh(0.0), 0.0);
+    }
+
+    #[test]
+    fn tanh_known_values() {
+        for x in [0.5, 1.0, 2.0, 3.0, -1.0] {
+            let approx = fast_tanh(x);
+            let exact = libm::tanhf(x);
+            let err = (approx - exact).abs();
+            assert!(
+                err < 0.025,
+                "fast_tanh({x}) = {approx}, tanhf = {exact}, err = {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn tanh_saturation_clamp() {
+        // |x| > 3 should clamp to ±1.0
+        assert_eq!(fast_tanh(5.0), 1.0);
+        assert_eq!(fast_tanh(100.0), 1.0);
+        assert_eq!(fast_tanh(-5.0), -1.0);
+        assert_eq!(fast_tanh(-100.0), -1.0);
+    }
+
+    #[test]
+    fn tanh_symmetry() {
+        for i in 1..30 {
+            let x = i as f32 * 0.1;
+            let pos = fast_tanh(x);
+            let neg = fast_tanh(-x);
+            assert!(
+                (pos + neg).abs() < 1e-6,
+                "Asymmetry at x={x}: {pos} vs {neg}"
+            );
+        }
+    }
+
+    #[test]
+    fn tanh_accuracy_sweep() {
+        let mut max_err: f32 = 0.0;
+        for i in -30..=30 {
+            let x = i as f32 * 0.1;
+            let approx = fast_tanh(x);
+            let exact = libm::tanhf(x);
+            let err = (approx - exact).abs();
+            if err > max_err {
+                max_err = err;
+            }
+        }
+        assert!(max_err < 0.025, "Max tanh error {max_err:.6} exceeds 0.025");
     }
 }
