@@ -100,8 +100,7 @@ fn main() {
 
     // Configure parameters
     distortion.set_drive_db(12.0);   // 12dB of gain into the waveshaper
-    distortion.set_tone_hz(4000.0);  // Lowpass at 4kHz to tame harshness
-    distortion.set_level_db(-6.0);   // Output level
+    distortion.set_tone_db(3.0);     // +3dB peaking EQ at 1kHz
 
     // Generate a test signal (sine wave)
     let sample_rate = 48000.0;

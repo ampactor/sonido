@@ -38,8 +38,7 @@ fn main() {
         let mut d = Distortion::new(SAMPLE_RATE);
         d.set_drive_db(12.0);
         d.set_waveshape(WaveShape::SoftClip);
-        d.set_tone_hz(4000.0);
-        d.set_level_db(-6.0);
+        d.set_tone_db(3.0);
         d
     };
 

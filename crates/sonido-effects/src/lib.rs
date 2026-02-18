@@ -50,7 +50,7 @@
 //! // Create effects
 //! let mut dist = Distortion::new(48000.0);
 //! dist.set_drive_db(15.0);
-//! dist.set_tone_hz(4000.0);
+//! dist.set_tone_db(3.0);
 //!
 //! let mut chorus = Chorus::new(48000.0);
 //! chorus.set_depth(0.6);
