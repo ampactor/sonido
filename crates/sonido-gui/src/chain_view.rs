@@ -121,7 +121,7 @@ impl ChainView {
                     let is_selected = self.selected == Some(slot_idx);
                     let is_bypassed = bridge.is_bypassed(slot_idx);
 
-                    let response = self.effect_pedal(
+                    let (response, close_clicked) = self.effect_pedal(
                         ui,
                         short_name,
                         is_selected,
@@ -130,8 +130,10 @@ impl ChainView {
                         bridge,
                     );
 
-                    // Click → select
-                    if response.clicked() {
+                    // Close button → remove; otherwise click → select
+                    if close_clicked {
+                        self.pending_remove = Some(slot_idx);
+                    } else if response.clicked() {
                         self.selected = Some(slot_idx);
                     }
 
@@ -155,20 +157,22 @@ impl ChainView {
                         self.dragging = Some(pos);
                     }
 
-                    // Handle drag
+                    // Handle drag — insert-at-position semantics
                     if self.dragging == Some(pos) && response.dragged() {
                         let delta = response.drag_delta().x;
                         self.drag_offset += delta;
 
-                        let swap_threshold = effect_width / 2.0 + spacing;
-                        if self.drag_offset > swap_threshold && pos < visible.len() - 1 {
-                            self.bridge.move_effect(pos, pos + 1);
-                            self.dragging = Some(pos + 1);
-                            self.drag_offset = 0.0;
-                        } else if self.drag_offset < -swap_threshold && pos > 0 {
-                            self.bridge.move_effect(pos, pos - 1);
-                            self.dragging = Some(pos - 1);
-                            self.drag_offset = 0.0;
+                        let step = effect_width + spacing + arrow_width;
+                        let steps = (self.drag_offset / step).round() as isize;
+                        if steps != 0 {
+                            let new_pos = (pos as isize + steps)
+                                .clamp(0, visible.len() as isize - 1)
+                                as usize;
+                            if new_pos != pos {
+                                self.bridge.move_effect(pos, new_pos);
+                                self.dragging = Some(new_pos);
+                                self.drag_offset -= steps as f32 * step;
+                            }
                         }
                     }
 
@@ -196,6 +200,9 @@ impl ChainView {
     }
 
     /// Draw a single effect pedal in the chain.
+    ///
+    /// Returns `(response, close_clicked)` where `close_clicked` is `true`
+    /// when the user clicks the "×" removal glyph in the top-right corner.
     fn effect_pedal(
         &self,
         ui: &mut Ui,
@@ -204,7 +211,7 @@ impl ChainView {
         is_bypassed: bool,
         slot_idx: SlotIndex,
         bridge: &dyn ParamBridge,
-    ) -> Response {
+    ) -> (Response, bool) {
         let size = vec2(70.0, 50.0);
         let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
 
@@ -276,14 +283,33 @@ impl ChainView {
                     StrokeKind::Outside,
                 );
             }
+
+            // "×" close button on hover
+            if response.hovered() {
+                painter.text(
+                    pos2(rect.right() - 8.0, rect.top() + 8.0),
+                    egui::Align2::CENTER_CENTER,
+                    "\u{00d7}",
+                    egui::FontId::proportional(10.0),
+                    Color32::from_rgb(180, 80, 80),
+                );
+            }
         }
+
+        // Check if click landed in the close zone (top-right 16×16)
+        let close_clicked = response.clicked()
+            && response
+                .interact_pointer_pos()
+                .is_some_and(|pos| pos.x > rect.right() - 16.0 && pos.y < rect.top() + 16.0);
 
         // Double-click to toggle bypass
         if response.double_clicked() {
             bridge.set_bypassed(slot_idx, !bridge.is_bypassed(slot_idx));
         }
 
-        response.on_hover_text("Click: select | Double-click: bypass | Right-click: menu")
+        let response = response
+            .on_hover_text("Click: select | Double-click: bypass | X: remove | Right-click: menu");
+        (response, close_clicked)
     }
 
     /// Draw the "+" button and its popup menu for adding effects.

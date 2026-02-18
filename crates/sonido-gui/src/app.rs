@@ -174,6 +174,7 @@ impl SonidoApp {
         let metering_tx = self.audio_bridge.metering_sender();
         let command_rx = self.audio_bridge.command_receiver();
         let transport_rx = self.audio_bridge.transport_receiver();
+        let chain_bypass = self.audio_bridge.chain_bypass();
 
         running.store(true, Ordering::SeqCst);
 
@@ -186,6 +187,7 @@ impl SonidoApp {
             metering_tx,
             command_rx,
             transport_rx,
+            chain_bypass,
             self.sample_rate,
             self.buffer_size,
         )?;
@@ -422,6 +424,21 @@ impl SonidoApp {
     /// Render the status bar.
     fn render_status_bar(&self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
+            let chain_bypassed = self.audio_bridge.chain_bypass().load(Ordering::Relaxed);
+            let bypass_text = if chain_bypassed {
+                egui::RichText::new("BYPASS")
+                    .color(Color32::from_rgb(255, 80, 80))
+                    .strong()
+            } else {
+                egui::RichText::new("BYPASS").color(Color32::from_rgb(100, 100, 110))
+            };
+            if ui.button(bypass_text).clicked() {
+                self.audio_bridge
+                    .chain_bypass()
+                    .store(!chain_bypassed, Ordering::SeqCst);
+            }
+            ui.separator();
+
             ui.label(format!("{:.0} Hz", self.sample_rate));
             ui.separator();
             ui.label(format!("{} samples", self.buffer_size));
@@ -724,6 +741,8 @@ struct AudioProcessor {
     cached_order: Vec<usize>,
     input_gain: Arc<crate::audio_bridge::AtomicParam>,
     master_volume: Arc<crate::audio_bridge::AtomicParam>,
+    chain_bypass: Arc<AtomicBool>,
+    bypass_fade: sonido_core::SmoothedParam,
     command_rx: Receiver<ChainCommand>,
     transport_rx: Receiver<crate::file_player::TransportCommand>,
     metering_tx: Sender<MeteringData>,
@@ -819,6 +838,13 @@ impl AudioProcessor {
         let frames = data.len() / self.out_ch;
         let use_file = self.file_pb.file_mode && !self.file_pb.left.is_empty();
 
+        let bypass_target = if self.chain_bypass.load(Ordering::Relaxed) {
+            0.0
+        } else {
+            1.0
+        };
+        self.bypass_fade.set_target(bypass_target);
+
         for i in 0..frames {
             let (in_l, in_r) = if use_file {
                 // Drain mic input to keep the ring buffer from overflowing
@@ -848,8 +874,20 @@ impl AudioProcessor {
             input_peak = input_peak.max(mono_in.abs());
             input_rms_sum += mono_in * mono_in;
 
-            // Process through effect chain (order + bypass handled by ChainManager)
-            (l, r) = self.chain.process_stereo(l, r);
+            // Process through effect chain with global bypass crossfade
+            let fade = self.bypass_fade.advance();
+            if fade < 1e-6 {
+                // Fully bypassed — skip chain entirely
+            } else {
+                let (wet_l, wet_r) = self.chain.process_stereo(l, r);
+                if (fade - 1.0).abs() < 1e-6 {
+                    l = wet_l;
+                    r = wet_r;
+                } else {
+                    l = l * (1.0 - fade) + wet_l * fade;
+                    r = r * (1.0 - fade) + wet_r * fade;
+                }
+            }
 
             // Apply master volume
             l *= mv;
@@ -910,6 +948,7 @@ fn build_audio_streams(
     metering_tx: Sender<MeteringData>,
     command_rx: Receiver<ChainCommand>,
     transport_rx: Receiver<crate::file_player::TransportCommand>,
+    chain_bypass: Arc<AtomicBool>,
     sample_rate: f32,
     buffer_size: usize,
 ) -> Result<Vec<cpal::Stream>, String> {
@@ -944,6 +983,7 @@ fn build_audio_streams(
     let mut streams: Vec<cpal::Stream> = Vec::with_capacity(2);
 
     // Input stream (if mic available)
+    let tx_fallback = tx.clone();
     let in_ch = if let Some(ref input_dev) = input_device {
         let input_channels = input_dev
             .default_input_config()
@@ -962,7 +1002,7 @@ fn build_audio_streams(
         }
 
         let running_input = Arc::clone(&running);
-        let input_stream = input_dev
+        match input_dev
             .build_input_stream(
                 &input_config,
                 move |data: &[f32], _: &cpal::InputCallbackInfo| {
@@ -976,14 +1016,30 @@ fn build_audio_streams(
                 |err| log::error!("Input stream error: {}", err),
                 None,
             )
-            .map_err(|e| format!("Failed to build input stream: {}", e))?;
-
-        input_stream
-            .play()
-            .map_err(|e| format!("Failed to play input stream: {}", e))?;
-        streams.push(input_stream);
-
-        input_channels as usize
+            .and_then(|stream| {
+                stream
+                    .play()
+                    .map_err(|e| cpal::BuildStreamError::BackendSpecific {
+                        err: cpal::BackendSpecificError {
+                            description: e.to_string(),
+                        },
+                    })?;
+                Ok(stream)
+            }) {
+            Ok(stream) => {
+                streams.push(stream);
+                input_channels as usize
+            }
+            Err(e) => {
+                log::warn!(
+                    "Input stream unavailable ({e}) -- mic input disabled, output continues"
+                );
+                for _ in 0..2048 {
+                    let _ = tx_fallback.try_send(0.0);
+                }
+                1
+            }
+        }
     } else {
         log::warn!("No input device available -- mic input disabled");
         // Pre-fill silence so output callback doesn't block
@@ -1003,6 +1059,8 @@ fn build_audio_streams(
         cached_order: Vec::new(),
         input_gain,
         master_volume,
+        chain_bypass,
+        bypass_fade: sonido_core::SmoothedParam::fast(1.0, sample_rate),
         command_rx,
         transport_rx,
         metering_tx,
