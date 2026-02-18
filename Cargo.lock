@@ -790,6 +790,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "clack-common"
+version = "0.1.0"
+source = "git+https://github.com/prokopyl/clack.git#57e89b356f16194a04fa03cc5c5a87d88db560c7"
+dependencies = [
+ "bitflags 2.10.0",
+ "clap-sys",
+]
+
+[[package]]
+name = "clack-extensions"
+version = "0.1.0"
+source = "git+https://github.com/prokopyl/clack.git#57e89b356f16194a04fa03cc5c5a87d88db560c7"
+dependencies = [
+ "bitflags 2.10.0",
+ "clack-common",
+ "clack-plugin",
+ "clap-sys",
+]
+
+[[package]]
+name = "clack-plugin"
+version = "0.1.0"
+source = "git+https://github.com/prokopyl/clack.git#57e89b356f16194a04fa03cc5c5a87d88db560c7"
+dependencies = [
+ "clack-common",
+ "clap-sys",
+]
+
+[[package]]
 name = "clap"
 version = "4.5.54"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -798,6 +827,12 @@ dependencies = [
  "clap_builder",
  "clap_derive",
 ]
+
+[[package]]
+name = "clap-sys"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a76abbdb2907f6fd97fb6bc0b7be96b77d328f2dd9669d1075cc03369ed22154"
 
 [[package]]
 name = "clap_builder"
@@ -3854,6 +3889,19 @@ name = "sonido-platform"
 version = "0.1.0"
 dependencies = [
  "sonido-core",
+]
+
+[[package]]
+name = "sonido-plugin"
+version = "0.1.0"
+dependencies = [
+ "clack-extensions",
+ "clack-plugin",
+ "serde",
+ "serde_json",
+ "sonido-core",
+ "sonido-effects",
+ "sonido-registry",
 ]
 
 [[package]]
