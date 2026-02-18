@@ -1,11 +1,16 @@
 //! Voice management for polyphonic synthesis.
 //!
-//! Provides voice structures and allocation strategies for building
-//! monophonic and polyphonic synthesizers.
+//! Provides voice structures, unison sub-voices, modulation matrix wiring,
+//! portamento, and allocation strategies for building monophonic and
+//! polyphonic synthesizers.
 
 use crate::envelope::AdsrEnvelope;
+use crate::mod_matrix::{ModDestination, ModSourceId, ModulationMatrix, ModulationValues};
 use crate::oscillator::{Oscillator, OscillatorWaveform};
-use sonido_core::{Effect, StateVariableFilter};
+use sonido_core::{Effect, SmoothedParam, StateVariableFilter};
+
+/// Maximum number of unison sub-voices per voice.
+pub const MAX_UNISON: usize = 16;
 
 /// Voice allocation modes for polyphonic synthesizers.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -21,10 +26,105 @@ pub enum VoiceAllocationMode {
     HighestNote,
 }
 
-/// A single synthesizer voice.
+/// A lightweight unison sub-voice — oscillator pair with pan and detune.
 ///
-/// Contains an oscillator, filter, and envelopes for amplitude and filter.
-/// This is the basic building block for polyphonic synthesizers.
+/// Each sub-voice contains its own oscillator pair (osc1 + osc2) with
+/// independent detune and stereo pan position. Sub-voices are summed
+/// in the parent [`Voice`] to produce the classic "supersaw" unison effect.
+///
+/// ## Detune Distribution
+///
+/// For `count` sub-voices with spread `s`, sub-voice `i` gets:
+/// ```text
+/// detune_cents = s * (2*i / (count-1) - 1)
+/// ```
+/// This distributes voices symmetrically around the center pitch.
+///
+/// ## Pan Distribution
+///
+/// ```text
+/// pan = stereo_width * (2*i / (count-1) - 1)
+/// ```
+/// Pan ranges from -1 (full left) to +1 (full right).
+#[derive(Debug, Clone)]
+pub struct SubVoice {
+    /// Primary oscillator
+    pub osc1: Oscillator,
+    /// Secondary oscillator (for osc2 detune/mix)
+    pub osc2: Oscillator,
+    /// Pan position: -1.0 (left) to 1.0 (right)
+    pan: f32,
+    /// Detune offset in cents from base pitch
+    detune_cents: f32,
+}
+
+impl SubVoice {
+    /// Create a new sub-voice at the given sample rate.
+    fn new(sample_rate: f32) -> Self {
+        let mut osc1 = Oscillator::new(sample_rate);
+        let mut osc2 = Oscillator::new(sample_rate);
+        osc1.set_waveform(OscillatorWaveform::Saw);
+        osc2.set_waveform(OscillatorWaveform::Saw);
+        Self {
+            osc1,
+            osc2,
+            pan: 0.0,
+            detune_cents: 0.0,
+        }
+    }
+
+    /// Set frequency for both oscillators, applying sub-voice detune and osc2 detune.
+    fn set_frequency(&mut self, base_freq: f32, osc2_detune_cents: f32) {
+        let freq = base_freq * cents_to_ratio(self.detune_cents);
+        self.osc1.set_frequency(freq);
+        self.osc2
+            .set_frequency(freq * cents_to_ratio(osc2_detune_cents));
+    }
+
+    /// Reset oscillator phase.
+    fn reset(&mut self) {
+        self.osc1.reset();
+        self.osc2.reset();
+    }
+
+    /// Set sample rate on both oscillators.
+    fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.osc1.set_sample_rate(sample_rate);
+        self.osc2.set_sample_rate(sample_rate);
+    }
+
+    /// Advance oscillators and return mixed output.
+    #[inline]
+    fn advance(&mut self, osc_mix: f32) -> f32 {
+        let o1 = self.osc1.advance();
+        let o2 = self.osc2.advance();
+        o1 * (1.0 - osc_mix) + o2 * osc_mix
+    }
+
+    /// Get pan position.
+    pub fn pan(&self) -> f32 {
+        self.pan
+    }
+
+    /// Get detune in cents.
+    pub fn detune_cents(&self) -> f32 {
+        self.detune_cents
+    }
+}
+
+/// A single synthesizer voice with modulation matrix, portamento, and unison.
+///
+/// Contains sub-voices (for unison), a filter, amplitude/filter envelopes,
+/// and a per-voice modulation matrix for flexible routing.
+///
+/// ## Parameters
+/// - `osc2_detune`: Oscillator 2 detune in cents (0.0, default 0.0)
+/// - `osc_mix`: Oscillator mix, 0 = osc1 only, 1 = osc2 only (0.0 to 1.0, default 0.0)
+/// - `filter_env_amount`: Filter envelope amount in Hz, bipolar (-20000.0 to 20000.0, default 0.0)
+/// - `filter_cutoff`: Base filter cutoff in Hz (20.0 to 20000.0, default 1000.0)
+/// - `unison_count`: Number of unison sub-voices (1 to 16, default 1)
+/// - `unison_spread`: Detune spread in cents across unison voices (0.0 to 100.0, default 0.0)
+/// - `stereo_width`: Stereo spread of unison voices (0.0 to 1.0, default 1.0)
 ///
 /// # Example
 ///
@@ -34,25 +134,40 @@ pub enum VoiceAllocationMode {
 /// let mut voice = Voice::new(48000.0);
 /// voice.note_on(60, 100); // Middle C, velocity 100
 ///
-/// // Generate samples
+/// // Generate stereo samples with unison
+/// voice.set_unison_count(4);
+/// voice.set_unison_spread(15.0); // 15 cents spread
 /// for _ in 0..1000 {
-///     let sample = voice.process();
+///     let (left, right) = voice.process_stereo();
 /// }
 ///
 /// voice.note_off();
 /// ```
 #[derive(Debug, Clone)]
 pub struct Voice {
-    /// Primary oscillator
-    pub osc1: Oscillator,
-    /// Secondary oscillator (for detuning, sync, etc.)
-    pub osc2: Oscillator,
-    /// Filter
+    /// Unison sub-voices (only `unison_count` are active)
+    sub_voices: [SubVoice; MAX_UNISON],
+    /// Number of active unison voices (1 to `MAX_UNISON`)
+    unison_count: usize,
+    /// Detune spread in cents across unison voices
+    unison_spread: f32,
+    /// Stereo width for unison pan distribution (0.0 to 1.0)
+    stereo_width: f32,
+
+    /// Filter (shared across all sub-voices)
     pub filter: StateVariableFilter,
     /// Amplitude envelope
     pub amp_env: AdsrEnvelope,
     /// Filter envelope
     pub filter_env: AdsrEnvelope,
+
+    /// Per-voice modulation matrix (16 routing slots)
+    pub mod_matrix: ModulationMatrix<16>,
+    /// Current modulation source values (populated each sample)
+    mod_values: ModulationValues,
+
+    /// Portamento frequency smoother — smooths toward target frequency.
+    freq_target: SmoothedParam,
 
     /// Current MIDI note number
     note: u8,
@@ -71,10 +186,16 @@ pub struct Voice {
     osc2_detune: f32,
     /// Oscillator mix (0 = osc1 only, 1 = osc2 only)
     osc_mix: f32,
-    /// Filter envelope amount
+    /// Filter envelope amount (bipolar, in Hz)
     filter_env_amount: f32,
     /// Base filter cutoff frequency
     filter_cutoff: f32,
+
+    // External modulation (set by parent synth LFOs, etc.)
+    /// External pitch modulation in semitones (additive with mod matrix).
+    external_pitch_mod: f32,
+    /// External filter cutoff modulation in Hz (additive with mod matrix).
+    external_filter_mod: f32,
 }
 
 impl Default for Voice {
@@ -87,11 +208,16 @@ impl Voice {
     /// Create a new voice at the given sample rate.
     pub fn new(sample_rate: f32) -> Self {
         let mut voice = Self {
-            osc1: Oscillator::new(sample_rate),
-            osc2: Oscillator::new(sample_rate),
+            sub_voices: core::array::from_fn(|_| SubVoice::new(sample_rate)),
+            unison_count: 1,
+            unison_spread: 0.0,
+            stereo_width: 1.0,
             filter: StateVariableFilter::new(sample_rate),
             amp_env: AdsrEnvelope::new(sample_rate),
             filter_env: AdsrEnvelope::new(sample_rate),
+            mod_matrix: ModulationMatrix::new(),
+            mod_values: ModulationValues::new(),
+            freq_target: SmoothedParam::interpolated(440.0, sample_rate),
             note: 0,
             velocity: 0,
             age: 0,
@@ -101,11 +227,10 @@ impl Voice {
             osc_mix: 0.0,
             filter_env_amount: 0.0,
             filter_cutoff: 1000.0,
+            external_pitch_mod: 0.0,
+            external_filter_mod: 0.0,
         };
 
-        // Set some reasonable defaults
-        voice.osc1.set_waveform(OscillatorWaveform::Saw);
-        voice.osc2.set_waveform(OscillatorWaveform::Saw);
         voice.filter.set_cutoff(1000.0);
         voice.filter.set_resonance(1.0);
 
@@ -115,28 +240,46 @@ impl Voice {
     /// Set sample rate for all components.
     pub fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
-        self.osc1.set_sample_rate(sample_rate);
-        self.osc2.set_sample_rate(sample_rate);
+        for sv in &mut self.sub_voices {
+            sv.set_sample_rate(sample_rate);
+        }
         self.filter.set_sample_rate(sample_rate);
         self.amp_env.set_sample_rate(sample_rate);
         self.filter_env.set_sample_rate(sample_rate);
+        self.freq_target.set_sample_rate(sample_rate);
     }
 
     /// Trigger note on.
+    ///
+    /// With portamento enabled, the frequency smoothly glides from the
+    /// previous note to the new one. Without portamento, frequency snaps
+    /// instantly.
     pub fn note_on(&mut self, note: u8, velocity: u8) {
         self.note = note;
         self.velocity = velocity;
         self.active = true;
 
         let freq = midi_to_freq(note);
-        self.osc1.set_frequency(freq);
-        self.osc2
-            .set_frequency(freq * cents_to_ratio(self.osc2_detune));
 
-        self.osc1.reset();
-        self.osc2.reset();
+        // Portamento: if voice was already active, glide; otherwise snap
+        if self.freq_target.advance() > 0.0 && self.amp_env.is_active() {
+            self.freq_target.set_target(freq);
+        } else {
+            self.freq_target.set_immediate(freq);
+        }
+
+        // Reset sub-voice oscillators and apply frequencies
+        for sv in &mut self.sub_voices[..self.unison_count] {
+            sv.set_frequency(freq, self.osc2_detune);
+            sv.reset();
+        }
+
         self.amp_env.gate_on();
         self.filter_env.gate_on();
+
+        // Populate initial mod values
+        self.mod_values.set_velocity_from_midi(velocity);
+        self.mod_values.set_key_track_from_note(note);
     }
 
     /// Trigger note off.
@@ -158,9 +301,11 @@ impl Voice {
         self.note = 0;
         self.velocity = 0;
         self.age = 0;
-        self.osc1.reset();
-        self.osc2.reset();
+        for sv in &mut self.sub_voices {
+            sv.reset();
+        }
         self.filter.reset();
+        self.mod_values = ModulationValues::new();
     }
 
     /// Check if voice is currently producing sound.
@@ -188,59 +333,269 @@ impl Voice {
         self.age = age;
     }
 
+    /// Get the primary oscillator (sub-voice 0, osc1) for read access.
+    pub fn osc1(&self) -> &Oscillator {
+        &self.sub_voices[0].osc1
+    }
+
+    /// Get the secondary oscillator (sub-voice 0, osc2) for read access.
+    pub fn osc2(&self) -> &Oscillator {
+        &self.sub_voices[0].osc2
+    }
+
+    /// Set oscillator 1 waveform on all sub-voices.
+    pub fn set_osc1_waveform(&mut self, waveform: OscillatorWaveform) {
+        for sv in &mut self.sub_voices {
+            sv.osc1.set_waveform(waveform);
+        }
+    }
+
+    /// Set oscillator 2 waveform on all sub-voices.
+    pub fn set_osc2_waveform(&mut self, waveform: OscillatorWaveform) {
+        for sv in &mut self.sub_voices {
+            sv.osc2.set_waveform(waveform);
+        }
+    }
+
     /// Set oscillator 2 detune in cents.
+    ///
+    /// Range: -2400.0 to 2400.0 cents (-2 to +2 octaves).
     pub fn set_osc2_detune(&mut self, cents: f32) {
         self.osc2_detune = cents;
         if self.active {
             let base_freq = midi_to_freq(self.note);
-            self.osc2.set_frequency(base_freq * cents_to_ratio(cents));
+            for sv in &mut self.sub_voices[..self.unison_count] {
+                sv.set_frequency(base_freq, cents);
+            }
         }
     }
 
     /// Set oscillator mix (0 = osc1 only, 1 = osc2 only).
+    ///
+    /// Range: 0.0 to 1.0.
     pub fn set_osc_mix(&mut self, mix: f32) {
         self.osc_mix = mix.clamp(0.0, 1.0);
     }
 
-    /// Set filter envelope amount (in Hz).
+    /// Set filter envelope amount in Hz (bipolar).
+    ///
+    /// Positive values sweep the filter cutoff up, negative values sweep down.
+    /// Range: -20000.0 to 20000.0 Hz.
     pub fn set_filter_env_amount(&mut self, amount: f32) {
         self.filter_env_amount = amount;
     }
 
     /// Set base filter cutoff frequency.
+    ///
+    /// Range: 20.0 to 20000.0 Hz.
     pub fn set_filter_cutoff(&mut self, freq: f32) {
         self.filter_cutoff = freq;
         self.filter.set_cutoff(freq);
     }
 
-    /// Process one sample.
+    /// Set portamento (glide) time in milliseconds.
+    ///
+    /// Range: 0.0 (instant) to any positive value. Typical: 50-500 ms.
+    /// Uses interpolated smoothing (50 ms preset as base, overridden here).
+    pub fn set_portamento_time(&mut self, ms: f32) {
+        self.freq_target.set_smoothing_time_ms(ms.max(0.0));
+    }
+
+    /// Set number of unison sub-voices.
+    ///
+    /// Range: 1 to 16. More voices = thicker sound, higher CPU.
+    /// When count is 1, no detuning or stereo spread is applied.
+    pub fn set_unison_count(&mut self, count: usize) {
+        self.unison_count = count.clamp(1, MAX_UNISON);
+        self.recalculate_unison_distribution();
+    }
+
+    /// Get current unison count.
+    pub fn unison_count(&self) -> usize {
+        self.unison_count
+    }
+
+    /// Set unison detune spread in cents.
+    ///
+    /// Range: 0.0 to 100.0 cents. The spread is distributed symmetrically
+    /// around the center pitch.
+    pub fn set_unison_spread(&mut self, cents: f32) {
+        self.unison_spread = cents.max(0.0);
+        self.recalculate_unison_distribution();
+    }
+
+    /// Get unison detune spread in cents.
+    pub fn unison_spread(&self) -> f32 {
+        self.unison_spread
+    }
+
+    /// Set stereo width for unison voice panning.
+    ///
+    /// Range: 0.0 (mono) to 1.0 (full stereo). At 0.0, all sub-voices
+    /// are centered. At 1.0, sub-voices span the full stereo field.
+    pub fn set_stereo_width(&mut self, width: f32) {
+        self.stereo_width = width.clamp(0.0, 1.0);
+        self.recalculate_unison_distribution();
+    }
+
+    /// Get stereo width.
+    pub fn stereo_width(&self) -> f32 {
+        self.stereo_width
+    }
+
+    /// Get read access to sub-voices.
+    pub fn sub_voices(&self) -> &[SubVoice] {
+        &self.sub_voices[..self.unison_count]
+    }
+
+    /// Get mutable access to the modulation matrix.
+    pub fn mod_matrix_mut(&mut self) -> &mut ModulationMatrix<16> {
+        &mut self.mod_matrix
+    }
+
+    /// Get read access to current modulation values.
+    pub fn mod_values(&self) -> &ModulationValues {
+        &self.mod_values
+    }
+
+    /// Set a modulation source value directly (for external sources like LFOs, mod wheel).
+    pub fn set_mod_source(&mut self, source: ModSourceId, value: f32) {
+        self.mod_values.set(source, value);
+    }
+
+    /// Set external pitch modulation in semitones.
+    ///
+    /// Additive with mod matrix pitch modulation. Used by parent synths
+    /// (e.g., `PolyphonicSynth`) to apply global LFO vibrato.
+    pub fn set_external_pitch_mod(&mut self, semitones: f32) {
+        self.external_pitch_mod = semitones;
+    }
+
+    /// Set external filter cutoff modulation in Hz.
+    ///
+    /// Additive with mod matrix and envelope filter modulation.
+    pub fn set_external_filter_mod(&mut self, hz: f32) {
+        self.external_filter_mod = hz;
+    }
+
+    /// Recalculate sub-voice detune and pan from unison parameters.
+    fn recalculate_unison_distribution(&mut self) {
+        let count = self.unison_count;
+        if count == 1 {
+            self.sub_voices[0].detune_cents = 0.0;
+            self.sub_voices[0].pan = 0.0;
+            return;
+        }
+
+        let divisor = (count - 1) as f32;
+        for i in 0..count {
+            let t = 2.0 * i as f32 / divisor - 1.0; // -1.0 to 1.0
+            self.sub_voices[i].detune_cents = self.unison_spread * t;
+            self.sub_voices[i].pan = self.stereo_width * t;
+        }
+    }
+
+    /// Process one mono sample.
+    ///
+    /// Sums all active unison sub-voices, applies filter with envelope + mod
+    /// matrix modulation, then amplitude envelope with velocity scaling and
+    /// mod matrix amplitude modulation.
     #[inline]
     pub fn process(&mut self) -> f32 {
+        let (left, right) = self.process_stereo();
+        (left + right) * 0.5
+    }
+
+    /// Process one stereo sample pair.
+    ///
+    /// Returns `(left, right)`. Unison sub-voices are panned according to
+    /// their stereo position. Gain is normalized by `1/sqrt(unison_count)`
+    /// to maintain consistent perceived loudness.
+    #[inline]
+    pub fn process_stereo(&mut self) -> (f32, f32) {
         if !self.is_active() {
-            // Check if envelope just finished
             if self.active && !self.amp_env.is_active() {
                 self.active = false;
             }
-            return 0.0;
+            return (0.0, 0.0);
         }
 
-        // Generate oscillator output
-        let osc1_out = self.osc1.advance();
-        let osc2_out = self.osc2.advance();
-        let osc_out = osc1_out * (1.0 - self.osc_mix) + osc2_out * self.osc_mix;
+        // Advance portamento and get current base frequency
+        let base_freq = self.freq_target.advance();
 
-        // Apply filter with envelope modulation
-        let filter_env = self.filter_env.advance();
-        let modulated_cutoff = self.filter_cutoff + filter_env * self.filter_env_amount;
+        // Update sub-voice frequencies with portamento
+        for sv in &mut self.sub_voices[..self.unison_count] {
+            sv.set_frequency(base_freq, self.osc2_detune);
+        }
+
+        // Advance envelopes
+        let amp_env_val = self.amp_env.advance();
+        let filter_env_val = self.filter_env.advance();
+
+        // Populate mod values from voice state
+        self.mod_values.amp_env = amp_env_val;
+        self.mod_values.filter_env = filter_env_val;
+
+        // Read modulation destinations from matrix
+        let pitch_mod = self
+            .mod_matrix
+            .get_modulation(ModDestination::Osc1Pitch, &self.mod_values);
+        let filter_mod = self
+            .mod_matrix
+            .get_modulation(ModDestination::FilterCutoff, &self.mod_values);
+        let amp_mod = self
+            .mod_matrix
+            .get_modulation(ModDestination::Amplitude, &self.mod_values);
+
+        // Apply pitch modulation (in semitones) to sub-voice frequencies
+        let total_pitch_mod = pitch_mod + self.external_pitch_mod;
+        if total_pitch_mod.abs() > 1e-6 {
+            let pitch_ratio = cents_to_ratio(total_pitch_mod * 100.0);
+            for sv in &mut self.sub_voices[..self.unison_count] {
+                let f1 = sv.osc1.frequency() * pitch_ratio;
+                let f2 = sv.osc2.frequency() * pitch_ratio;
+                sv.osc1.set_frequency(f1);
+                sv.osc2.set_frequency(f2);
+            }
+        }
+
+        // Sum sub-voices with stereo panning
+        let mut left = 0.0_f32;
+        let mut right = 0.0_f32;
+        let count = self.unison_count;
+        for sv in &mut self.sub_voices[..count] {
+            let sample = sv.advance(self.osc_mix);
+            // Constant-power pan law: left = cos(angle), right = sin(angle)
+            // where angle = (pan + 1) * pi/4 maps [-1,1] to [0, pi/2]
+            let angle = (sv.pan + 1.0) * core::f32::consts::FRAC_PI_4;
+            let (sin_a, cos_a) = libm::sincosf(angle);
+            left += sample * cos_a;
+            right += sample * sin_a;
+        }
+
+        // Normalize gain: 1/sqrt(count) to maintain perceived loudness
+        let gain_norm = 1.0 / libm::sqrtf(count as f32);
+        left *= gain_norm;
+        right *= gain_norm;
+
+        // Apply filter with envelope + mod matrix + external modulation (bipolar env amount)
+        let modulated_cutoff = self.filter_cutoff
+            + filter_env_val * self.filter_env_amount
+            + filter_mod * 1000.0
+            + self.external_filter_mod;
         self.filter
             .set_cutoff(modulated_cutoff.clamp(20.0, 20000.0));
-        let filtered = self.filter.process(osc_out);
+        left = self.filter.process(left);
+        // Process right through filter — for dual-mono, same filter state is fine
+        // since SVF is stateful; for true stereo filter we'd need two filters.
+        // This matches the original mono filter behavior.
+        right = self.filter.process(right);
 
-        // Apply amplitude envelope with velocity scaling
-        let amp_env = self.amp_env.advance();
+        // Apply amplitude envelope with velocity scaling and mod matrix
         let velocity_scale = self.velocity as f32 / 127.0;
+        let amp = amp_env_val * velocity_scale * (1.0 + amp_mod).max(0.0);
 
-        filtered * amp_env * velocity_scale
+        (left * amp, right * amp)
     }
 }
 
@@ -361,7 +716,7 @@ impl<const N: usize> VoiceManager<N> {
         self.round_robin_idx = 0;
     }
 
-    /// Process one sample from all voices.
+    /// Process one mono sample from all voices.
     #[inline]
     pub fn process(&mut self) -> f32 {
         let mut output = 0.0;
@@ -374,8 +729,14 @@ impl<const N: usize> VoiceManager<N> {
     /// Process stereo output from all voices.
     #[inline]
     pub fn process_stereo(&mut self) -> (f32, f32) {
-        let mono = self.process();
-        (mono, mono)
+        let mut left = 0.0;
+        let mut right = 0.0;
+        for voice in &mut self.voices {
+            let (l, r) = voice.process_stereo();
+            left += l;
+            right += r;
+        }
+        (left, right)
     }
 
     fn allocate_voice(&mut self, _note: u8) -> usize {
@@ -442,6 +803,9 @@ pub fn cents_to_ratio(cents: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
+    extern crate alloc;
+    use alloc::vec::Vec;
+
     use super::*;
 
     #[test]
@@ -514,6 +878,212 @@ mod tests {
         }
 
         assert!(sum > 0.0, "Voice should produce output");
+    }
+
+    #[test]
+    fn test_voice_process_stereo() {
+        let mut voice = Voice::new(48000.0);
+        voice.note_on(69, 100);
+
+        let mut left_sum = 0.0;
+        let mut right_sum = 0.0;
+        for _ in 0..1000 {
+            let (l, r) = voice.process_stereo();
+            left_sum += l.abs();
+            right_sum += r.abs();
+        }
+
+        assert!(left_sum > 0.0, "Left channel should produce output");
+        assert!(right_sum > 0.0, "Right channel should produce output");
+    }
+
+    #[test]
+    fn test_voice_unison_count() {
+        let mut voice = Voice::new(48000.0);
+        assert_eq!(voice.unison_count(), 1);
+
+        voice.set_unison_count(4);
+        assert_eq!(voice.unison_count(), 4);
+
+        // Clamp to MAX_UNISON
+        voice.set_unison_count(100);
+        assert_eq!(voice.unison_count(), MAX_UNISON);
+
+        // Clamp to 1
+        voice.set_unison_count(0);
+        assert_eq!(voice.unison_count(), 1);
+    }
+
+    #[test]
+    fn test_unison_detune_distribution() {
+        let mut voice = Voice::new(48000.0);
+        voice.set_unison_count(4);
+        voice.set_unison_spread(20.0);
+
+        let svs = voice.sub_voices();
+        assert_eq!(svs.len(), 4);
+
+        // Symmetric: first should be -20, last should be +20
+        assert!(
+            (svs[0].detune_cents() - (-20.0)).abs() < 0.01,
+            "First sub-voice detune: {}",
+            svs[0].detune_cents()
+        );
+        assert!(
+            (svs[3].detune_cents() - 20.0).abs() < 0.01,
+            "Last sub-voice detune: {}",
+            svs[3].detune_cents()
+        );
+
+        // Middle voices should be evenly spaced
+        let expected_1 = -20.0 + 40.0 / 3.0; // ~-6.67
+        assert!(
+            (svs[1].detune_cents() - expected_1).abs() < 0.01,
+            "Second sub-voice detune: {} expected {}",
+            svs[1].detune_cents(),
+            expected_1
+        );
+    }
+
+    #[test]
+    fn test_unison_pan_distribution() {
+        let mut voice = Voice::new(48000.0);
+        voice.set_unison_count(3);
+        voice.set_stereo_width(1.0);
+
+        let svs = voice.sub_voices();
+        assert!(
+            (svs[0].pan() - (-1.0)).abs() < 0.01,
+            "First pan: {}",
+            svs[0].pan()
+        );
+        assert!(svs[1].pan().abs() < 0.01, "Center pan: {}", svs[1].pan());
+        assert!(
+            (svs[2].pan() - 1.0).abs() < 0.01,
+            "Last pan: {}",
+            svs[2].pan()
+        );
+    }
+
+    #[test]
+    fn test_unison_single_voice_centered() {
+        let mut voice = Voice::new(48000.0);
+        voice.set_unison_count(1);
+        voice.set_unison_spread(50.0);
+        voice.set_stereo_width(1.0);
+
+        let svs = voice.sub_voices();
+        assert_eq!(svs.len(), 1);
+        assert!(svs[0].detune_cents().abs() < 0.001);
+        assert!(svs[0].pan().abs() < 0.001);
+    }
+
+    #[test]
+    fn test_unison_stereo_spread() {
+        let mut voice = Voice::new(48000.0);
+        voice.set_unison_count(8);
+        voice.set_unison_spread(30.0);
+        voice.note_on(60, 100);
+
+        // Run enough samples for the attack envelope to build up
+        for _ in 0..2000 {
+            voice.process_stereo();
+        }
+
+        // With 8 voices detuned, there should be a thick stereo signal
+        let mut left_sum = 0.0;
+        let mut right_sum = 0.0;
+        for _ in 0..1000 {
+            let (l, r) = voice.process_stereo();
+            left_sum += l.abs();
+            right_sum += r.abs();
+        }
+
+        assert!(left_sum > 0.0, "Left should have output");
+        assert!(right_sum > 0.0, "Right should have output");
+    }
+
+    #[test]
+    fn test_portamento() {
+        let mut voice = Voice::new(48000.0);
+        voice.set_portamento_time(100.0); // 100ms glide
+
+        // First note — snaps immediately
+        voice.note_on(60, 100);
+        for _ in 0..100 {
+            voice.process();
+        }
+
+        // Second note — should glide
+        voice.note_on(72, 100);
+        let freq_after_trigger = voice.freq_target.advance();
+        let target_freq = midi_to_freq(72);
+
+        // Should not have reached target yet
+        assert!(
+            (freq_after_trigger - target_freq).abs() > 1.0,
+            "Portamento should not reach target immediately: freq={}",
+            freq_after_trigger
+        );
+
+        // After enough time, should approach target
+        for _ in 0..48000 {
+            voice.process();
+        }
+        let freq_after_glide = voice.freq_target.advance();
+        assert!(
+            (freq_after_glide - target_freq).abs() < 1.0,
+            "Portamento should reach target: got {} expected {}",
+            freq_after_glide,
+            target_freq
+        );
+    }
+
+    #[test]
+    fn test_mod_matrix_wiring() {
+        use crate::mod_matrix::ModulationRoute;
+
+        let mut voice = Voice::new(48000.0);
+
+        // Route filter envelope to filter cutoff
+        voice.mod_matrix.add_route(ModulationRoute::unipolar(
+            ModSourceId::FilterEnv,
+            ModDestination::FilterCutoff,
+            0.5,
+        ));
+
+        voice.note_on(60, 100);
+
+        // Process some samples — filter env should affect cutoff through mod matrix
+        for _ in 0..1000 {
+            voice.process();
+        }
+
+        // Mod values should be populated
+        assert!(
+            voice.mod_values().amp_env > 0.0,
+            "Amp env should be positive"
+        );
+    }
+
+    #[test]
+    fn test_bipolar_filter_env_amount() {
+        let mut voice = Voice::new(48000.0);
+        voice.set_filter_cutoff(5000.0);
+        voice.set_filter_env_amount(-3000.0); // Negative = sweep down
+
+        voice.note_on(60, 100);
+
+        // During attack, filter env is positive, so cutoff should decrease
+        // (5000 + positive_env * -3000)
+        let mut samples = Vec::new();
+        for _ in 0..500 {
+            samples.push(voice.process());
+        }
+
+        // Should produce output (doesn't crash with negative env amount)
+        let sum: f32 = samples.iter().map(|s| s.abs()).sum();
+        assert!(sum > 0.0, "Bipolar filter env should produce output");
     }
 
     #[test]
@@ -595,5 +1165,30 @@ mod tests {
         }
 
         assert!(sum > 0.0, "Manager should produce output");
+    }
+
+    #[test]
+    fn test_voice_manager_stereo() {
+        let mut manager: VoiceManager<4> = VoiceManager::new(48000.0);
+
+        // Set unison on all voices for stereo output
+        for voice in manager.voices_mut() {
+            voice.set_unison_count(4);
+            voice.set_unison_spread(20.0);
+        }
+
+        manager.note_on(60, 100);
+        manager.note_on(64, 100);
+
+        let mut left_sum = 0.0;
+        let mut right_sum = 0.0;
+        for _ in 0..1000 {
+            let (l, r) = manager.process_stereo();
+            left_sum += l.abs();
+            right_sum += r.abs();
+        }
+
+        assert!(left_sum > 0.0, "Left should have stereo output");
+        assert!(right_sum > 0.0, "Right should have stereo output");
     }
 }

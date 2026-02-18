@@ -124,7 +124,8 @@ pub use mod_matrix::{
 pub use oscillator::{Oscillator, OscillatorWaveform};
 pub use synth::{MonophonicSynth, PolyphonicSynth};
 pub use voice::{
-    Voice, VoiceAllocationMode, VoiceManager, cents_to_ratio, freq_to_midi, midi_to_freq,
+    MAX_UNISON, SubVoice, Voice, VoiceAllocationMode, VoiceManager, cents_to_ratio, freq_to_midi,
+    midi_to_freq,
 };
 
 // Re-export commonly used types from sonido-core

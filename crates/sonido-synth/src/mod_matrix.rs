@@ -126,7 +126,7 @@ impl ModulationRoute {
 ///     0.8,
 /// ));
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ModulationMatrix<const N: usize> {
     routes: [Option<ModulationRoute>; N],
     route_count: usize,
