@@ -47,8 +47,7 @@ fn bench_effect<E: Effect>(c: &mut Criterion, name: &str, mut effect: E) {
 fn bench_distortion(c: &mut Criterion) {
     let mut effect = Distortion::new(SAMPLE_RATE);
     effect.set_drive_db(20.0);
-    effect.set_tone_hz(4000.0);
-    effect.set_level_db(-6.0);
+    effect.set_tone_db(3.0);
     bench_effect(c, "Distortion", effect);
 }
 
@@ -288,7 +287,7 @@ fn bench_effect_chain(c: &mut Criterion) {
     let distortion = {
         let mut d = Distortion::new(SAMPLE_RATE);
         d.set_drive_db(12.0);
-        d.set_level_db(-6.0);
+        d.set_tone_db(3.0);
         d
     };
     let chorus = {

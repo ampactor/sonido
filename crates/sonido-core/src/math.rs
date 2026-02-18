@@ -18,6 +18,19 @@
 //! | [`foldback`] | Complex, synthy | Even + Odd | Synth distortion |
 //! | [`asymmetric_clip`] | Warm, tube-like | Even + Odd | Vintage amps |
 //!
+//! # ADAA Antiderivatives
+//!
+//! First antiderivatives for use with [`Adaa1`](crate::adaa::Adaa1):
+//!
+//! | Waveshaper | Antiderivative | Notes |
+//! |------------|----------------|-------|
+//! | [`soft_clip`] (tanh) | [`soft_clip_ad`] | Numerically stable `ln(2·cosh)` |
+//! | [`hard_clip`] | [`hard_clip_ad`] | Piecewise quadratic/linear |
+//! | tape positive | [`tape_sat_pos_ad`] | Exponential saturation |
+//! | tape negative | [`tape_sat_neg_ad`] | Asymmetric exponential |
+//! | tape combined | [`tape_sat_ad`] | Piecewise with continuity correction |
+//! | [`asymmetric_clip`] | [`asymmetric_clip_ad`] | Piecewise `soft_clip_ad` |
+//!
 //! # Utilities
 //!
 //! - [`lerp`] - Linear interpolation
@@ -172,6 +185,146 @@ pub fn asymmetric_clip(x: f32) -> f32 {
     } else {
         // Negative: harder clipping (reaches limit faster)
         tanhf(x * 1.5) / 1.5 * 1.2
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Antiderivative companion functions for ADAA
+// ---------------------------------------------------------------------------
+//
+// Each `_ad` function is the first antiderivative of the corresponding
+// waveshaper above.  ADAA processors use F(x₁) − F(x₀) to approximate the
+// continuous-time convolution, so constant offsets are irrelevant.
+//
+// Reference: Parker et al., "Reducing the Aliasing of Nonlinear Waveshaping
+// Using Continuous-Time Convolution", DAFx-2016.
+
+/// First antiderivative of [`soft_clip`] (`tanh`).
+///
+/// Computes `ln(2·cosh(x))` using the numerically stable identity:
+///
+/// ```text
+/// ln(2·cosh(x)) = |x| + ln(1 + exp(−2|x|))
+/// ```
+///
+/// The direct formula `ln(cosh(x))` overflows for `|x| > ~89` because
+/// `cosh(x)` exceeds `f32::MAX`. This identity keeps the `exp` argument
+/// always ≤ 0, preventing overflow entirely.
+///
+/// Differs from the true `ln(cosh(x))` by a constant `ln(2)`, which
+/// cancels in ADAA's difference computation `F(x₁) − F(x₀)`.
+///
+/// # Reference
+///
+/// Parker et al., DAFx-2016, Section 4.1.
+#[inline]
+pub fn soft_clip_ad(x: f32) -> f32 {
+    let abs_x = x.abs();
+    abs_x + logf(1.0 + expf(-2.0 * abs_x))
+}
+
+/// First antiderivative of [`hard_clip`].
+///
+/// Piecewise quadratic/linear antiderivative of the hard clipper:
+///
+/// ```text
+/// F(x) = x²/2           for |x| ≤ threshold
+/// F(x) = t·|x| − t²/2   for |x| > threshold
+/// ```
+///
+/// For use with [`Adaa1`](crate::adaa::Adaa1), capture the threshold
+/// in a closure: `|x| hard_clip_ad(x, threshold)`.
+///
+/// # Reference
+///
+/// Parker et al., DAFx-2016, Section 4.2.
+#[inline]
+pub fn hard_clip_ad(x: f32, threshold: f32) -> f32 {
+    let abs_x = x.abs();
+    if abs_x <= threshold {
+        x * x * 0.5
+    } else {
+        threshold * abs_x - threshold * threshold * 0.5
+    }
+}
+
+/// First antiderivative of the positive tape-saturation branch `1 − exp(−2x)`.
+///
+/// ```text
+/// ∫(1 − exp(−2x)) dx = x + exp(−2x) / 2
+/// ```
+///
+/// This is the positive-input branch of the asymmetric tape saturation
+/// transfer function used by `TapeSaturation`.
+///
+/// # Reference
+///
+/// Parker et al., DAFx-2016 (applied to exponential saturation curves).
+#[inline]
+pub fn tape_sat_pos_ad(x: f32) -> f32 {
+    x + expf(-2.0 * x) * 0.5
+}
+
+/// First antiderivative of the negative tape-saturation branch `−1 + exp(1.8x)`.
+///
+/// ```text
+/// ∫(−1 + exp(1.8x)) dx = −x + exp(1.8x) / 1.8
+/// ```
+///
+/// This is the negative-input branch of the asymmetric tape saturation
+/// transfer function used by `TapeSaturation`.
+///
+/// # Reference
+///
+/// Parker et al., DAFx-2016 (applied to exponential saturation curves).
+#[inline]
+pub fn tape_sat_neg_ad(x: f32) -> f32 {
+    -x + expf(1.8 * x) / 1.8
+}
+
+/// First antiderivative of the combined tape-saturation waveshaper.
+///
+/// Piecewise continuous antiderivative of the asymmetric tape transfer
+/// function:
+///
+/// ```text
+/// f(x) = 1 − exp(−2x)    for x ≥ 0
+/// f(x) = −1 + exp(1.8x)   for x < 0
+/// ```
+///
+/// A continuity correction of `1/2 − 1/1.8` is applied to the negative
+/// branch so that `F(0⁻) = F(0⁺)`.
+#[inline]
+pub fn tape_sat_ad(x: f32) -> f32 {
+    if x >= 0.0 {
+        tape_sat_pos_ad(x)
+    } else {
+        // Continuity: pos at 0 = 0 + 0.5 = 0.5
+        //             neg at 0 = 0 + 1/1.8 = 0.5556
+        //             correction = 0.5 - 1/1.8 = -1/18
+        tape_sat_neg_ad(x) + (0.5 - 1.0 / 1.8)
+    }
+}
+
+/// First antiderivative of [`asymmetric_clip`].
+///
+/// Piecewise antiderivative matching the asymmetric clipping function:
+///
+/// ```text
+/// F(x) = ln(2·cosh(x))                        for x ≥ 0
+/// F(x) = (8/15)·ln(2·cosh(1.5x)) + (7/15)·ln2 for x < 0
+/// ```
+///
+/// The negative branch uses `(8/15)` because `asymmetric_clip` applies
+/// `tanh(1.5x) · 1.2 / 1.5 = 0.8 · tanh(1.5x)`, and the chain rule
+/// gives `0.8 / 1.5 = 8/15` as the antiderivative coefficient.
+/// The `(7/15)·ln2` term ensures continuity at `x = 0`.
+#[inline]
+pub fn asymmetric_clip_ad(x: f32) -> f32 {
+    if x >= 0.0 {
+        soft_clip_ad(x)
+    } else {
+        (8.0 / 15.0) * soft_clip_ad(1.5 * x) + core::f32::consts::LN_2 * 7.0 / 15.0
     }
 }
 
@@ -567,5 +720,156 @@ mod tests {
         assert_eq!(l, 0.5); // below knee
         assert!(r <= 1.0); // above knee, limited
         assert!(r > 0.9);
+    }
+
+    // --- Antiderivative tests ---
+    //
+    // Verify each _ad function against trapezoidal numerical integration
+    // of the corresponding waveshaper: ∫_a^b f(x)dx ≈ F(b) − F(a).
+
+    /// Trapezoidal integration of `f` over `[a, b]` with `n` subintervals.
+    fn trapz(f: impl Fn(f32) -> f32, a: f32, b: f32, n: usize) -> f32 {
+        let h = (b - a) / n as f32;
+        let mut sum = 0.5 * (f(a) + f(b));
+        for i in 1..n {
+            sum += f(a + i as f32 * h);
+        }
+        sum * h
+    }
+
+    #[test]
+    fn test_soft_clip_ad_vs_numerical() {
+        let intervals: &[(f32, f32)] = &[(0.0, 1.0), (-2.0, 2.0), (0.5, 3.0), (-3.0, -0.5)];
+        for &(a, b) in intervals {
+            let numerical = trapz(soft_clip, a, b, 10_000);
+            let analytical = soft_clip_ad(b) - soft_clip_ad(a);
+            assert!(
+                (numerical - analytical).abs() < 1e-3,
+                "soft_clip_ad [{a}, {b}]: numerical={numerical}, analytical={analytical}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_soft_clip_ad_no_overflow() {
+        // Large inputs that would overflow coshf
+        let val = soft_clip_ad(100.0);
+        assert!(val.is_finite(), "overflow at x=100: {val}");
+        assert!((val - 100.0).abs() < 1e-5, "expected ~100.0, got {val}");
+
+        let val_neg = soft_clip_ad(-100.0);
+        assert!(val_neg.is_finite(), "overflow at x=-100: {val_neg}");
+        assert!(
+            (val_neg - 100.0).abs() < 1e-5,
+            "expected ~100.0, got {val_neg}"
+        );
+    }
+
+    #[test]
+    fn test_hard_clip_ad_vs_numerical() {
+        let threshold = 0.8;
+        let f = |x: f32| hard_clip(x, threshold);
+        let intervals: &[(f32, f32)] = &[
+            (0.0, 0.5),   // below threshold
+            (0.0, 1.5),   // crosses threshold
+            (-1.5, 1.5),  // symmetric span
+            (-2.0, -0.5), // negative region
+        ];
+        for &(a, b) in intervals {
+            let numerical = trapz(f, a, b, 10_000);
+            let analytical = hard_clip_ad(b, threshold) - hard_clip_ad(a, threshold);
+            assert!(
+                (numerical - analytical).abs() < 1e-3,
+                "hard_clip_ad [{a}, {b}]: numerical={numerical}, analytical={analytical}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_tape_sat_pos_ad_vs_numerical() {
+        let f = |x: f32| 1.0 - expf(-2.0 * x);
+        let intervals: &[(f32, f32)] = &[(0.0, 1.0), (0.5, 3.0), (0.0, 5.0)];
+        for &(a, b) in intervals {
+            let numerical = trapz(f, a, b, 10_000);
+            let analytical = tape_sat_pos_ad(b) - tape_sat_pos_ad(a);
+            assert!(
+                (numerical - analytical).abs() < 1e-3,
+                "tape_sat_pos_ad [{a}, {b}]: numerical={numerical}, analytical={analytical}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_tape_sat_neg_ad_vs_numerical() {
+        let f = |x: f32| -1.0 + expf(1.8 * x);
+        let intervals: &[(f32, f32)] = &[(-3.0, 0.0), (-5.0, -1.0), (-2.0, -0.5)];
+        for &(a, b) in intervals {
+            let numerical = trapz(f, a, b, 10_000);
+            let analytical = tape_sat_neg_ad(b) - tape_sat_neg_ad(a);
+            assert!(
+                (numerical - analytical).abs() < 1e-3,
+                "tape_sat_neg_ad [{a}, {b}]: numerical={numerical}, analytical={analytical}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_tape_sat_ad_continuity() {
+        // F must be continuous at x=0
+        let at_zero_pos = tape_sat_ad(0.0);
+        let at_zero_neg = tape_sat_ad(-1e-10);
+        assert!(
+            (at_zero_pos - at_zero_neg).abs() < 1e-4,
+            "discontinuity at 0: pos={at_zero_pos}, neg={at_zero_neg}"
+        );
+    }
+
+    #[test]
+    fn test_tape_sat_ad_vs_numerical() {
+        // Combined waveshaper
+        let f = |x: f32| {
+            if x >= 0.0 {
+                1.0 - expf(-2.0 * x)
+            } else {
+                -1.0 + expf(1.8 * x)
+            }
+        };
+        let intervals: &[(f32, f32)] = &[
+            (-2.0, 2.0), // crosses zero
+            (-1.0, 1.0),
+            (0.0, 3.0),
+            (-3.0, 0.0),
+        ];
+        for &(a, b) in intervals {
+            let numerical = trapz(f, a, b, 10_000);
+            let analytical = tape_sat_ad(b) - tape_sat_ad(a);
+            assert!(
+                (numerical - analytical).abs() < 1e-3,
+                "tape_sat_ad [{a}, {b}]: numerical={numerical}, analytical={analytical}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_asymmetric_clip_ad_continuity() {
+        let at_zero_pos = asymmetric_clip_ad(0.0);
+        let at_zero_neg = asymmetric_clip_ad(-1e-10);
+        assert!(
+            (at_zero_pos - at_zero_neg).abs() < 1e-4,
+            "discontinuity at 0: pos={at_zero_pos}, neg={at_zero_neg}"
+        );
+    }
+
+    #[test]
+    fn test_asymmetric_clip_ad_vs_numerical() {
+        let intervals: &[(f32, f32)] = &[(0.0, 2.0), (-2.0, 0.0), (-2.0, 2.0), (-1.0, 1.0)];
+        for &(a, b) in intervals {
+            let numerical = trapz(asymmetric_clip, a, b, 10_000);
+            let analytical = asymmetric_clip_ad(b) - asymmetric_clip_ad(a);
+            assert!(
+                (numerical - analytical).abs() < 1e-3,
+                "asymmetric_clip_ad [{a}, {b}]: numerical={numerical}, analytical={analytical}"
+            );
+        }
     }
 }

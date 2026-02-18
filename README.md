@@ -47,7 +47,7 @@ use sonido_effects::Distortion;
 // Create a distortion effect at 48kHz
 let mut distortion = Distortion::new(48000.0);
 distortion.set_drive_db(15.0);
-distortion.set_tone_hz(4000.0);
+distortion.set_tone_db(3.0);
 
 // Process audio sample by sample
 let output = distortion.process(input_sample);

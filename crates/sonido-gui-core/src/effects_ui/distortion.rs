@@ -18,7 +18,8 @@ impl DistortionPanel {
 
     /// Render the distortion effect controls.
     ///
-    /// Param indices: 0 = drive (dB), 1 = tone (Hz), 2 = level (dB), 3 = waveshape (enum).
+    /// Param indices: 0 = drive (dB), 1 = tone (dB), 2 = output (dB),
+    /// 3 = waveshape (enum), 4 = mix (%).
     pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: SlotIndex) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
@@ -41,7 +42,9 @@ impl DistortionPanel {
                 ui.add_space(16.0);
                 bridged_knob(ui, bridge, slot, ParamIndex(1), "TONE");
                 ui.add_space(16.0);
-                bridged_knob(ui, bridge, slot, ParamIndex(2), "LEVEL");
+                bridged_knob(ui, bridge, slot, ParamIndex(4), "MIX");
+                ui.add_space(16.0);
+                bridged_knob(ui, bridge, slot, ParamIndex(2), "OUTPUT");
             });
         });
     }
