@@ -23,7 +23,9 @@
 //! - [`Biquad`] - Second-order IIR filter with RBJ cookbook coefficients
 //! - [`StateVariableFilter`] - Multi-output SVF (lowpass, highpass, bandpass simultaneously)
 //! - [`CombFilter`] - Comb filter with damping for reverb algorithms
+//! - [`ModulatedComb`] - Comb filter with LFO-modulated delay for FDN reverbs
 //! - [`AllpassFilter`] - Schroeder allpass for diffusion
+//! - [`ModulatedAllpass`] - Allpass filter with LFO-modulated delay for FDN reverbs
 //!
 //! ## Delay Lines
 //!
@@ -35,10 +37,15 @@
 //! - [`Lfo`] - Low-frequency oscillator (5 waveforms)
 //! - [`EnvelopeFollower`] - Amplitude envelope detection
 //!
+//! ## Anti-Aliasing
+//!
+//! - [`Oversampled`] - Generic wrapper for anti-aliased nonlinear processing (oversampling)
+//! - [`Adaa1`] - First-order Anti-Derivative Anti-Aliasing for static waveshapers
+//!
 //! ## Utilities
 //!
-//! - [`Oversampled`] - Generic wrapper for anti-aliased nonlinear processing
 //! - Math functions: [`db_to_linear`], [`linear_to_db`], [`fast_tanh`], etc.
+//! - Antiderivatives: [`soft_clip_ad`], [`hard_clip_ad`], [`tape_sat_ad`], etc.
 //!
 //! # no_std Support
 //!
@@ -85,6 +92,7 @@
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 
+pub mod adaa;
 pub mod allpass;
 pub mod biquad;
 pub mod comb;
@@ -105,28 +113,30 @@ pub mod svf;
 pub mod tempo;
 
 // Re-export main types at crate root
-pub use allpass::AllpassFilter;
+pub use adaa::Adaa1;
+pub use allpass::{AllpassFilter, ModulatedAllpass};
 pub use biquad::{
     Biquad, bandpass_coefficients, highpass_coefficients, lowpass_coefficients, notch_coefficients,
     peaking_eq_coefficients,
 };
-pub use comb::CombFilter;
+pub use comb::{CombFilter, ModulatedComb};
 pub use dc_blocker::DcBlocker;
 pub use delay::{FixedDelayLine, InterpolatedDelay, Interpolation};
 pub use effect::{Chain, Effect, EffectExt};
-pub use envelope::EnvelopeFollower;
+pub use envelope::{DetectionMode, EnvelopeFollower};
 pub use fast_math::{
     fast_db_to_linear, fast_exp2, fast_linear_to_db, fast_log2, fast_sin_turns, fast_tan,
 };
 pub use lfo::{Lfo, LfoWaveform};
 pub use math::{
-    asymmetric_clip, db_to_linear, fast_tanh, flush_denormal, foldback, hard_clip, linear_to_db,
-    mono_sum, soft_clip, wet_dry_mix, wet_dry_mix_stereo,
+    asymmetric_clip, asymmetric_clip_ad, db_to_linear, fast_tanh, flush_denormal, foldback,
+    hard_clip, hard_clip_ad, linear_to_db, mono_sum, soft_clip, soft_clip_ad, tape_sat_ad,
+    tape_sat_neg_ad, tape_sat_pos_ad, wet_dry_mix, wet_dry_mix_stereo,
 };
 pub use modulation::{ModulationAmount, ModulationSource};
 pub use one_pole::OnePole;
 pub use oversample::{MAX_OVERSAMPLE_FACTOR, Oversampled};
 pub use param::{LinearSmoothedParam, SmoothedParam};
 pub use param_info::{ParamDescriptor, ParamFlags, ParamId, ParamScale, ParamUnit, ParameterInfo};
-pub use svf::{StateVariableFilter, SvfOutput};
+pub use svf::{FourPoleSvf, StateVariableFilter, SvfOutput};
 pub use tempo::{NoteDivision, TempoManager, TransportState};

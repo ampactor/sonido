@@ -206,8 +206,7 @@ fn run_regression_test<E: Effect>(
 fn test_distortion_regression() {
     let mut effect = Distortion::new(SAMPLE_RATE);
     effect.set_drive_db(15.0);
-    effect.set_tone_hz(4000.0);
-    effect.set_level_db(-6.0);
+    effect.set_tone_db(3.0);
 
     let input = generate_test_signal(TEST_DURATION_SAMPLES);
     run_regression_test("distortion", effect, &input).expect("Distortion regression test failed");

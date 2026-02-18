@@ -475,7 +475,7 @@ impl<const VOICES: usize> PolyphonicSynth<VOICES> {
     pub fn set_osc1_waveform(&mut self, waveform: OscillatorWaveform) {
         self.osc1_waveform = waveform;
         for voice in self.voices.voices_mut() {
-            voice.osc1.set_waveform(waveform);
+            voice.set_osc1_waveform(waveform);
         }
     }
 
@@ -483,7 +483,7 @@ impl<const VOICES: usize> PolyphonicSynth<VOICES> {
     pub fn set_osc2_waveform(&mut self, waveform: OscillatorWaveform) {
         self.osc2_waveform = waveform;
         for voice in self.voices.voices_mut() {
-            voice.osc2.set_waveform(waveform);
+            voice.set_osc2_waveform(waveform);
         }
     }
 
@@ -577,8 +577,8 @@ impl<const VOICES: usize> PolyphonicSynth<VOICES> {
 
     fn update_voice_params(&mut self) {
         for voice in self.voices.voices_mut() {
-            voice.osc1.set_waveform(self.osc1_waveform);
-            voice.osc2.set_waveform(self.osc2_waveform);
+            voice.set_osc1_waveform(self.osc1_waveform);
+            voice.set_osc2_waveform(self.osc2_waveform);
             voice.set_osc2_detune(self.osc2_detune);
             voice.set_osc_mix(self.osc_mix);
             voice.set_filter_cutoff(self.filter_cutoff);
@@ -614,36 +614,34 @@ impl<const VOICES: usize> PolyphonicSynth<VOICES> {
         let lfo1_val = self.lfo1.advance();
         let _lfo2_val = self.lfo2.advance();
 
-        // Apply LFO modulation to voice parameters
-        if self.lfo1_to_pitch.abs() > 0.001 || self.lfo1_to_filter.abs() > 0.001 {
-            let pitch_ratio = cents_to_ratio(lfo1_val * self.lfo1_to_pitch * 100.0);
-            let filter_mod = lfo1_val * self.lfo1_to_filter;
+        // Apply LFO modulation via Voice external mod fields
+        let pitch_mod = lfo1_val * self.lfo1_to_pitch; // semitones
+        let filter_mod = lfo1_val * self.lfo1_to_filter; // Hz
 
-            for voice in self.voices.voices_mut() {
-                if voice.is_active() {
-                    // Apply pitch modulation by adjusting frequency
-                    let base_freq = midi_to_freq(voice.note());
-                    voice.osc1.set_frequency(base_freq * pitch_ratio);
-                    voice
-                        .osc2
-                        .set_frequency(base_freq * pitch_ratio * cents_to_ratio(self.osc2_detune));
-
-                    // Apply filter modulation
-                    let modulated_cutoff = (self.filter_cutoff + filter_mod).clamp(20.0, 20000.0);
-                    voice.filter.set_cutoff(modulated_cutoff);
-                }
-            }
+        for voice in self.voices.voices_mut() {
+            voice.set_external_pitch_mod(pitch_mod);
+            voice.set_external_filter_mod(filter_mod);
         }
 
         // Sum all voices
         self.voices.process()
     }
 
-    /// Process stereo output.
+    /// Process stereo output from all voices.
     #[inline]
     pub fn process_stereo(&mut self) -> (f32, f32) {
-        let mono = self.process();
-        (mono, mono)
+        let lfo1_val = self.lfo1.advance();
+        let _lfo2_val = self.lfo2.advance();
+
+        let pitch_mod = lfo1_val * self.lfo1_to_pitch;
+        let filter_mod = lfo1_val * self.lfo1_to_filter;
+
+        for voice in self.voices.voices_mut() {
+            voice.set_external_pitch_mod(pitch_mod);
+            voice.set_external_filter_mod(filter_mod);
+        }
+
+        self.voices.process_stereo()
     }
 
     /// Reset the synthesizer.

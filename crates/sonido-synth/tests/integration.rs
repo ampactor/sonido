@@ -841,8 +841,8 @@ fn voice_midi_to_freq_round_trip() {
 
     // The oscillator frequency should match
     assert!(
-        (voice.osc1.frequency() - expected_freq).abs() < 0.01,
+        (voice.osc1().frequency() - expected_freq).abs() < 0.01,
         "osc1 freq should be {expected_freq}, got {}",
-        voice.osc1.frequency()
+        voice.osc1().frequency()
     );
 }
