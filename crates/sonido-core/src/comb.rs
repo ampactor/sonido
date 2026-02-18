@@ -4,6 +4,8 @@
 //! Essential building block for Schroeder and Freeverb-style reverbs.
 
 use crate::InterpolatedDelay;
+use crate::Interpolation;
+use crate::OnePole;
 use crate::flush_denormal;
 
 /// Comb filter with feedback and damping.
@@ -229,5 +231,262 @@ mod tests {
                 f32::MIN_POSITIVE
             );
         }
+    }
+}
+
+/// Comb filter with LFO-modulated delay time and one-pole damping.
+///
+/// Designed for FDN reverb topologies where slight pitch modulation breaks up
+/// metallic resonances. The delay read position is modulated by an internal
+/// sine-wave LFO, and the feedback path includes a [`OnePole`] lowpass for
+/// high-frequency damping.
+///
+/// ## Parameters
+///
+/// - `delay_samples`: Base delay length in samples (typically 20–100 ms for reverb)
+/// - `feedback`: Feedback coefficient (0.0 to 0.99, default 0.5)
+/// - `damping`: One-pole lowpass cutoff in Hz for HF absorption (default 8000 Hz)
+/// - `mod_rate`: LFO frequency in Hz (typical 0.3–1.3 Hz)
+/// - `mod_depth`: Modulation depth in milliseconds (typical 0.2–0.5 ms)
+/// - `sample_rate`: Sample rate in Hz
+///
+/// ## DSP Structure
+///
+/// ```text
+/// input ─→ (+) ─→ [delay line] ─→ output
+///            ↑         ↑ read pos = base + depth·sin(phase)
+///            │         │
+///            └─ feedback × [OnePole LP] ←─┘
+/// ```
+///
+/// ## Reference
+///
+/// Jon Dattorro, "Effect Design, Part 1: Reverberator and Other Filters",
+/// J. Audio Eng. Soc., Vol. 45, No. 9, 1997.
+#[derive(Debug, Clone)]
+pub struct ModulatedComb {
+    delay: InterpolatedDelay,
+    damping: OnePole,
+    feedback: f32,
+    base_delay: f32,
+    mod_depth_samples: f32,
+    mod_phase: f32,
+    mod_phase_inc: f32,
+}
+
+impl ModulatedComb {
+    /// Create a new modulated comb filter.
+    ///
+    /// # Arguments
+    ///
+    /// * `delay_samples` - Base delay length in samples
+    /// * `feedback` - Feedback coefficient (clamped to 0.0–0.99)
+    /// * `damping_hz` - One-pole lowpass cutoff in Hz for HF damping
+    /// * `mod_rate` - LFO rate in Hz (typical 0.3–1.3 Hz)
+    /// * `mod_depth_ms` - Modulation depth in milliseconds (typical 0.2–0.5 ms)
+    /// * `sample_rate` - Sample rate in Hz
+    pub fn new(
+        delay_samples: f32,
+        feedback: f32,
+        damping_hz: f32,
+        mod_rate: f32,
+        mod_depth_ms: f32,
+        sample_rate: f32,
+    ) -> Self {
+        let mod_depth_samples = mod_depth_ms * 0.001 * sample_rate;
+        // Extra capacity for modulation excursion + 2 samples for cubic interpolation
+        let capacity = (delay_samples + mod_depth_samples) as usize + 4;
+        let mut delay = InterpolatedDelay::new(capacity);
+        delay.set_interpolation(Interpolation::Cubic);
+
+        Self {
+            delay,
+            damping: OnePole::new(sample_rate, damping_hz),
+            feedback: feedback.clamp(0.0, 0.99),
+            base_delay: delay_samples,
+            mod_depth_samples,
+            mod_phase: 0.0,
+            mod_phase_inc: core::f32::consts::TAU * mod_rate / sample_rate,
+        }
+    }
+
+    /// Process a single sample through the modulated comb filter.
+    ///
+    /// The read position oscillates around `base_delay` by `mod_depth_samples`
+    /// according to an internal sine LFO. The feedback signal is filtered through
+    /// a one-pole lowpass before being summed with the input.
+    #[inline]
+    pub fn process(&mut self, input: f32) -> f32 {
+        let modulated_delay = self.base_delay + self.mod_depth_samples * libm::sinf(self.mod_phase);
+        let output = self.delay.read(modulated_delay);
+
+        // Advance LFO phase with wrap
+        self.mod_phase += self.mod_phase_inc;
+        if self.mod_phase >= core::f32::consts::TAU {
+            self.mod_phase -= core::f32::consts::TAU;
+        }
+
+        // Damping in feedback path
+        let damped = self.damping.process(output);
+        self.delay
+            .write(flush_denormal(input + damped * self.feedback));
+
+        output
+    }
+
+    /// Set the feedback coefficient.
+    ///
+    /// Range: 0.0 to 0.99. Higher values create longer decay times.
+    #[inline]
+    pub fn set_feedback(&mut self, feedback: f32) {
+        self.feedback = feedback.clamp(0.0, 0.99);
+    }
+
+    /// Get the current feedback value.
+    #[inline]
+    pub fn feedback(&self) -> f32 {
+        self.feedback
+    }
+
+    /// Set the damping filter cutoff frequency.
+    ///
+    /// Range: 20.0 to sample_rate/2 Hz. Lower values absorb more high frequencies.
+    #[inline]
+    pub fn set_damping(&mut self, freq_hz: f32) {
+        self.damping.set_frequency(freq_hz);
+    }
+
+    /// Reset all internal state (delay line, damping filter, LFO phase).
+    pub fn reset(&mut self) {
+        self.delay.clear();
+        self.damping.reset();
+        self.mod_phase = 0.0;
+    }
+}
+
+#[cfg(test)]
+mod modulated_comb_tests {
+    use super::*;
+
+    extern crate alloc;
+    use alloc::vec::Vec;
+
+    #[test]
+    fn test_modulated_comb_basic() {
+        let mut comb = ModulatedComb::new(100.0, 0.7, 6000.0, 0.5, 0.3, 48000.0);
+
+        // Impulse response should produce finite output
+        let first = comb.process(1.0);
+        assert!(first.is_finite());
+
+        for _ in 0..500 {
+            let out = comb.process(0.0);
+            assert!(out.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_modulated_comb_feedback_decay() {
+        let mut comb = ModulatedComb::new(50.0, 0.8, 10000.0, 0.5, 0.3, 48000.0);
+
+        comb.process(1.0);
+
+        let mut energy_first_half = 0.0f32;
+        let mut energy_second_half = 0.0f32;
+
+        for i in 0..2000 {
+            let out = comb.process(0.0);
+            if i < 1000 {
+                energy_first_half += out * out;
+            } else {
+                energy_second_half += out * out;
+            }
+        }
+
+        assert!(
+            energy_second_half < energy_first_half,
+            "Signal should decay: first={energy_first_half}, second={energy_second_half}"
+        );
+    }
+
+    #[test]
+    fn test_modulated_comb_modulation_spreads_spectrum() {
+        // With modulation, the comb peaks should be slightly smeared
+        // compared to a static comb. We verify by checking that output
+        // varies from sample to sample (not locked to a rigid pattern).
+        let mut comb = ModulatedComb::new(48.0, 0.8, 10000.0, 1.0, 0.5, 48000.0);
+
+        // Feed white noise
+        let mut outputs: Vec<f32> = Vec::with_capacity(1000);
+        for i in 0..1000 {
+            // Simple pseudo-noise
+            let input = libm::sinf(i as f32 * 0.73) * 0.5;
+            outputs.push(comb.process(input));
+        }
+
+        // Check variance is nonzero
+        let mean = outputs.iter().sum::<f32>() / outputs.len() as f32;
+        let variance =
+            outputs.iter().map(|x| (x - mean) * (x - mean)).sum::<f32>() / outputs.len() as f32;
+        assert!(
+            variance > 1e-6,
+            "Output should have variance, got {variance}"
+        );
+    }
+
+    #[test]
+    fn test_modulated_comb_reset() {
+        let mut comb = ModulatedComb::new(50.0, 0.8, 6000.0, 0.5, 0.3, 48000.0);
+
+        for _ in 0..200 {
+            comb.process(1.0);
+        }
+
+        comb.reset();
+
+        for _ in 0..200 {
+            let out = comb.process(0.0);
+            assert!(out.abs() < 1e-10, "Should be silent after reset, got {out}");
+        }
+    }
+
+    #[test]
+    fn test_modulated_comb_no_denormals() {
+        let mut comb = ModulatedComb::new(100.0, 0.9, 4000.0, 0.5, 0.3, 48000.0);
+
+        for _ in 0..1000 {
+            comb.process(0.5);
+        }
+
+        for i in 0..50_000 {
+            let out = comb.process(0.0);
+            assert!(
+                out == 0.0 || out.abs() > f32::MIN_POSITIVE,
+                "Denormal at sample {i}: {out:.2e}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_modulated_comb_damping_reduces_brightness() {
+        // Bright (high cutoff) vs dark (low cutoff) — dark should have less energy
+        let mut bright = ModulatedComb::new(50.0, 0.8, 18000.0, 0.5, 0.3, 48000.0);
+        let mut dark = ModulatedComb::new(50.0, 0.8, 1000.0, 0.5, 0.3, 48000.0);
+
+        bright.process(1.0);
+        dark.process(1.0);
+
+        let mut bright_energy = 0.0f32;
+        let mut dark_energy = 0.0f32;
+
+        for _ in 0..2000 {
+            bright_energy += bright.process(0.0).abs();
+            dark_energy += dark.process(0.0).abs();
+        }
+
+        assert!(
+            dark_energy < bright_energy,
+            "Damped should have less energy: dark={dark_energy}, bright={bright_energy}"
+        );
     }
 }

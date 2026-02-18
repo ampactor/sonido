@@ -1,11 +1,8 @@
 //! Reverb effect UI panel.
 
-use crate::widgets::{BypassToggle, bridged_combo, bridged_knob};
+use crate::widgets::{BypassToggle, bridged_knob};
 use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
-
-/// Reverb types matching `sonido_effects::ReverbType`.
-const REVERB_TYPES: &[&str] = &["Room", "Hall"];
 
 /// UI panel for the reverb effect.
 pub struct ReverbPanel;
@@ -18,8 +15,8 @@ impl ReverbPanel {
 
     /// Render the reverb effect controls.
     ///
-    /// Param indices: 0 = room_size (%), 1 = decay (%), 2 = damping (%),
-    /// 3 = predelay (ms), 4 = mix (%), 5 = stereo_width (%), 6 = type (enum).
+    /// Param indices: 0 = room\_size (%), 1 = decay (%), 2 = damping (%),
+    /// 3 = predelay (ms), 4 = mix (%), 5 = width (%), 6 = er\_level (%), 7 = output (dB).
     pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: SlotIndex) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
@@ -27,12 +24,6 @@ impl ReverbPanel {
                 if ui.add(BypassToggle::new(&mut active, "Active")).changed() {
                     bridge.set_bypassed(slot, !active);
                 }
-
-                ui.add_space(20.0);
-
-                // Reverb type selector (param 6)
-                ui.label("Type:");
-                bridged_combo(ui, bridge, slot, ParamIndex(6), "reverb_type", REVERB_TYPES);
             });
 
             ui.add_space(12.0);
@@ -48,11 +39,22 @@ impl ReverbPanel {
 
             ui.add_space(8.0);
 
-            // Second row: Predelay, Mix
+            // Second row: Predelay, Mix, Width
             ui.horizontal(|ui| {
                 bridged_knob(ui, bridge, slot, ParamIndex(3), "PREDLY");
                 ui.add_space(16.0);
                 bridged_knob(ui, bridge, slot, ParamIndex(4), "MIX");
+                ui.add_space(16.0);
+                bridged_knob(ui, bridge, slot, ParamIndex(5), "WIDTH");
+            });
+
+            ui.add_space(8.0);
+
+            // Third row: ER Level, Output
+            ui.horizontal(|ui| {
+                bridged_knob(ui, bridge, slot, ParamIndex(6), "ER LVL");
+                ui.add_space(16.0);
+                bridged_knob(ui, bridge, slot, ParamIndex(7), "OUTPUT");
             });
         });
     }
