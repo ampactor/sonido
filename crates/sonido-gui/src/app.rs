@@ -17,7 +17,7 @@ use sonido_gui_core::effects_ui;
 use sonido_gui_core::{ParamBridge, SlotIndex};
 use sonido_registry::EffectRegistry;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
@@ -178,6 +178,8 @@ impl SonidoApp {
 
         running.store(true, Ordering::SeqCst);
 
+        let error_count = self.audio_bridge.error_count();
+
         let streams = build_audio_streams(
             bridge,
             &registry,
@@ -188,6 +190,7 @@ impl SonidoApp {
             command_rx,
             transport_rx,
             chain_bypass,
+            error_count,
             self.sample_rate,
             self.buffer_size,
         )?;
@@ -274,6 +277,15 @@ impl SonidoApp {
                     Color32::from_rgb(200, 80, 80)
                 };
                 ui.label(egui::RichText::new("●").color(status_color).size(12.0));
+
+                let err_count = self.audio_bridge.error_count().load(Ordering::Relaxed);
+                if err_count > 0 {
+                    ui.label(
+                        egui::RichText::new(format!("audio errors: {err_count}"))
+                            .color(Color32::from_rgb(220, 100, 100))
+                            .small(),
+                    );
+                }
 
                 let mut retry = false;
                 if let Some(ref error) = self.audio_error {
@@ -404,20 +416,25 @@ impl SonidoApp {
 
         panel_frame.show(ui, |ui| {
             ui.set_min_height(160.0);
+            let max_h = ui.available_height().max(160.0);
+            egui::ScrollArea::vertical()
+                .max_height(max_h)
+                .auto_shrink(true)
+                .show(ui, |ui| {
+                    // Panel title
+                    ui.heading(
+                        egui::RichText::new(panel_name).color(Color32::from_rgb(100, 180, 255)),
+                    );
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(12.0);
 
-            ui.vertical(|ui| {
-                // Panel title
-                ui.heading(egui::RichText::new(panel_name).color(Color32::from_rgb(100, 180, 255)));
-                ui.add_space(8.0);
-                ui.separator();
-                ui.add_space(12.0);
-
-                // Effect-specific controls from cache
-                if let Some((_, _, ref mut panel)) = self.cached_panel {
-                    let bridge: &dyn ParamBridge = &*self.bridge;
-                    panel.ui(ui, bridge, slot);
-                }
-            });
+                    // Effect-specific controls from cache
+                    if let Some((_, _, ref mut panel)) = self.cached_panel {
+                        let bridge: &dyn ParamBridge = &*self.bridge;
+                        panel.ui(ui, bridge, slot);
+                    }
+                });
         });
     }
 
@@ -446,7 +463,17 @@ impl SonidoApp {
             let latency_ms = self.buffer_size as f32 / self.sample_rate * 1000.0;
             ui.label(format!("{:.1} ms", latency_ms));
             ui.separator();
-            ui.label(format!("CPU: {:.1}%", self.cpu_usage));
+            let cpu_text = format!("CPU: {:.1}%", self.cpu_usage);
+            #[cfg(debug_assertions)]
+            let cpu_text = format!("{cpu_text} (debug)");
+            let cpu_color = if self.cpu_usage > 100.0 {
+                Color32::from_rgb(255, 80, 80)
+            } else if self.cpu_usage > 80.0 {
+                Color32::from_rgb(255, 200, 80)
+            } else {
+                Color32::from_rgb(150, 150, 160)
+            };
+            ui.label(egui::RichText::new(&cpu_text).color(cpu_color));
         });
     }
 
@@ -540,6 +567,16 @@ impl eframe::App for SonidoApp {
         ctx.request_repaint_after(std::time::Duration::from_millis(33)); // 30fps
         #[cfg(not(target_arch = "wasm32"))]
         ctx.request_repaint_after(Duration::from_millis(16)); // ~60fps cap
+
+        // Global keyboard shortcuts (only when no text widget is focused)
+        let no_widget_focused = ctx.memory(|m| m.focused().is_none());
+        if no_widget_focused
+            && ctx.input(|i| i.key_pressed(egui::Key::Space))
+            && self.file_player.use_file_input()
+            && self.file_player.has_file()
+        {
+            self.file_player.toggle_play_pause();
+        }
 
         // Header
         TopBottomPanel::top("header").show(ctx, |ui| {
@@ -949,6 +986,7 @@ fn build_audio_streams(
     command_rx: Receiver<ChainCommand>,
     transport_rx: Receiver<crate::file_player::TransportCommand>,
     chain_bypass: Arc<AtomicBool>,
+    error_count: Arc<AtomicU32>,
     sample_rate: f32,
     buffer_size: usize,
 ) -> Result<Vec<cpal::Stream>, String> {
@@ -1013,7 +1051,13 @@ fn build_audio_streams(
                         let _ = tx.try_send(sample);
                     }
                 },
-                |err| log::error!("Input stream error: {}", err),
+                {
+                    let ec = Arc::clone(&error_count);
+                    move |err| {
+                        ec.fetch_add(1, Ordering::Relaxed);
+                        log::error!("Input stream error: {}", err);
+                    }
+                },
                 None,
             )
             .and_then(|stream| {
@@ -1082,7 +1126,13 @@ fn build_audio_streams(
                 }
                 processor.process_buffer(data);
             },
-            |err| log::error!("Output stream error: {}", err),
+            {
+                let ec = Arc::clone(&error_count);
+                move |err| {
+                    ec.fetch_add(1, Ordering::Relaxed);
+                    log::error!("Output stream error: {}", err);
+                }
+            },
             None,
         )
         .map_err(|e| format!("Failed to build output stream: {}", e))?;
