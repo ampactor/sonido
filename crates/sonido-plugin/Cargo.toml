@@ -31,5 +31,61 @@ serde_json = "1.0"
 workspace = true
 
 [[example]]
+name = "sonido-preamp"
+crate-type = ["cdylib"]
+
+[[example]]
 name = "sonido-distortion"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "sonido-compressor"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "sonido-gate"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "sonido-eq"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "sonido-wah"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "sonido-chorus"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "sonido-flanger"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "sonido-phaser"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "sonido-tremolo"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "sonido-delay"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "sonido-filter"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "sonido-multivibrato"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "sonido-tape"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "sonido-reverb"
 crate-type = ["cdylib"]
