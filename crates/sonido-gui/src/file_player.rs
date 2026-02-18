@@ -111,6 +111,28 @@ impl FilePlayer {
         self.use_file_input
     }
 
+    /// Whether a file is currently loaded.
+    pub fn has_file(&self) -> bool {
+        self.has_file
+    }
+
+    /// Toggle between play and pause states.
+    ///
+    /// If playing, sends [`TransportCommand::Pause`]. If paused, sends
+    /// [`TransportCommand::Play`]. No-op if no file is loaded.
+    pub fn toggle_play_pause(&mut self) {
+        if !self.has_file {
+            return;
+        }
+        if self.is_playing {
+            self.is_playing = false;
+            let _ = self.transport_tx.send(TransportCommand::Pause);
+        } else {
+            self.is_playing = true;
+            let _ = self.transport_tx.send(TransportCommand::Play);
+        }
+    }
+
     /// Load a WAV file from disk (native only).
     #[cfg(not(target_arch = "wasm32"))]
     fn load_file(&mut self, path: PathBuf) {
