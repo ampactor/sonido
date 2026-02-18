@@ -4,10 +4,12 @@
 //! configuration. All methods run on the host's main thread — never on the
 //! audio thread.
 
+use crate::gui::{PLUGIN_HEIGHT, PLUGIN_WIDTH, SonidoEditor};
 use crate::shared::SonidoShared;
 use clack_extensions::audio_ports::{
     AudioPortFlags, AudioPortInfo, AudioPortInfoWriter, AudioPortType, PluginAudioPortsImpl,
 };
+use clack_extensions::gui::{GuiApiType, GuiConfiguration, GuiSize, PluginGuiImpl, Window};
 use clack_extensions::params::{
     ParamDisplayWriter, ParamInfo, ParamInfoFlags, ParamInfoWriter, PluginMainThreadParams,
 };
@@ -15,6 +17,7 @@ use clack_extensions::state::PluginStateImpl;
 use clack_plugin::prelude::*;
 use clack_plugin::stream::{InputStream, OutputStream};
 use clack_plugin::utils::Cookie;
+use raw_window_handle::HasRawWindowHandle;
 use std::io::{Read, Write};
 
 /// Main-thread state for a sonido CLAP plugin.
@@ -23,12 +26,23 @@ use std::io::{Read, Write};
 /// handles state save/restore, and declares audio port configuration.
 pub struct SonidoMainThread<'a> {
     shared: &'a SonidoShared,
+    /// Raw window handle from the host, stored between `set_parent` and `show`.
+    parent_rwh: Option<raw_window_handle::RawWindowHandle>,
+    /// DPI scale factor from the host (default 1.0).
+    scale: f64,
+    /// Active editor window (dropped to close).
+    editor: Option<SonidoEditor>,
 }
 
 impl<'a> SonidoMainThread<'a> {
     /// Create a new main-thread handler referencing the shared state.
     pub fn new(shared: &'a SonidoShared) -> Self {
-        Self { shared }
+        Self {
+            shared,
+            parent_rwh: None,
+            scale: 1.0,
+            editor: None,
+        }
     }
 }
 
@@ -187,6 +201,75 @@ impl PluginStateImpl for SonidoMainThread<'_> {
         }
 
         Ok(())
+    }
+}
+
+// ── GUI Extension ──────────────────────────────────────────────────────────
+
+impl PluginGuiImpl for SonidoMainThread<'_> {
+    fn is_api_supported(&mut self, config: GuiConfiguration) -> bool {
+        !config.is_floating && GuiApiType::default_for_current_platform() == Some(config.api_type)
+    }
+
+    fn get_preferred_api(&mut self) -> Option<GuiConfiguration<'_>> {
+        Some(GuiConfiguration {
+            api_type: GuiApiType::default_for_current_platform()?,
+            is_floating: false,
+        })
+    }
+
+    fn create(&mut self, _config: GuiConfiguration) -> Result<(), PluginError> {
+        Ok(()) // resources allocated lazily in show()
+    }
+
+    fn destroy(&mut self) {
+        self.editor = None;
+        self.parent_rwh = None;
+    }
+
+    fn set_scale(&mut self, scale: f64) -> Result<(), PluginError> {
+        self.scale = scale;
+        Ok(())
+    }
+
+    fn get_size(&mut self) -> Option<GuiSize> {
+        Some(GuiSize {
+            width: PLUGIN_WIDTH,
+            height: PLUGIN_HEIGHT,
+        })
+    }
+
+    fn can_resize(&mut self) -> bool {
+        false
+    }
+
+    fn set_parent(&mut self, window: Window) -> Result<(), PluginError> {
+        self.parent_rwh = Some(window.raw_window_handle());
+        Ok(())
+    }
+
+    fn show(&mut self) -> Result<(), PluginError> {
+        if self.editor.is_some() {
+            return Ok(()); // already open
+        }
+        let rwh = self
+            .parent_rwh
+            .ok_or(PluginError::Message("No parent window set"))?;
+        self.editor = SonidoEditor::open(rwh, self.shared.clone(), self.scale);
+        Ok(())
+    }
+
+    fn hide(&mut self) -> Result<(), PluginError> {
+        self.editor = None; // drop closes the baseview window
+        Ok(())
+    }
+
+    fn set_size(&mut self, _size: GuiSize) -> Result<(), PluginError> {
+        Ok(()) // fixed size, reject host resize commands
+    }
+
+    fn set_transient(&mut self, _window: Window) -> Result<(), PluginError> {
+        Ok(()) // embedded only, no floating window support
     }
 }
 

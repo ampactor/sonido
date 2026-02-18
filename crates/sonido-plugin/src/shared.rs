@@ -7,7 +7,21 @@
 
 use sonido_core::ParamDescriptor;
 use sonido_registry::EffectRegistry;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+
+/// Inner storage for plugin shared state.
+///
+/// Holds all data behind an `Arc` so that `SonidoShared` can be cheaply
+/// cloned into `'static + Send` GUI closures.
+struct SonidoSharedData {
+    /// Registry ID of the effect (e.g., `"distortion"`).
+    effect_id: &'static str,
+    /// Parameter descriptors, indexed by parameter position.
+    descriptors: Vec<ParamDescriptor>,
+    /// Current parameter values as f32 bit-cast to u32 for atomic access.
+    values: Vec<AtomicU32>,
+}
 
 /// Shared state accessible from all plugin threads.
 ///
@@ -15,13 +29,12 @@ use std::sync::atomic::{AtomicU32, Ordering};
 /// and the current parameter values as atomics. The audio processor reads
 /// values here; the main thread writes them in response to host automation
 /// or GUI interaction.
+///
+/// Wraps an `Arc<SonidoSharedData>` so it can be cloned into `'static + Send`
+/// closures (e.g., the egui-baseview render loop) without lifetime issues.
+#[derive(Clone)]
 pub struct SonidoShared {
-    /// Registry ID of the effect (e.g., `"distortion"`).
-    effect_id: &'static str,
-    /// Parameter descriptors, indexed by parameter position.
-    descriptors: Vec<ParamDescriptor>,
-    /// Current parameter values as f32 bit-cast to u32 for atomic access.
-    values: Vec<AtomicU32>,
+    inner: Arc<SonidoSharedData>,
 }
 
 impl SonidoShared {
@@ -48,47 +61,55 @@ impl SonidoShared {
         }
 
         Self {
-            effect_id,
-            descriptors,
-            values,
+            inner: Arc::new(SonidoSharedData {
+                effect_id,
+                descriptors,
+                values,
+            }),
         }
     }
 
     /// Registry ID of the wrapped effect.
     pub fn effect_id(&self) -> &'static str {
-        self.effect_id
+        self.inner.effect_id
     }
 
     /// Number of parameters.
     pub fn param_count(&self) -> usize {
-        self.descriptors.len()
+        self.inner.descriptors.len()
     }
 
     /// Get parameter descriptor by index.
     pub fn descriptor(&self, index: usize) -> Option<&ParamDescriptor> {
-        self.descriptors.get(index)
+        self.inner.descriptors.get(index)
     }
 
     /// All parameter descriptors.
     pub fn descriptors(&self) -> &[ParamDescriptor] {
-        &self.descriptors
+        &self.inner.descriptors
     }
 
     /// Find parameter index by stable `ParamId`.
     pub fn index_by_id(&self, id: u32) -> Option<usize> {
-        self.descriptors.iter().position(|d| d.id.0 == id)
+        self.inner.descriptors.iter().position(|d| d.id.0 == id)
     }
 
     /// Read the current value of a parameter (lock-free).
     pub fn get_value(&self, index: usize) -> Option<f32> {
-        self.values
+        self.inner
+            .values
             .get(index)
             .map(|v| f32::from_bits(v.load(Ordering::Acquire)))
     }
 
     /// Write a parameter value (lock-free). Clamps to descriptor bounds.
     pub fn set_value(&self, index: usize, value: f32) {
-        if let Some((atomic, desc)) = self.values.get(index).zip(self.descriptors.get(index)) {
+        if let Some((atomic, desc)) = self
+            .inner
+            .values
+            .get(index)
+            .zip(self.inner.descriptors.get(index))
+        {
             let clamped = value.clamp(desc.min, desc.max);
             atomic.store(clamped.to_bits(), Ordering::Release);
         }
@@ -98,7 +119,7 @@ impl SonidoShared {
     ///
     /// Called when the audio processor is activated or after loading state.
     pub fn apply_to_effect(&self, effect: &mut dyn sonido_registry::EffectWithParams) {
-        for (i, atomic) in self.values.iter().enumerate() {
+        for (i, atomic) in self.inner.values.iter().enumerate() {
             let val = f32::from_bits(atomic.load(Ordering::Acquire));
             effect.effect_set_param(i, val);
         }

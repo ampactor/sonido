@@ -45,7 +45,7 @@ use egui::Ui;
 /// Panels render controls for a specific effect type, using the
 /// [`ParamBridge`] for all parameter access. The `slot` argument
 /// identifies which effect in the chain this panel controls.
-pub trait EffectPanel {
+pub trait EffectPanel: Send + Sync {
     /// The display name of the effect.
     fn name(&self) -> &'static str;
 
@@ -93,7 +93,7 @@ impl_effect_panel!(ReverbPanel, "Reverb", "Rev");
 /// Create an effect panel for the given registry effect ID.
 ///
 /// Returns `None` if `effect_id` doesn't map to a known panel type.
-pub fn create_panel(effect_id: &str) -> Option<Box<dyn EffectPanel>> {
+pub fn create_panel(effect_id: &str) -> Option<Box<dyn EffectPanel + Send + Sync>> {
     match effect_id {
         "preamp" => Some(Box::new(PreampPanel::new())),
         "distortion" => Some(Box::new(DistortionPanel::new())),
