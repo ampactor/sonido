@@ -12,6 +12,7 @@ members = [
     "crates/sonido-platform",
     "crates/sonido-config",
     "crates/sonido-synth",
+    "crates/sonido-plugin",
 ]
 
 [workspace.package]
