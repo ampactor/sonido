@@ -39,11 +39,13 @@ impl CompressorPanel {
 
             ui.add_space(8.0);
 
-            // Second row: Attack, Release
+            // Second row: Attack, Release, Mix
             ui.horizontal(|ui| {
                 bridged_knob(ui, bridge, slot, ParamIndex(2), "ATTACK");
                 ui.add_space(16.0);
                 bridged_knob(ui, bridge, slot, ParamIndex(3), "RELEASE");
+                ui.add_space(16.0);
+                bridged_knob(ui, bridge, slot, ParamIndex(10), "MIX");
             });
         });
     }

@@ -86,8 +86,8 @@ impl FilePlayer {
             duration_secs: 0.0,
             position_secs: 0.0,
             is_playing: false,
-            is_looping: false,
-            use_file_input: false,
+            is_looping: true,
+            use_file_input: true,
             sample_rate: 48000.0,
             has_file: false,
             #[cfg(target_arch = "wasm32")]

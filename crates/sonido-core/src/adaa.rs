@@ -64,7 +64,7 @@
 ///
 /// # Epsilon and Midpoint Fallback
 ///
-/// When `|x[n] − x[n−1]| < 1e−7`, the finite-difference quotient becomes
+/// When `|x[n] − x[n−1]| < 1e−5`, the finite-difference quotient becomes
 /// numerically unstable.  The processor falls back to evaluating the
 /// waveshaper at the midpoint `(x[n] + x[n−1]) / 2`, which is the
 /// L'Hôpital limit of the ADAA formula as `x[n] → x[n−1]`.
@@ -106,9 +106,10 @@ where
 /// suffers from catastrophic cancellation and the processor falls back to
 /// the midpoint evaluation `f((x₁ + x₀) / 2)`.
 ///
-/// Chosen at approximately `f32` machine epsilon (`~1.19e−7`) to balance
-/// alias rejection against numerical precision.
-const ADAA_EPSILON: f32 = 1e-7;
+/// Set above `f32` machine epsilon to avoid catastrophic cancellation in
+/// the finite-difference quotient at low signal levels (e.g., stereo
+/// soft-clip artifacts near zero crossings).
+const ADAA_EPSILON: f32 = 1e-5;
 
 impl<F, AF> Adaa1<F, AF>
 where
