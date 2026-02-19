@@ -4,9 +4,6 @@
 //! egui-baseview (OpenGL). Each plugin instance gets an independent
 //! `egui::Context` and GL context — no shared global state.
 
-// Required for HasRawWindowHandle impl on ParentWindow (rwh 0.5 trait is unsafe)
-#![allow(unsafe_code)]
-
 use std::sync::Arc;
 
 use baseview::{Size, WindowHandle, WindowOpenOptions, WindowScalePolicy};
@@ -37,10 +34,9 @@ pub const PLUGIN_HEIGHT: u32 = 380;
 /// Single-slot (slot 0 = the effect). Thread-safe reads/writes via `Acquire`/`Release`
 /// atomics — safe to call from the egui render closure on any thread.
 ///
-/// # V1 Limitations
-///
-/// `begin_set`/`end_set` are no-ops. Automation gesture events (`ParamGestureBeginEvent`)
-/// are deferred to v2; parameter value changes are still applied to the DSP via atomics.
+/// Gesture tracking (`begin_set`/`end_set`) sets atomic flags in shared state.
+/// The audio thread reads and clears these flags, emitting CLAP
+/// `ParamGestureBegin/EndEvent` to the host for proper undo grouping.
 pub struct PluginParamBridge {
     shared: SonidoShared,
 }
@@ -75,13 +71,26 @@ impl ParamBridge for PluginParamBridge {
 
     fn set(&self, _slot: SlotIndex, param: ParamIndex, value: f32) {
         self.shared.set_value(param.0, value);
+        self.shared.notify_host();
     }
 
     fn is_bypassed(&self, _slot: SlotIndex) -> bool {
-        false
+        self.shared.is_bypassed()
     }
 
-    fn set_bypassed(&self, _slot: SlotIndex, _bypassed: bool) {}
+    fn set_bypassed(&self, _slot: SlotIndex, bypassed: bool) {
+        self.shared.set_bypassed(bypassed);
+    }
+
+    fn begin_set(&self, _slot: SlotIndex, param: ParamIndex) {
+        self.shared.gesture_begin(param.0);
+        self.shared.notify_host();
+    }
+
+    fn end_set(&self, _slot: SlotIndex, param: ParamIndex) {
+        self.shared.gesture_end(param.0);
+        self.shared.notify_host();
+    }
 }
 
 // ── Parent window wrapper ─────────────────────────────────────────────────────
@@ -96,18 +105,16 @@ impl ParamBridge for PluginParamBridge {
 /// plugin's child window (`destroy()` is called before host closes the parent).
 struct ParentWindow(RawWindowHandle);
 
-// SAFETY: RawWindowHandle contains pointer-sized integers; the window lives on
-// the host's main thread for the full plugin GUI lifecycle.
+#[allow(unsafe_code)]
+// SAFETY: HasRawWindowHandle is unsafe in rwh 0.5 (safe in 0.6).
+// The impl is trivial — returns a Copy value received from the CLAP host.
+// CLAP gui extension guarantees the parent window handle is valid for the
+// full plugin GUI lifecycle (destroy() called before host closes parent).
 unsafe impl HasRawWindowHandle for ParentWindow {
     fn raw_window_handle(&self) -> RawWindowHandle {
         self.0
     }
 }
-
-// SAFETY: The handle is only used on the main thread (CLAP gui extension
-// contract), but baseview requires Send for the parent parameter type.
-unsafe impl Send for ParentWindow {}
-unsafe impl Sync for ParentWindow {}
 
 // ── Editor ────────────────────────────────────────────────────────────────────
 
@@ -152,6 +159,10 @@ impl SonidoEditor {
             |_ctx, _queue, _state| {},
             // update: called each frame by egui-baseview's render loop
             |ctx, _queue, state| {
+                // Poll for host-originated parameter changes at 30 Hz.
+                // Full vsync repaint is wasteful; 33ms latency is imperceptible
+                // for knob positions updating from automation.
+                ctx.request_repaint_after(std::time::Duration::from_millis(33));
                 egui::CentralPanel::default().show(ctx, |ui| {
                     state
                         .panel

@@ -102,9 +102,20 @@ macro_rules! sonido_effect_entry {
             }
 
             fn new_shared(
-                _host: ::clack_plugin::prelude::HostSharedHandle<'_>,
+                host: ::clack_plugin::prelude::HostSharedHandle<'_>,
             ) -> Result<$crate::SonidoShared, ::clack_plugin::prelude::PluginError> {
-                Ok($crate::SonidoShared::new($effect_id))
+                // SAFETY: HostSharedHandle<'a> is Copy (NonNull<clap_host> + PhantomData).
+                // The lifetime is purely phantom — no reference is actually borrowed.
+                // CLAP specification §plugin-instance guarantees the host outlives the
+                // plugin; this is the canonical Rust CLAP pattern for storing host
+                // callbacks in Arc-wrapped shared state.
+                #[allow(unsafe_code)]
+                let host: ::clack_plugin::prelude::HostSharedHandle<'static> =
+                    unsafe { ::std::mem::transmute(host) };
+
+                let notify: Box<dyn Fn() + Send + Sync> =
+                    Box::new(move || { host.request_process(); });
+                Ok($crate::SonidoShared::new($effect_id, Some(notify)))
             }
 
             fn new_main_thread<'a>(

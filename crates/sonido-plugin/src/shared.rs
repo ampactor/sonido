@@ -8,7 +8,7 @@
 use sonido_core::ParamDescriptor;
 use sonido_registry::EffectRegistry;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
 /// Inner storage for plugin shared state.
 ///
@@ -21,6 +21,18 @@ struct SonidoSharedData {
     descriptors: Vec<ParamDescriptor>,
     /// Current parameter values as f32 bit-cast to u32 for atomic access.
     values: Vec<AtomicU32>,
+    /// Whether the effect is bypassed (GUI toggle, not host bypass).
+    bypassed: AtomicBool,
+    /// Gesture flags per parameter: bit 0 = begin pending, bit 1 = end pending.
+    ///
+    /// GUI thread sets flags via `fetch_or`; audio thread clears via `swap(0)`.
+    gesture_flags: Vec<AtomicU8>,
+    /// Host notification callback, called from GUI thread to request
+    /// the host to schedule a `process()`/`flush()` call.
+    ///
+    /// Without this, GUI-originated param changes passively wait for the
+    /// next audio block — which may never come when playback is stopped.
+    host_notify: Option<Box<dyn Fn() + Send + Sync>>,
 }
 
 /// Shared state accessible from all plugin threads.
@@ -37,12 +49,21 @@ pub struct SonidoShared {
     inner: Arc<SonidoSharedData>,
 }
 
+/// Flag indicating a gesture-begin is pending (GUI → audio).
+pub const GESTURE_BEGIN: u8 = 1;
+/// Flag indicating a gesture-end is pending (GUI → audio).
+pub const GESTURE_END: u8 = 2;
+
 impl SonidoShared {
     /// Create shared state for the given effect.
     ///
     /// Instantiates a temporary effect to extract parameter descriptors,
     /// then initializes all values to their defaults.
-    pub fn new(effect_id: &'static str) -> Self {
+    ///
+    /// `host_notify` is called from the GUI thread after every parameter
+    /// gesture or value change, prompting the CLAP host to schedule a
+    /// `process()` or `flush()` callback. Pass `None` for standalone/test use.
+    pub fn new(effect_id: &'static str, host_notify: Option<Box<dyn Fn() + Send + Sync>>) -> Self {
         let registry = EffectRegistry::new();
         // Use a dummy sample rate — we only need descriptors, not DSP state.
         let effect = registry
@@ -60,11 +81,16 @@ impl SonidoShared {
             }
         }
 
+        let gesture_flags = (0..descriptors.len()).map(|_| AtomicU8::new(0)).collect();
+
         Self {
             inner: Arc::new(SonidoSharedData {
                 effect_id,
                 descriptors,
                 values,
+                bypassed: AtomicBool::new(false),
+                gesture_flags,
+                host_notify,
             }),
         }
     }
@@ -115,6 +141,58 @@ impl SonidoShared {
         }
     }
 
+    /// Whether the effect is bypassed (GUI toggle).
+    pub fn is_bypassed(&self) -> bool {
+        self.inner.bypassed.load(Ordering::Acquire)
+    }
+
+    /// Set the bypass state (GUI toggle).
+    pub fn set_bypassed(&self, bypassed: bool) {
+        self.inner.bypassed.store(bypassed, Ordering::Release);
+    }
+
+    /// Notify the host that GUI-originated changes are pending.
+    ///
+    /// Calls `host.request_process()` so the host schedules a `process()` or
+    /// `flush()` callback, ensuring gesture/value events reach the host even
+    /// when playback is stopped. No-op if no callback is set (standalone mode).
+    pub fn notify_host(&self) {
+        if let Some(cb) = &self.inner.host_notify {
+            cb();
+        }
+    }
+
+    /// Signal the start of a parameter gesture (GUI drag start).
+    ///
+    /// Sets the `GESTURE_BEGIN` flag for the given parameter. The audio thread
+    /// picks this up via [`SonidoShared::take_gesture_flags`] and emits a CLAP
+    /// `ParamGestureBeginEvent` to the host.
+    pub fn gesture_begin(&self, index: usize) {
+        if let Some(flag) = self.inner.gesture_flags.get(index) {
+            flag.fetch_or(GESTURE_BEGIN, Ordering::Release);
+        }
+    }
+
+    /// Signal the end of a parameter gesture (GUI drag stop).
+    ///
+    /// Sets the `GESTURE_END` flag for the given parameter.
+    pub fn gesture_end(&self, index: usize) {
+        if let Some(flag) = self.inner.gesture_flags.get(index) {
+            flag.fetch_or(GESTURE_END, Ordering::Release);
+        }
+    }
+
+    /// Atomically read and clear gesture flags for a parameter.
+    ///
+    /// Returns the accumulated flags since the last call. The audio thread
+    /// calls this once per process block per parameter.
+    pub fn take_gesture_flags(&self, index: usize) -> u8 {
+        self.inner
+            .gesture_flags
+            .get(index)
+            .map_or(0, |flag| flag.swap(0, Ordering::AcqRel))
+    }
+
     /// Sync all current parameter values into an effect instance.
     ///
     /// Called when the audio processor is activated or after loading state.
@@ -134,7 +212,7 @@ mod tests {
 
     #[test]
     fn shared_new_creates_all_params() {
-        let shared = SonidoShared::new("distortion");
+        let shared = SonidoShared::new("distortion", None);
         assert_eq!(shared.effect_id(), "distortion");
         assert_eq!(shared.param_count(), 5);
         assert!(shared.param_count() > 0);
@@ -142,7 +220,7 @@ mod tests {
 
     #[test]
     fn shared_defaults_match_descriptors() {
-        let shared = SonidoShared::new("reverb");
+        let shared = SonidoShared::new("reverb", None);
         for (i, desc) in shared.descriptors().iter().enumerate() {
             let val = shared.get_value(i).unwrap();
             assert_eq!(
@@ -155,7 +233,7 @@ mod tests {
 
     #[test]
     fn shared_set_value_clamps() {
-        let shared = SonidoShared::new("distortion");
+        let shared = SonidoShared::new("distortion", None);
         let desc = shared.descriptor(0).unwrap();
 
         // Set above max — should clamp.
@@ -169,7 +247,7 @@ mod tests {
 
     #[test]
     fn shared_index_by_id_finds_params() {
-        let shared = SonidoShared::new("distortion");
+        let shared = SonidoShared::new("distortion", None);
         // Distortion base ID is 200.
         assert_eq!(shared.index_by_id(200), Some(0));
         assert_eq!(shared.index_by_id(201), Some(1));
@@ -179,7 +257,7 @@ mod tests {
 
     #[test]
     fn shared_out_of_range_safe() {
-        let shared = SonidoShared::new("distortion");
+        let shared = SonidoShared::new("distortion", None);
         assert_eq!(shared.get_value(999), None);
         assert_eq!(shared.descriptor(999), None);
         // Should not panic.
@@ -188,7 +266,7 @@ mod tests {
 
     #[test]
     fn shared_apply_to_effect() {
-        let shared = SonidoShared::new("distortion");
+        let shared = SonidoShared::new("distortion", None);
         // Set a non-default value.
         shared.set_value(0, 20.0);
 
@@ -204,7 +282,7 @@ mod tests {
     fn all_effects_create_shared() {
         let registry = EffectRegistry::new();
         for desc in registry.all_effects() {
-            let shared = SonidoShared::new(desc.id);
+            let shared = SonidoShared::new(desc.id, None);
             assert!(shared.param_count() > 0, "effect {} has no params", desc.id);
             // Verify all param IDs are unique within the effect.
             let ids: Vec<u32> = shared.descriptors().iter().map(|d| d.id.0).collect();
@@ -220,8 +298,55 @@ mod tests {
     }
 
     #[test]
+    fn gesture_flags_begin_end() {
+        let shared = SonidoShared::new("distortion", None);
+
+        // No flags initially.
+        assert_eq!(shared.take_gesture_flags(0), 0);
+
+        // Set begin.
+        shared.gesture_begin(0);
+        let flags = shared.take_gesture_flags(0);
+        assert_ne!(flags & GESTURE_BEGIN, 0);
+        assert_eq!(flags & GESTURE_END, 0);
+
+        // Cleared after take.
+        assert_eq!(shared.take_gesture_flags(0), 0);
+
+        // Set end.
+        shared.gesture_end(0);
+        let flags = shared.take_gesture_flags(0);
+        assert_eq!(flags & GESTURE_BEGIN, 0);
+        assert_ne!(flags & GESTURE_END, 0);
+    }
+
+    #[test]
+    fn gesture_flags_accumulate() {
+        let shared = SonidoShared::new("distortion", None);
+
+        // Both begin and end set before audio reads — both present.
+        shared.gesture_begin(0);
+        shared.gesture_end(0);
+        let flags = shared.take_gesture_flags(0);
+        assert_ne!(flags & GESTURE_BEGIN, 0);
+        assert_ne!(flags & GESTURE_END, 0);
+
+        // Cleared.
+        assert_eq!(shared.take_gesture_flags(0), 0);
+    }
+
+    #[test]
+    fn gesture_flags_out_of_range() {
+        let shared = SonidoShared::new("distortion", None);
+        // Should not panic.
+        shared.gesture_begin(999);
+        shared.gesture_end(999);
+        assert_eq!(shared.take_gesture_flags(999), 0);
+    }
+
+    #[test]
     fn state_roundtrip_json() {
-        let shared = SonidoShared::new("compressor");
+        let shared = SonidoShared::new("compressor", None);
 
         // Set some non-default values.
         shared.set_value(0, 10.0);
@@ -240,7 +365,7 @@ mod tests {
         let json = serde_json::to_vec(&serde_json::Value::Object(state)).unwrap();
 
         // Create fresh shared, load state.
-        let shared2 = SonidoShared::new("compressor");
+        let shared2 = SonidoShared::new("compressor", None);
         let value: serde_json::Value = serde_json::from_slice(&json).unwrap();
         let obj = value.as_object().unwrap();
         for (key, val) in obj {

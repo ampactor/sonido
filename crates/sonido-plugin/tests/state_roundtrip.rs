@@ -38,11 +38,11 @@ fn all_effects_state_roundtrip_defaults() {
     let registry = EffectRegistry::new();
 
     for desc in registry.all_effects() {
-        let shared = SonidoShared::new(desc.id);
+        let shared = SonidoShared::new(desc.id, None);
         let json = serialize_state(&shared);
 
         // Load into a fresh instance.
-        let shared2 = SonidoShared::new(desc.id);
+        let shared2 = SonidoShared::new(desc.id, None);
         deserialize_state(&shared2, &json);
 
         // All values should match.
@@ -63,7 +63,7 @@ fn all_effects_state_roundtrip_extremes() {
     let registry = EffectRegistry::new();
 
     for desc in registry.all_effects() {
-        let shared = SonidoShared::new(desc.id);
+        let shared = SonidoShared::new(desc.id, None);
 
         // Set all params to their maximum values.
         for (i, param) in shared.descriptors().iter().enumerate() {
@@ -71,7 +71,7 @@ fn all_effects_state_roundtrip_extremes() {
         }
         let json_max = serialize_state(&shared);
 
-        let shared2 = SonidoShared::new(desc.id);
+        let shared2 = SonidoShared::new(desc.id, None);
         deserialize_state(&shared2, &json_max);
 
         for i in 0..shared.param_count() {
@@ -90,7 +90,7 @@ fn all_effects_state_roundtrip_extremes() {
         }
         let json_min = serialize_state(&shared);
 
-        let shared3 = SonidoShared::new(desc.id);
+        let shared3 = SonidoShared::new(desc.id, None);
         deserialize_state(&shared3, &json_min);
 
         for i in 0..shared.param_count() {
@@ -110,7 +110,7 @@ fn all_effects_state_roundtrip_midpoints() {
     let registry = EffectRegistry::new();
 
     for desc in registry.all_effects() {
-        let shared = SonidoShared::new(desc.id);
+        let shared = SonidoShared::new(desc.id, None);
 
         // Set all params to midpoint between min and max.
         for (i, param) in shared.descriptors().iter().enumerate() {
@@ -119,7 +119,7 @@ fn all_effects_state_roundtrip_midpoints() {
         }
         let json = serialize_state(&shared);
 
-        let shared2 = SonidoShared::new(desc.id);
+        let shared2 = SonidoShared::new(desc.id, None);
         deserialize_state(&shared2, &json);
 
         for i in 0..shared.param_count() {
@@ -137,7 +137,7 @@ fn all_effects_state_roundtrip_midpoints() {
 
 #[test]
 fn state_ignores_unknown_param_ids() {
-    let shared = SonidoShared::new("distortion");
+    let shared = SonidoShared::new("distortion", None);
     let json = br#"{"200": 15.0, "99999": 42.0, "201": 0.8}"#;
     deserialize_state(&shared, json);
 
@@ -155,7 +155,7 @@ fn state_ignores_unknown_param_ids() {
 
 #[test]
 fn state_clamps_out_of_range_values() {
-    let shared = SonidoShared::new("distortion");
+    let shared = SonidoShared::new("distortion", None);
     let desc = shared.descriptor(0).unwrap();
 
     // Set value way above max via JSON.

@@ -4,9 +4,14 @@
 //! the host, updates the effect, and processes stereo audio buffers.
 
 use crate::main_thread::SonidoMainThread;
-use crate::shared::SonidoShared;
+use crate::shared::{GESTURE_BEGIN, GESTURE_END, SonidoShared};
 use clack_extensions::params::PluginAudioProcessorParams;
+use clack_plugin::events::EventFlags;
+use clack_plugin::events::event_types::{
+    ParamGestureBeginEvent, ParamGestureEndEvent, ParamValueEvent,
+};
 use clack_plugin::prelude::*;
+use clack_plugin::utils::Cookie;
 use sonido_registry::{EffectRegistry, EffectWithParams};
 
 /// Audio-thread processor wrapping a sonido effect.
@@ -45,6 +50,14 @@ impl<'a> PluginAudioProcessor<'a, SonidoShared, SonidoMainThread<'a>> for Sonido
         // Apply parameter changes from host automation events.
         self.handle_events(events.input);
 
+        // Sync GUI-originated parameter changes back to the effect and host.
+        self.sync_gui_changes(events.output);
+
+        // When bypassed via GUI toggle, pass audio through unprocessed.
+        if self.shared.is_bypassed() {
+            return Ok(ProcessStatus::ContinueIfNotQuiet);
+        }
+
         // Process audio through the effect.
         self.process_audio(&mut audio)?;
 
@@ -61,6 +74,57 @@ impl<'a> PluginAudioProcessor<'a, SonidoShared, SonidoMainThread<'a>> for Sonido
 }
 
 impl SonidoAudioProcessor<'_> {
+    /// Detect GUI-originated parameter changes and sync them to the effect
+    /// and host.
+    ///
+    /// After `handle_events`, the local effect and shared state agree on the
+    /// host's latest values. Any divergence between shared and effect means
+    /// the GUI wrote a new value. We update the effect and emit a
+    /// `ParamValueEvent` so the host updates its controls/automation.
+    fn sync_gui_changes(&mut self, output: &mut OutputEvents) {
+        for i in 0..self.shared.param_count() {
+            let flags = self.shared.take_gesture_flags(i);
+            let has_begin = flags & GESTURE_BEGIN != 0;
+            let has_end = flags & GESTURE_END != 0;
+
+            // 1. Begin gesture (before value) — groups edits into one undo entry.
+            if has_begin && let Some(desc) = self.shared.descriptor(i) {
+                let event = ParamGestureBeginEvent::new(0, ClapId::new(desc.id.0))
+                    .with_flags(EventFlags::IS_LIVE);
+                let _ = output.try_push(event);
+            }
+
+            // 2. Value change — sync GUI-written values to effect + host.
+            let Some(shared_val) = self.shared.get_value(i) else {
+                continue;
+            };
+            let effect_val = self.effect.effect_get_param(i);
+
+            if shared_val.to_bits() != effect_val.to_bits() {
+                self.effect.effect_set_param(i, shared_val);
+
+                if let Some(desc) = self.shared.descriptor(i) {
+                    let event = ParamValueEvent::new(
+                        0,
+                        ClapId::new(desc.id.0),
+                        Pckn::match_all(),
+                        f64::from(shared_val),
+                        Cookie::empty(),
+                    )
+                    .with_flags(EventFlags::IS_LIVE);
+                    let _ = output.try_push(event);
+                }
+            }
+
+            // 3. End gesture (after value) — closes the undo group.
+            if has_end && let Some(desc) = self.shared.descriptor(i) {
+                let event = ParamGestureEndEvent::new(0, ClapId::new(desc.id.0))
+                    .with_flags(EventFlags::IS_LIVE);
+                let _ = output.try_push(event);
+            }
+        }
+    }
+
     /// Handle incoming parameter change events from the host.
     ///
     /// Updates both the shared atomic state (so the main thread sees the
@@ -148,7 +212,8 @@ impl SonidoAudioProcessor<'_> {
 }
 
 impl PluginAudioProcessorParams for SonidoAudioProcessor<'_> {
-    fn flush(&mut self, input: &InputEvents, _output: &mut OutputEvents) {
+    fn flush(&mut self, input: &InputEvents, output: &mut OutputEvents) {
         self.handle_events(input);
+        self.sync_gui_changes(output);
     }
 }
