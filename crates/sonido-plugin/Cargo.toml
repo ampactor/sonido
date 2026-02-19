@@ -16,8 +16,8 @@ sonido-core = { workspace = true, features = ["std"] }
 sonido-effects = { workspace = true, features = ["std"] }
 sonido-registry = { workspace = true, features = ["std"] }
 
-clack-plugin = { git = "https://github.com/prokopyl/clack.git" }
-clack-extensions = { git = "https://github.com/prokopyl/clack.git", features = [
+clack-plugin = { git = "https://github.com/prokopyl/clack.git", rev = "57e89b3" }
+clack-extensions = { git = "https://github.com/prokopyl/clack.git", rev = "57e89b3", features = [
     "clack-plugin",
     "audio-ports",
     "params",
@@ -95,4 +95,16 @@ crate-type = ["cdylib"]
 
 [[example]]
 name = "sonido-reverb"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "sonido-limiter"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "sonido-bitcrusher"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "sonido-ringmod"
 crate-type = ["cdylib"]

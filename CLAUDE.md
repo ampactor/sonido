@@ -7,7 +7,7 @@ Production-grade DSP library in Rust for audio effects, plugins, and embedded sy
 | Crate | Purpose | no_std |
 |-------|---------|--------|
 | sonido-core | Effect trait, ParameterInfo, SmoothedParam, delays, filters, LFOs, tempo, modulation | Yes |
-| sonido-effects | Distortion, Compressor, Chorus, Delay, Reverb, etc. (all implement ParameterInfo) | Yes |
+| sonido-effects | 18 effects: Distortion, Compressor, Limiter, Chorus, Delay, Reverb, Bitcrusher, Ring Mod, etc. (all implement ParameterInfo) | Yes |
 | sonido-synth | Synthesis engine: oscillators (PolyBLEP), ADSR envelopes, voices, modulation matrix | Yes |
 | sonido-registry | Effect factory and discovery by name/category | Yes |
 | sonido-config | CLI-first configuration and preset management | No |
@@ -193,7 +193,7 @@ pub trait ParameterInfo {
 
 `ParamDescriptor` fields: `name`, `short_name`, `min`, `max`, `default`, `unit` (ParamUnit), `id` (ParamId), `string_id`, `scale` (ParamScale), `flags` (ParamFlags), `group`, `modulation_id`, `step_labels`. Use factory constructors + builder chaining. `format_value()` / `parse_value()` for CLAP/VST3 text display. `custom()` factory for non-standard params (neutral defaults: unit None, step 0.01, Linear, AUTOMATABLE).
 
-**`impl_params!` macro** — All 15 effects use this to generate `ParameterInfo` impls. Auto-clamps setter values to descriptor bounds:
+**`impl_params!` macro** — All 18 effects use this to generate `ParameterInfo` impls. Auto-clamps setter values to descriptor bounds:
 ```rust
 impl_params! {
     MyEffect, this {
@@ -347,6 +347,9 @@ cd crates/sonido-gui && trunk serve                        # Dev server at :8080
 | Delay | crates/sonido-effects/src/delay.rs |
 | Phaser | crates/sonido-effects/src/phaser.rs |
 | Flanger | crates/sonido-effects/src/flanger.rs |
+| Limiter | crates/sonido-effects/src/limiter.rs |
+| Bitcrusher | crates/sonido-effects/src/bitcrusher.rs |
+| Ring Modulator | crates/sonido-effects/src/ring_mod.rs |
 | CombFilter/AllpassFilter | crates/sonido-core/src/comb.rs, allpass.rs |
 | DcBlocker | crates/sonido-core/src/dc_blocker.rs |
 | flush_denormal | crates/sonido-core/src/math.rs |
@@ -409,7 +412,7 @@ cd crates/sonido-gui && trunk serve                        # Dev server at :8080
 
 - SmoothedParam: use preset constructors (`fast`/`standard`/`slow`/`interpolated`), call `advance()` per sample
 - ParamDescriptor: use factories (`::mix()`, `::depth()`, `::feedback()`) for common params, chain `.with_id()`, `.with_scale()`, `.with_flags()`, `.with_group()`
-- ParamId: stable IDs assigned per effect (base: Preamp=100, Distortion=200, ..., Reverb=1500), sequential params from base
+- ParamId: stable IDs assigned per effect (base: Preamp=100, Distortion=200, ..., Reverb=1500, Limiter=1600, Bitcrusher=1700, RingMod=1800), sequential params from base
 - ParamScale: `Logarithmic` for frequency params, `Linear` default, `Power(exp)` for custom curves
 - ParamFlags: `AUTOMATABLE` (default), `STEPPED` for enum/discrete params, `HIDDEN`, `READ_ONLY`
 - Output level: all effects expose `output` as last ParameterInfo index, use `gain::output_level_param()`

@@ -163,6 +163,43 @@ jobs:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v1
 
+  plugin:
+    name: Plugin Build & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ubuntu-latest-cargo-plugin-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ubuntu-latest-cargo-plugin-
+
+      - name: Run plugin tests
+        run: cargo test -p sonido-plugin
+
+      - name: Build plugin binaries
+        run: cargo build --release -p sonido-plugin --examples
+
+      - name: Verify plugin binaries exist
+        run: |
+          for plugin in preamp distortion compressor gate eq wah chorus flanger phaser tremolo delay filter multivibrato tape reverb; do
+            test -f "target/release/examples/libsonido_${plugin}.so" || { echo "Missing libsonido_${plugin}.so"; exit 1; }
+          done
+          echo "All 15 plugin binaries verified"
+
   wasm-check:
     name: Wasm Check
     runs-on: ubuntu-latest

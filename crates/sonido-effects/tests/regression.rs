@@ -18,8 +18,9 @@
 use sonido_analysis::compare::{mse, snr_db, spectral_correlation};
 use sonido_core::Effect;
 use sonido_effects::{
-    Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, LowPassFilter, MultiVibrato,
-    ParametricEq, Phaser, Reverb, TapeSaturation, Tremolo, Wah,
+    Bitcrusher, Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, Limiter,
+    LowPassFilter, MultiVibrato, ParametricEq, Phaser, Reverb, RingMod, TapeSaturation, Tremolo,
+    Wah,
 };
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, BufWriter, Write};
@@ -737,6 +738,62 @@ fn test_flanger_stereo_regression() {
     let (left, right) = generate_test_signal_stereo(TEST_DURATION_SAMPLES);
     run_regression_test_stereo("flanger", effect, &left, &right)
         .expect("Flanger stereo regression test failed");
+}
+
+#[test]
+fn test_limiter_regression() {
+    let mut effect = Limiter::new(SAMPLE_RATE);
+    effect.set_threshold_db(-12.0);
+    effect.set_ceiling_db(-0.3);
+    effect.set_release_ms(50.0);
+
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("limiter", effect, &input).expect("Limiter regression test failed");
+}
+
+#[test]
+fn test_limiter_defaults_regression() {
+    let effect = Limiter::new(SAMPLE_RATE);
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("limiter_defaults", effect, &input)
+        .expect("Limiter defaults regression test failed");
+}
+
+#[test]
+fn test_bitcrusher_regression() {
+    let mut effect = Bitcrusher::new(SAMPLE_RATE);
+    effect.set_bit_depth(4.0);
+    effect.set_downsample(8.0);
+
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("bitcrusher", effect, &input).expect("Bitcrusher regression test failed");
+}
+
+#[test]
+fn test_bitcrusher_defaults_regression() {
+    let effect = Bitcrusher::new(SAMPLE_RATE);
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("bitcrusher_defaults", effect, &input)
+        .expect("Bitcrusher defaults regression test failed");
+}
+
+#[test]
+fn test_ring_mod_regression() {
+    let mut effect = RingMod::new(SAMPLE_RATE);
+    effect.set_frequency(440.0);
+    effect.set_depth(1.0);
+    effect.set_mix(1.0);
+
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("ring_mod", effect, &input).expect("RingMod regression test failed");
+}
+
+#[test]
+fn test_ring_mod_defaults_regression() {
+    let effect = RingMod::new(SAMPLE_RATE);
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("ring_mod_defaults", effect, &input)
+        .expect("RingMod defaults regression test failed");
 }
 
 /// Run all regression tests and provide summary

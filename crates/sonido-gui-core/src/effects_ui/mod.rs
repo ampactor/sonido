@@ -5,6 +5,7 @@
 //! indices match the effect's `ParameterInfo`
 //! implementation — panels never access DSP state directly.
 
+mod bitcrusher;
 mod chorus;
 mod compressor;
 mod delay;
@@ -13,14 +14,17 @@ mod eq;
 mod filter;
 mod flanger;
 mod gate;
+mod limiter;
 mod multivibrato;
 mod phaser;
 mod preamp;
 mod reverb;
+mod ringmod;
 mod tape;
 mod tremolo;
 mod wah;
 
+pub use bitcrusher::BitcrusherPanel;
 pub use chorus::ChorusPanel;
 pub use compressor::CompressorPanel;
 pub use delay::DelayPanel;
@@ -29,10 +33,12 @@ pub use eq::ParametricEqPanel;
 pub use filter::FilterPanel;
 pub use flanger::FlangerPanel;
 pub use gate::GatePanel;
+pub use limiter::LimiterPanel;
 pub use multivibrato::MultiVibratoPanel;
 pub use phaser::PhaserPanel;
 pub use preamp::PreampPanel;
 pub use reverb::ReverbPanel;
+pub use ringmod::RingModPanel;
 pub use tape::TapePanel;
 pub use tremolo::TremoloPanel;
 pub use wah::WahPanel;
@@ -75,6 +81,9 @@ macro_rules! impl_effect_panel {
 }
 
 impl_effect_panel!(PreampPanel, "Preamp", "Pre");
+impl_effect_panel!(BitcrusherPanel, "Bitcrusher", "Crsh");
+impl_effect_panel!(LimiterPanel, "Limiter", "Lim");
+impl_effect_panel!(RingModPanel, "Ring Mod", "Ring");
 impl_effect_panel!(DistortionPanel, "Distortion", "Dist");
 impl_effect_panel!(CompressorPanel, "Compressor", "Comp");
 impl_effect_panel!(GatePanel, "Gate", "Gate");
@@ -110,6 +119,9 @@ pub fn create_panel(effect_id: &str) -> Option<Box<dyn EffectPanel + Send + Sync
         "multivibrato" => Some(Box::new(MultiVibratoPanel::new())),
         "tape" => Some(Box::new(TapePanel::new())),
         "reverb" => Some(Box::new(ReverbPanel::new())),
+        "limiter" => Some(Box::new(LimiterPanel::new())),
+        "bitcrusher" => Some(Box::new(BitcrusherPanel::new())),
+        "ringmod" => Some(Box::new(RingModPanel::new())),
         _ => None,
     }
 }
@@ -118,7 +130,7 @@ pub fn create_panel(effect_id: &str) -> Option<Box<dyn EffectPanel + Send + Sync
 mod tests {
     use super::*;
 
-    const ALL_EFFECT_IDS: [&str; 15] = [
+    const ALL_EFFECT_IDS: [&str; 18] = [
         "preamp",
         "distortion",
         "compressor",
@@ -134,6 +146,9 @@ mod tests {
         "multivibrato",
         "tape",
         "reverb",
+        "limiter",
+        "bitcrusher",
+        "ringmod",
     ];
 
     #[test]
@@ -155,7 +170,7 @@ mod tests {
 
     #[test]
     fn panel_names() {
-        let expected: [(&str, &str); 15] = [
+        let expected: [(&str, &str); 18] = [
             ("preamp", "Preamp"),
             ("distortion", "Distortion"),
             ("compressor", "Compressor"),
@@ -171,6 +186,9 @@ mod tests {
             ("multivibrato", "Vibrato"),
             ("tape", "Tape"),
             ("reverb", "Reverb"),
+            ("limiter", "Limiter"),
+            ("bitcrusher", "Bitcrusher"),
+            ("ringmod", "Ring Mod"),
         ];
         for (id, name) in &expected {
             let panel = create_panel(id).unwrap();
@@ -180,7 +198,7 @@ mod tests {
 
     #[test]
     fn panel_short_names() {
-        let expected: [(&str, &str); 15] = [
+        let expected: [(&str, &str); 18] = [
             ("preamp", "Pre"),
             ("distortion", "Dist"),
             ("compressor", "Comp"),
@@ -196,6 +214,9 @@ mod tests {
             ("multivibrato", "Vib"),
             ("tape", "Tape"),
             ("reverb", "Rev"),
+            ("limiter", "Lim"),
+            ("bitcrusher", "Crsh"),
+            ("ringmod", "Ring"),
         ];
         for (id, short) in &expected {
             let panel = create_panel(id).unwrap();
