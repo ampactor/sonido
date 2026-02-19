@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Effects Expansion + Plugin Stabilization
+
+#### sonido-effects
+- **Limiter**: Brickwall lookahead peak limiter with ceiling control (ParamId 1600-1604)
+- **Bitcrusher**: Lo-fi bit depth and sample rate reduction with jitter (ParamId 1700-1704)
+- **Ring Modulator**: Carrier oscillator × input with sine/triangle/square waveforms (ParamId 1800-1804)
+- Golden regression files for all 3 new effects (6 tests)
+
+#### sonido-registry
+- 18 registered effects (was 15): added limiter, bitcrusher, ringmod
+
+#### sonido-gui-core
+- UI panels for all 3 new effects (LimiterPanel, BitcrusherPanel, RingModPanel)
+
+#### sonido-plugin
+- CLAP plugin binaries for all 3 new effects (18 total plugins)
+- Clack dependency pinned to rev 57e89b3
+
+#### Build & CI
+- `make plugins` target: builds release plugin binaries, installs to ~/.clap/
+- Plugin CI job: tests + release build + binary verification for all 18 plugins
+
 ### Fixed — DSP Safety (d7126ff)
 
 #### sonido-core
@@ -20,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed — Core Hardening (8dbcda3)
 
 #### `impl_params!` Macro (sonido-core)
-- `impl_params!` declarative macro replaces ~600 lines of hand-written `ParameterInfo` impls across all 15 effects
+- `impl_params!` declarative macro replaces ~600 lines of hand-written `ParameterInfo` impls across all effects
 - Auto-clamping: `set_param()` clamps to descriptor min/max bounds automatically
 - `ParamDescriptor::custom()` factory with neutral defaults for non-standard parameters
 - `with_unit()` and `with_step()` const builders on `ParamDescriptor`

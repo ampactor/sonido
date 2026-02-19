@@ -1,5 +1,5 @@
 .PHONY: build test bench clean check fmt doc demo walkthrough verify-demos
-.PHONY: quick-check verify test-nostd dev-install install ci
+.PHONY: quick-check verify test-nostd dev-install install plugins ci
 
 # Build
 build:
@@ -78,6 +78,17 @@ dev-install:
 # Install CLI globally
 install:
 	cargo install --path crates/sonido-cli
+
+# Build and install CLAP plugins to ~/.clap/
+plugins:
+	cargo build --release -p sonido-plugin --examples
+	@mkdir -p $(HOME)/.clap
+	@for f in target/release/examples/libsonido_*.so; do \
+		name=$$(basename "$$f" .so | sed 's/^lib//; s/-/_/g'); \
+		cp "$$f" "$(HOME)/.clap/$$name.clap"; \
+		echo "Installed $$name.clap"; \
+	done
+	@echo "All plugins installed to ~/.clap/"
 
 # Full CI check
 ci: check test test-nostd doc

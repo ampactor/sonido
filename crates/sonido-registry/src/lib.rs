@@ -55,8 +55,9 @@ use alloc::{boxed::Box, string::String, vec::Vec};
 
 use sonido_core::{Effect, ParamDescriptor, ParameterInfo};
 use sonido_effects::{
-    Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, LowPassFilter, MultiVibrato,
-    ParametricEq, Phaser, Reverb, TapeSaturation, Tremolo, Wah,
+    Bitcrusher, Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, Limiter,
+    LowPassFilter, MultiVibrato, ParametricEq, Phaser, Reverb, RingMod, TapeSaturation, Tremolo,
+    Wah,
 };
 
 /// Category of audio effect for organization and filtering.
@@ -152,7 +153,7 @@ impl EffectRegistry {
     /// Create a new registry with all built-in effects registered.
     pub fn new() -> Self {
         let mut registry = Self {
-            entries: Vec::with_capacity(15),
+            entries: Vec::with_capacity(18),
         };
         registry.register_builtin_effects();
         registry
@@ -354,6 +355,45 @@ impl EffectRegistry {
             },
             |sr| Box::new(ParametricEq::new(sr)),
         );
+
+        // Limiter
+        self.register(
+            EffectDescriptor {
+                id: "limiter",
+                name: "Limiter",
+                short_name: "LIM",
+                description: "Brickwall lookahead peak limiter with ceiling control",
+                category: EffectCategory::Dynamics,
+                param_count: 5,
+            },
+            |sr| Box::new(Limiter::new(sr)),
+        );
+
+        // Bitcrusher
+        self.register(
+            EffectDescriptor {
+                id: "bitcrusher",
+                name: "Bitcrusher",
+                short_name: "CRSH",
+                description: "Lo-fi bit depth and sample rate reduction with jitter",
+                category: EffectCategory::Distortion,
+                param_count: 5,
+            },
+            |sr| Box::new(Bitcrusher::new(sr)),
+        );
+
+        // Ring Modulator
+        self.register(
+            EffectDescriptor {
+                id: "ringmod",
+                name: "Ring Modulator",
+                short_name: "RING",
+                description: "Ring modulation with sine, triangle, and square carriers",
+                category: EffectCategory::Modulation,
+                param_count: 5,
+            },
+            |sr| Box::new(RingMod::new(sr)),
+        );
     }
 
     /// Register an effect with the registry.
@@ -524,14 +564,14 @@ mod tests {
     #[test]
     fn test_registry_creation() {
         let registry = EffectRegistry::new();
-        assert_eq!(registry.len(), 15);
+        assert_eq!(registry.len(), 18);
     }
 
     #[test]
     fn test_all_effects() {
         let registry = EffectRegistry::new();
         let effects = registry.all_effects();
-        assert_eq!(effects.len(), 15);
+        assert_eq!(effects.len(), 18);
     }
 
     #[test]
@@ -563,13 +603,13 @@ mod tests {
         let registry = EffectRegistry::new();
 
         let modulation = registry.effects_in_category(EffectCategory::Modulation);
-        assert_eq!(modulation.len(), 5); // Chorus, Flanger, Phaser, MultiVibrato, Tremolo
+        assert_eq!(modulation.len(), 6); // Chorus, Flanger, Phaser, MultiVibrato, Tremolo, RingMod
 
         let dynamics = registry.effects_in_category(EffectCategory::Dynamics);
-        assert_eq!(dynamics.len(), 2); // Compressor, Gate
+        assert_eq!(dynamics.len(), 3); // Compressor, Gate, Limiter
 
         let distortion = registry.effects_in_category(EffectCategory::Distortion);
-        assert_eq!(distortion.len(), 2); // Distortion and Tape
+        assert_eq!(distortion.len(), 3); // Distortion, Tape, Bitcrusher
 
         let time_based = registry.effects_in_category(EffectCategory::TimeBased);
         assert_eq!(time_based.len(), 2); // Delay and Reverb

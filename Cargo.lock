@@ -809,7 +809,7 @@ dependencies = [
 [[package]]
 name = "clack-common"
 version = "0.1.0"
-source = "git+https://github.com/prokopyl/clack.git#57e89b356f16194a04fa03cc5c5a87d88db560c7"
+source = "git+https://github.com/prokopyl/clack.git?rev=57e89b3#57e89b356f16194a04fa03cc5c5a87d88db560c7"
 dependencies = [
  "bitflags 2.10.0",
  "clap-sys",
@@ -818,7 +818,7 @@ dependencies = [
 [[package]]
 name = "clack-extensions"
 version = "0.1.0"
-source = "git+https://github.com/prokopyl/clack.git#57e89b356f16194a04fa03cc5c5a87d88db560c7"
+source = "git+https://github.com/prokopyl/clack.git?rev=57e89b3#57e89b356f16194a04fa03cc5c5a87d88db560c7"
 dependencies = [
  "bitflags 2.10.0",
  "clack-common",
@@ -830,7 +830,7 @@ dependencies = [
 [[package]]
 name = "clack-plugin"
 version = "0.1.0"
-source = "git+https://github.com/prokopyl/clack.git#57e89b356f16194a04fa03cc5c5a87d88db560c7"
+source = "git+https://github.com/prokopyl/clack.git?rev=57e89b3#57e89b356f16194a04fa03cc5c5a87d88db560c7"
 dependencies = [
  "clack-common",
  "clap-sys",

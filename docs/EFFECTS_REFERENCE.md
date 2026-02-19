@@ -599,6 +599,91 @@ sonido process in.wav --effect eq \
 
 ---
 
+## limiter
+
+Brickwall lookahead peak limiter with ceiling control.
+
+| Parameter | Description | Default | Range |
+|-----------|-------------|---------|-------|
+| `threshold` | Threshold in dB | -6.0 | -30 to 0 |
+| `ceiling` | Output ceiling in dB | -0.3 | -30 to 0 |
+| `release` | Release time in ms | 100.0 | 10-500 |
+| `lookahead` | Lookahead time in ms | 5.0 | 0-10 |
+| `output` | Output level in dB | 0.0 | -20 to 20 |
+
+### Tips
+
+- **Lookahead**: Higher values catch transients better but add latency
+- **Ceiling**: Set to -0.3 dB for inter-sample peak safety
+- **Release**: Faster release can cause pumping on sustained material
+- **Use after compressor**: Limiter catches peaks the compressor misses
+
+### Example
+
+```bash
+sonido process in.wav --effect limiter \
+    --param threshold=-6 --param ceiling=-0.3 --param release=100
+```
+
+---
+
+## bitcrusher
+
+Lo-fi bit depth and sample rate reduction with jitter.
+
+| Parameter | Description | Default | Range |
+|-----------|-------------|---------|-------|
+| `bits` | Bit depth | 8.0 | 2-16 |
+| `downsample` | Downsample factor | 1.0 | 1-64 |
+| `jitter` | Hold time randomization % | 0.0 | 0-100 |
+| `mix` | Wet/dry mix % | 100.0 | 0-100 |
+| `output` | Output level in dB | 0.0 | -20 to 20 |
+
+### Tips
+
+- **Low bit depth** (2-4): Extreme digital artifacts
+- **Downsample**: Creates aliasing and staircase waveforms
+- **Jitter**: Adds analog character to the digital degradation
+- **Mix**: Blend with dry signal for parallel processing
+
+### Example
+
+```bash
+sonido process in.wav --effect bitcrusher \
+    --param bits=4 --param downsample=8 --param mix=80
+```
+
+---
+
+## ringmod
+
+Ring modulation with sine, triangle, and square carriers.
+
+| Parameter | Description | Default | Range |
+|-----------|-------------|---------|-------|
+| `frequency` | Carrier frequency in Hz | 220.0 | 20-2000 |
+| `depth` | Modulation depth % | 100.0 | 0-100 |
+| `waveform` | Carrier waveform (0=Sine, 1=Triangle, 2=Square) | 0 | 0-2 |
+| `mix` | Wet/dry mix % | 50.0 | 0-100 |
+| `output` | Output level in dB | 0.0 | -20 to 20 |
+
+### Tips
+
+- **Low frequencies** (20-80 Hz): Tremolo-like amplitude modulation
+- **Mid frequencies** (200-500 Hz): Classic metallic ring mod tone
+- **High frequencies** (1000+ Hz): Bell-like inharmonic overtones
+- **Depth < 100%**: Blends between tremolo and ring modulation
+- **Square waveform**: Aggressive on/off gating character
+
+### Example
+
+```bash
+sonido process in.wav --effect ringmod \
+    --param frequency=440 --param depth=100 --param waveform=0 --param mix=50
+```
+
+---
+
 ## Effect Chains
 
 ### Chain Syntax
