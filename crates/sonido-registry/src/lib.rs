@@ -56,8 +56,8 @@ use alloc::{boxed::Box, string::String, vec::Vec};
 use sonido_core::{Effect, ParamDescriptor, ParameterInfo};
 use sonido_effects::{
     Bitcrusher, Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, Limiter,
-    LowPassFilter, MultiVibrato, ParametricEq, Phaser, Reverb, RingMod, TapeSaturation, Tremolo,
-    Wah,
+    LowPassFilter, MultiVibrato, ParametricEq, Phaser, Reverb, RingMod, Stage, TapeSaturation,
+    Tremolo, Wah,
 };
 
 /// Category of audio effect for organization and filtering.
@@ -153,7 +153,7 @@ impl EffectRegistry {
     /// Create a new registry with all built-in effects registered.
     pub fn new() -> Self {
         let mut registry = Self {
-            entries: Vec::with_capacity(18),
+            entries: Vec::with_capacity(19),
         };
         registry.register_builtin_effects();
         registry
@@ -394,6 +394,19 @@ impl EffectRegistry {
             },
             |sr| Box::new(RingMod::new(sr)),
         );
+
+        // Stage (signal conditioning / stereo utility)
+        self.register(
+            EffectDescriptor {
+                id: "stage",
+                name: "Stage",
+                short_name: "STGE",
+                description: "Signal conditioning: gain, phase, width, balance, bass mono, Haas delay",
+                category: EffectCategory::Utility,
+                param_count: 12,
+            },
+            |sr| Box::new(Stage::new(sr)),
+        );
     }
 
     /// Register an effect with the registry.
@@ -564,14 +577,14 @@ mod tests {
     #[test]
     fn test_registry_creation() {
         let registry = EffectRegistry::new();
-        assert_eq!(registry.len(), 18);
+        assert_eq!(registry.len(), 19);
     }
 
     #[test]
     fn test_all_effects() {
         let registry = EffectRegistry::new();
         let effects = registry.all_effects();
-        assert_eq!(effects.len(), 18);
+        assert_eq!(effects.len(), 19);
     }
 
     #[test]
@@ -616,6 +629,9 @@ mod tests {
 
         let filter = registry.effects_in_category(EffectCategory::Filter);
         assert_eq!(filter.len(), 3); // LowPass, Wah, ParametricEQ
+
+        let utility = registry.effects_in_category(EffectCategory::Utility);
+        assert_eq!(utility.len(), 2); // Preamp, Stage
     }
 
     #[test]

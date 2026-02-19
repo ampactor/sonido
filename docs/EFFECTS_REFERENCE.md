@@ -684,6 +684,84 @@ sonido process in.wav --effect ringmod \
 
 ---
 
+## stage
+
+Signal conditioning and stereo utility effect. Provides gain trimming, phase
+inversion, channel routing, M/S stereo width, linear balance, LR4 bass mono
+crossover, and Haas temporal stereo delay.
+
+**Signal Flow:**
+
+```text
+Input L/R
+  → Phase invert (±1)
+  → Channel mode (normal / swap / mono L / mono R)
+  → Input gain (dB, smoothed)
+  → DC block (optional)
+  → M/S width (0% mono → 100% normal → 200% wide)
+  → Balance (-100% left → 0% center → +100% right)
+  → Bass mono (LR4 crossover → mono-sum lows)
+  → Haas delay (0–30 ms on one channel)
+  → Output level (dB, smoothed)
+  → Output L/R
+```
+
+Implementation: `crates/sonido-effects/src/stage.rs`
+
+| Parameter | Description | Default | Range |
+|-----------|-------------|---------|-------|
+| `gain` | Input trim in dB | 0.0 | -40 to 12 |
+| `width` | Stereo width % (0=mono, 100=normal, 200=wide) | 100.0 | 0-200 |
+| `balance` | Stereo balance % (-100=left, 0=center, +100=right) | 0.0 | -100 to 100 |
+| `phase_l` | Invert left channel polarity | Off | Off/On |
+| `phase_r` | Invert right channel polarity | Off | Off/On |
+| `channel` | Channel routing mode | Normal | Normal/Swap/Mono L/Mono R |
+| `dc_block` | Enable DC blocking filter | Off | Off/On |
+| `bass_mono` | Enable LR4 bass mono crossover | Off | Off/On |
+| `bass_freq` | Bass mono crossover frequency in Hz | 120.0 | 20-500 |
+| `haas` | Haas delay time in ms | 0.0 | 0-30 |
+| `haas_side` | Which channel gets the Haas delay | Right | Left/Right |
+| `output` | Output level in dB | 0.0 | -20 to 20 |
+
+### M/S Width
+
+Mid-side encoding with adjustable side gain:
+
+```text
+mid  = (L + R) × 0.5
+side = (L - R) × 0.5 × width
+out_l = mid + side
+out_r = mid - side
+```
+
+### Bass Mono
+
+Linkwitz-Riley 4th-order crossover (two cascaded Butterworth biquads per
+channel at Q = 1/√2). Low frequencies below the crossover are mono-summed;
+highs remain stereo. Prevents sub-bass phase cancellation on playback systems.
+
+### Haas Delay
+
+A short delay (0–30 ms) on one channel creates a spatial impression without
+altering frequency content. Named after Helmut Haas (1951).
+
+### Tips
+
+- **Width 0%**: Instant mono fold-down — useful before mono bass processing
+- **Bass Mono + 120 Hz**: Standard crossover for club/festival playback
+- **Haas 8–15 ms**: Natural-sounding stereo widening without M/S artifacts
+- **Phase invert one channel**: Check for mono compatibility issues
+- **Channel Swap**: Quick A/B for stereo image debugging
+
+### Example
+
+```bash
+sonido process in.wav --effect stage \
+    --param gain=3 --param width=150 --param bass_mono=1 --param bass_freq=120
+```
+
+---
+
 ## Effect Chains
 
 ### Chain Syntax

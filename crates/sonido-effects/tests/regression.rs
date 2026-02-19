@@ -19,8 +19,8 @@ use sonido_analysis::compare::{mse, snr_db, spectral_correlation};
 use sonido_core::Effect;
 use sonido_effects::{
     Bitcrusher, Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, Limiter,
-    LowPassFilter, MultiVibrato, ParametricEq, Phaser, Reverb, RingMod, TapeSaturation, Tremolo,
-    Wah,
+    LowPassFilter, MultiVibrato, ParametricEq, Phaser, Reverb, RingMod, Stage, TapeSaturation,
+    Tremolo, Wah,
 };
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, BufWriter, Write};
@@ -794,6 +794,27 @@ fn test_ring_mod_defaults_regression() {
     let input = generate_test_signal(TEST_DURATION_SAMPLES);
     run_regression_test("ring_mod_defaults", effect, &input)
         .expect("RingMod defaults regression test failed");
+}
+
+#[test]
+fn test_stage_regression() {
+    let mut effect = Stage::new(SAMPLE_RATE);
+    effect.set_gain_db(3.0);
+    effect.set_width(150.0);
+    effect.set_balance(25.0);
+    effect.set_bass_mono(true);
+    effect.set_haas_delay_ms(10.0);
+
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("stage", effect, &input).expect("Stage regression test failed");
+}
+
+#[test]
+fn test_stage_defaults_regression() {
+    let effect = Stage::new(SAMPLE_RATE);
+    let input = generate_test_signal(TEST_DURATION_SAMPLES);
+    run_regression_test("stage_defaults", effect, &input)
+        .expect("Stage defaults regression test failed");
 }
 
 /// Run all regression tests and provide summary
