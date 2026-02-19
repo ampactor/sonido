@@ -36,6 +36,10 @@
 //!
 //! - [`LowPassFilter`] - Resonant biquad lowpass filter
 //!
+//! ## Utility
+//!
+//! - [`Stage`] - Signal conditioning: gain, phase, width, balance, bass mono, Haas delay
+//!
 //! # Common Patterns
 //!
 //! All effects implement the [`Effect`](sonido_core::Effect) trait and follow these patterns:
@@ -103,6 +107,7 @@ pub mod phaser;
 pub mod preamp;
 pub mod reverb;
 pub mod ring_mod;
+pub mod stage;
 pub mod tape_saturation;
 pub mod tremolo;
 pub mod wah;
@@ -123,6 +128,7 @@ pub use phaser::Phaser;
 pub use preamp::CleanPreamp;
 pub use reverb::{Reverb, ReverbType};
 pub use ring_mod::{CarrierWaveform, RingMod};
+pub use stage::{ChannelMode, HaasSide, Stage};
 pub use tape_saturation::TapeSaturation;
 pub use tremolo::{Tremolo, TremoloWaveform};
 pub use wah::{Wah, WahMode};

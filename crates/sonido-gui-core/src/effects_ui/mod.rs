@@ -20,6 +20,7 @@ mod phaser;
 mod preamp;
 mod reverb;
 mod ringmod;
+mod stage;
 mod tape;
 mod tremolo;
 mod wah;
@@ -39,6 +40,7 @@ pub use phaser::PhaserPanel;
 pub use preamp::PreampPanel;
 pub use reverb::ReverbPanel;
 pub use ringmod::RingModPanel;
+pub use stage::StagePanel;
 pub use tape::TapePanel;
 pub use tremolo::TremoloPanel;
 pub use wah::WahPanel;
@@ -98,6 +100,7 @@ impl_effect_panel!(FilterPanel, "Filter", "Flt");
 impl_effect_panel!(MultiVibratoPanel, "Vibrato", "Vib");
 impl_effect_panel!(TapePanel, "Tape", "Tape");
 impl_effect_panel!(ReverbPanel, "Reverb", "Rev");
+impl_effect_panel!(StagePanel, "Stage", "Stge");
 
 /// Create an effect panel for the given registry effect ID.
 ///
@@ -122,6 +125,7 @@ pub fn create_panel(effect_id: &str) -> Option<Box<dyn EffectPanel + Send + Sync
         "limiter" => Some(Box::new(LimiterPanel::new())),
         "bitcrusher" => Some(Box::new(BitcrusherPanel::new())),
         "ringmod" => Some(Box::new(RingModPanel::new())),
+        "stage" => Some(Box::new(StagePanel::new())),
         _ => None,
     }
 }
@@ -130,7 +134,7 @@ pub fn create_panel(effect_id: &str) -> Option<Box<dyn EffectPanel + Send + Sync
 mod tests {
     use super::*;
 
-    const ALL_EFFECT_IDS: [&str; 18] = [
+    const ALL_EFFECT_IDS: [&str; 19] = [
         "preamp",
         "distortion",
         "compressor",
@@ -149,6 +153,7 @@ mod tests {
         "limiter",
         "bitcrusher",
         "ringmod",
+        "stage",
     ];
 
     #[test]
@@ -170,7 +175,7 @@ mod tests {
 
     #[test]
     fn panel_names() {
-        let expected: [(&str, &str); 18] = [
+        let expected: [(&str, &str); 19] = [
             ("preamp", "Preamp"),
             ("distortion", "Distortion"),
             ("compressor", "Compressor"),
@@ -189,6 +194,7 @@ mod tests {
             ("limiter", "Limiter"),
             ("bitcrusher", "Bitcrusher"),
             ("ringmod", "Ring Mod"),
+            ("stage", "Stage"),
         ];
         for (id, name) in &expected {
             let panel = create_panel(id).unwrap();
@@ -198,7 +204,7 @@ mod tests {
 
     #[test]
     fn panel_short_names() {
-        let expected: [(&str, &str); 18] = [
+        let expected: [(&str, &str); 19] = [
             ("preamp", "Pre"),
             ("distortion", "Dist"),
             ("compressor", "Comp"),
@@ -217,6 +223,7 @@ mod tests {
             ("limiter", "Lim"),
             ("bitcrusher", "Crsh"),
             ("ringmod", "Ring"),
+            ("stage", "Stge"),
         ];
         for (id, short) in &expected {
             let panel = create_panel(id).unwrap();

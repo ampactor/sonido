@@ -13,13 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Limiter**: Brickwall lookahead peak limiter with ceiling control (ParamId 1600-1604)
 - **Bitcrusher**: Lo-fi bit depth and sample rate reduction with jitter (ParamId 1700-1704)
 - **Ring Modulator**: Carrier oscillator × input with sine/triangle/square waveforms (ParamId 1800-1804)
-- Golden regression files for all 3 new effects (6 tests)
+- **Stage**: Signal conditioning and stereo utility — gain, phase, width, balance, bass mono, Haas delay (ParamId 1900-1911)
+- Golden regression files for all 4 new effects (8 tests)
 
 #### sonido-registry
-- 18 registered effects (was 15): added limiter, bitcrusher, ringmod
+- 19 registered effects (was 15): added limiter, bitcrusher, ringmod, stage
 
 #### sonido-gui-core
-- UI panels for all 3 new effects (LimiterPanel, BitcrusherPanel, RingModPanel)
+- UI panels for all 4 new effects (LimiterPanel, BitcrusherPanel, RingModPanel, StagePanel)
 
 #### sonido-plugin
 - CLAP plugin binaries for all 3 new effects (18 total plugins)

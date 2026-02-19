@@ -7,7 +7,7 @@ Production-grade DSP library in Rust for audio effects, plugins, and embedded sy
 | Crate | Purpose | no_std |
 |-------|---------|--------|
 | sonido-core | Effect trait, ParameterInfo, SmoothedParam, delays, filters, LFOs, tempo, modulation | Yes |
-| sonido-effects | 18 effects: Distortion, Compressor, Limiter, Chorus, Delay, Reverb, Bitcrusher, Ring Mod, etc. (all implement ParameterInfo) | Yes |
+| sonido-effects | 19 effects: Distortion, Compressor, Limiter, Chorus, Delay, Reverb, Bitcrusher, Ring Mod, Stage, etc. (all implement ParameterInfo) | Yes |
 | sonido-synth | Synthesis engine: oscillators (PolyBLEP), ADSR envelopes, voices, modulation matrix | Yes |
 | sonido-registry | Effect factory and discovery by name/category | Yes |
 | sonido-config | CLI-first configuration and preset management | No |
@@ -34,7 +34,7 @@ When you modify a source file, you **must** update every documentation target li
 | `crates/sonido-core/src/param.rs` | This file (Key Patterns: SmoothedParam), `docs/DSP_FUNDAMENTALS.md` (Parameter Smoothing) | Smoothing config, advance() usage, default timing |
 | `crates/sonido-core/src/param_info.rs` | This file (Key Patterns: ParameterInfo) | Trait methods, ParamDescriptor fields |
 | `crates/sonido-core/src/modulation.rs` | This file (Key Patterns: ModulationSource), `docs/DSP_FUNDAMENTALS.md` (Modulation Effects) | Trait interface, bipolar/unipolar ranges |
-| `crates/sonido-core/src/tempo.rs` | This file (Key Patterns: TempoManager), `docs/DSP_FUNDAMENTALS.md` (Tempo Sync) | NoteDivision variants, BPM conversion formulas |
+| `crates/sonido-core/src/tempo.rs` | This file (Key Patterns: TempoManager, TempoContext), `docs/DSP_FUNDAMENTALS.md` (Tempo Sync) | NoteDivision variants, BPM conversion, TempoContext fields |
 | `crates/sonido-core/src/biquad.rs` | `docs/DSP_FUNDAMENTALS.md` (Biquad), `docs/DESIGN_DECISIONS.md` ADR-007 | Filter types, coefficient formulas, Direct Form choice |
 | `crates/sonido-core/src/svf.rs` | `docs/DSP_FUNDAMENTALS.md` (SVF), `docs/DESIGN_DECISIONS.md` ADR-008 | SVF topology, modulation stability notes |
 | `crates/sonido-core/src/comb.rs`, `allpass.rs` | `docs/DSP_FUNDAMENTALS.md` (Reverb: Freeverb), `docs/EFFECTS_REFERENCE.md` (Reverb) | Delay lengths, feedback structure |
@@ -161,6 +161,7 @@ pub trait Effect {
     fn set_sample_rate(&mut self, sample_rate: f32);
     fn reset(&mut self);
     fn latency_samples(&self) -> usize;
+    fn set_tempo_context(&mut self, _ctx: &TempoContext) {} // default no-op
 }
 ```
 
@@ -193,7 +194,7 @@ pub trait ParameterInfo {
 
 `ParamDescriptor` fields: `name`, `short_name`, `min`, `max`, `default`, `unit` (ParamUnit), `id` (ParamId), `string_id`, `scale` (ParamScale), `flags` (ParamFlags), `group`, `modulation_id`, `step_labels`. Use factory constructors + builder chaining. `format_value()` / `parse_value()` for CLAP/VST3 text display. `custom()` factory for non-standard params (neutral defaults: unit None, step 0.01, Linear, AUTOMATABLE).
 
-**`impl_params!` macro** — All 18 effects use this to generate `ParameterInfo` impls. Auto-clamps setter values to descriptor bounds:
+**`impl_params!` macro** — All 19 effects use this to generate `ParameterInfo` impls. Auto-clamps setter values to descriptor bounds:
 ```rust
 impl_params! {
     MyEffect, this {
@@ -229,6 +230,14 @@ use sonido_core::{TempoManager, NoteDivision};
 let tempo = TempoManager::new(48000.0, 120.0);
 let delay_ms = tempo.division_to_ms(NoteDivision::DottedEighth);  // 375ms at 120 BPM
 let lfo_hz = tempo.division_to_hz(NoteDivision::Quarter);  // 2 Hz at 120 BPM
+```
+
+**TempoContext** - Unified tempo/transport message from clock source to effects. Called once per block before processing via `Effect::set_tempo_context()` (default no-op). `TempoManager::snapshot()` bridges standalone/embedded contexts:
+```rust
+use sonido_core::{TempoContext, TempoManager};
+let tempo = TempoManager::new(48000.0, 140.0);
+let ctx = tempo.snapshot();  // TempoContext { bpm: 140.0, ... }
+effect.set_tempo_context(&ctx);
 ```
 
 **Oversampling** - Wrap any nonlinear effect for anti-aliasing:
@@ -330,7 +339,7 @@ cd crates/sonido-gui && trunk serve                        # Dev server at :8080
 | Delay line | crates/sonido-core/src/delay.rs |
 | ModulationSource trait | crates/sonido-core/src/modulation.rs |
 | LFO | crates/sonido-core/src/lfo.rs |
-| TempoManager/NoteDivision | crates/sonido-core/src/tempo.rs |
+| TempoContext/TempoManager/NoteDivision | crates/sonido-core/src/tempo.rs |
 | Effect Registry | crates/sonido-registry/src/lib.rs |
 | Reverb | crates/sonido-effects/src/reverb.rs |
 | Wah | crates/sonido-effects/src/wah.rs |
@@ -350,6 +359,7 @@ cd crates/sonido-gui && trunk serve                        # Dev server at :8080
 | Limiter | crates/sonido-effects/src/limiter.rs |
 | Bitcrusher | crates/sonido-effects/src/bitcrusher.rs |
 | Ring Modulator | crates/sonido-effects/src/ring_mod.rs |
+| Stage | crates/sonido-effects/src/stage.rs |
 | CombFilter/AllpassFilter | crates/sonido-core/src/comb.rs, allpass.rs |
 | DcBlocker | crates/sonido-core/src/dc_blocker.rs |
 | flush_denormal | crates/sonido-core/src/math.rs |
@@ -412,7 +422,7 @@ cd crates/sonido-gui && trunk serve                        # Dev server at :8080
 
 - SmoothedParam: use preset constructors (`fast`/`standard`/`slow`/`interpolated`), call `advance()` per sample
 - ParamDescriptor: use factories (`::mix()`, `::depth()`, `::feedback()`) for common params, chain `.with_id()`, `.with_scale()`, `.with_flags()`, `.with_group()`
-- ParamId: stable IDs assigned per effect (base: Preamp=100, Distortion=200, ..., Reverb=1500, Limiter=1600, Bitcrusher=1700, RingMod=1800), sequential params from base
+- ParamId: stable IDs assigned per effect (base: Preamp=100, Distortion=200, ..., Reverb=1500, Limiter=1600, Bitcrusher=1700, RingMod=1800, Stage=1900), sequential params from base
 - ParamScale: `Logarithmic` for frequency params, `Linear` default, `Power(exp)` for custom curves
 - ParamFlags: `AUTOMATABLE` (default), `STEPPED` for enum/discrete params, `HIDDEN`, `READ_ONLY`
 - Output level: all effects expose `output` as last ParameterInfo index, use `gain::output_level_param()`
