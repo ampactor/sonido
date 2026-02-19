@@ -52,7 +52,7 @@ pub struct SonidoApp {
     cached_panel: Option<(
         sonido_gui_core::SlotIndex,
         String,
-        Box<dyn effects_ui::EffectPanel>,
+        Box<dyn effects_ui::EffectPanel + Send + Sync>,
     )>,
 
     // Status

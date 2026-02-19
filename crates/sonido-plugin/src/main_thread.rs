@@ -208,18 +208,20 @@ impl PluginStateImpl for SonidoMainThread<'_> {
 
 impl PluginGuiImpl for SonidoMainThread<'_> {
     fn is_api_supported(&mut self, config: GuiConfiguration) -> bool {
-        !config.is_floating && GuiApiType::default_for_current_platform() == Some(config.api_type)
+        let platform_api = GuiApiType::default_for_current_platform();
+        !config.is_floating && platform_api == Some(config.api_type)
     }
 
     fn get_preferred_api(&mut self) -> Option<GuiConfiguration<'_>> {
+        let api = GuiApiType::default_for_current_platform();
         Some(GuiConfiguration {
-            api_type: GuiApiType::default_for_current_platform()?,
+            api_type: api?,
             is_floating: false,
         })
     }
 
     fn create(&mut self, _config: GuiConfiguration) -> Result<(), PluginError> {
-        Ok(()) // resources allocated lazily in show()
+        Ok(()) // resources allocated lazily in set_parent()
     }
 
     fn destroy(&mut self) {
@@ -244,23 +246,26 @@ impl PluginGuiImpl for SonidoMainThread<'_> {
     }
 
     fn set_parent(&mut self, window: Window) -> Result<(), PluginError> {
-        self.parent_rwh = Some(window.raw_window_handle());
+        let rwh = window.raw_window_handle();
+        self.parent_rwh = Some(rwh);
+
+        // Bitwig expects the child window to exist after set_parent.
+        // Create the editor immediately rather than deferring to show().
+        self.editor = SonidoEditor::open(rwh, self.shared.clone(), self.scale);
+
+        if self.editor.is_none() {
+            return Err(PluginError::Message("Failed to open editor window"));
+        }
         Ok(())
     }
 
     fn show(&mut self) -> Result<(), PluginError> {
-        if self.editor.is_some() {
-            return Ok(()); // already open
-        }
-        let rwh = self
-            .parent_rwh
-            .ok_or(PluginError::Message("No parent window set"))?;
-        self.editor = SonidoEditor::open(rwh, self.shared.clone(), self.scale);
+        // Window already created in set_parent; baseview shows it immediately.
         Ok(())
     }
 
     fn hide(&mut self) -> Result<(), PluginError> {
-        self.editor = None; // drop closes the baseview window
+        self.editor = None;
         Ok(())
     }
 
