@@ -14,6 +14,19 @@ members = [
     "crates/sonido-synth",
     "crates/sonido-plugin",
 ]
+default-members = [
+    "crates/sonido-core",
+    "crates/sonido-effects",
+    "crates/sonido-analysis",
+    "crates/sonido-io",
+    "crates/sonido-cli",
+    "crates/sonido-gui",
+    "crates/sonido-gui-core",
+    "crates/sonido-registry",
+    "crates/sonido-platform",
+    "crates/sonido-config",
+    "crates/sonido-synth",
+]
 
 [workspace.package]
 version = "0.1.0"
