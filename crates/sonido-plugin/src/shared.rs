@@ -43,7 +43,7 @@ struct SonidoSharedData {
 /// or GUI interaction.
 ///
 /// Wraps an `Arc<SonidoSharedData>` so it can be cloned into `'static + Send`
-/// closures (e.g., the egui-baseview render loop) without lifetime issues.
+/// closures (e.g., the egui bridge render loop) without lifetime issues.
 #[derive(Clone)]
 pub struct SonidoShared {
     inner: Arc<SonidoSharedData>,

@@ -1,30 +1,33 @@
-//! CLAP plugin GUI: parameter bridge and egui-baseview window management.
+//! CLAP plugin GUI: parameter bridge and egui window management.
 //!
 //! Connects the CLAP host's parent window handle to egui rendering via
-//! egui-baseview (OpenGL). Each plugin instance gets an independent
-//! `egui::Context` and GL context — no shared global state.
+//! sonido's own egui bridge (OpenGL). Each plugin instance gets an
+//! independent `egui::Context` and GL context — no shared global state.
+//!
+//! The egui bridge (`crate::egui_bridge`) replaces the external `egui-baseview`
+//! dependency with ~350 lines of focused glue code, giving sonido full control
+//! over its plugin rendering pipeline.
 
 use std::sync::Arc;
 
-use baseview::{Size, WindowHandle, WindowOpenOptions, WindowScalePolicy};
-use egui_baseview::{EguiWindow, GraphicsConfig};
+use baseview::WindowHandle;
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 
-use egui_baseview::egui;
 use sonido_core::ParamDescriptor;
 use sonido_gui_core::{
     effects_ui::{EffectPanel, create_panel},
     param_bridge::{ParamBridge, ParamIndex, SlotIndex},
 };
 
+use crate::egui_bridge;
 use crate::shared::SonidoShared;
 
 // ── Fixed window size ──────────────────────────────────────────────────────────
 
-/// Plugin window width in physical pixels.
+/// Plugin window width in logical pixels.
 pub const PLUGIN_WIDTH: u32 = 480;
 
-/// Plugin window height in physical pixels.
+/// Plugin window height in logical pixels.
 pub const PLUGIN_HEIGHT: u32 = 380;
 
 // ── Parameter bridge ──────────────────────────────────────────────────────────
@@ -95,7 +98,7 @@ impl ParamBridge for PluginParamBridge {
 
 // ── Parent window wrapper ─────────────────────────────────────────────────────
 
-/// Wraps a [`RawWindowHandle`] from the CLAP host for use with egui-baseview's
+/// Wraps a [`RawWindowHandle`] from the CLAP host for use with baseview's
 /// `open_parented`, which requires [`HasRawWindowHandle`] (raw-window-handle 0.5).
 ///
 /// # Safety
@@ -118,7 +121,7 @@ unsafe impl HasRawWindowHandle for ParentWindow {
 
 // ── Editor ────────────────────────────────────────────────────────────────────
 
-/// Holds the egui-baseview rendering window for one plugin instance.
+/// Holds the baseview rendering window for one plugin instance.
 ///
 /// Dropping this value closes the plugin GUI window (baseview `WindowHandle`
 /// cleanup is handled on drop).
@@ -130,7 +133,7 @@ impl SonidoEditor {
     /// Opens an egui child window inside the host's parent window.
     ///
     /// Returns `None` if no UI panel is registered for the effect's ID
-    /// (should not happen for the 15 built-in effects).
+    /// (should not happen for the 19 built-in effects).
     pub fn open(parent_rwh: RawWindowHandle, shared: SonidoShared, scale: f64) -> Option<Self> {
         let effect_id = shared.effect_id().to_owned();
         let panel: Box<dyn EffectPanel + Send + Sync> = create_panel(&effect_id)?;
@@ -143,22 +146,17 @@ impl SonidoEditor {
 
         let state = GuiState { bridge, panel };
 
-        let settings = WindowOpenOptions {
-            title: effect_id,
-            size: Size::new(f64::from(PLUGIN_WIDTH), f64::from(PLUGIN_HEIGHT)),
-            scale: WindowScalePolicy::ScaleFactor(scale),
-            gl_config: None,
-        };
-
-        let window = EguiWindow::open_parented(
+        let window = egui_bridge::open_parented(
             &ParentWindow(parent_rwh),
-            settings,
-            GraphicsConfig::default(),
+            effect_id,
+            PLUGIN_WIDTH,
+            PLUGIN_HEIGHT,
+            scale,
             state,
             // build: one-time setup (fonts, theme — none needed, gui-core theme applies)
-            |_ctx, _queue, _state| {},
-            // update: called each frame by egui-baseview's render loop
-            |ctx, _queue, state| {
+            |_ctx, _state| {},
+            // update: called each frame by the bridge's render loop
+            |ctx, state| {
                 // Poll for host-originated parameter changes at 30 Hz.
                 // Full vsync repaint is wasteful; 33ms latency is imperceptible
                 // for knob positions updating from automation.

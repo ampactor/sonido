@@ -15,8 +15,9 @@ The library is built with stereo-first processing and no_std compatibility at it
 ┌───────────────────────────────────────────────────────────────────────────┐
 │                           Applications                                     │
 │  ┌─────────────┐  ┌─────────────┐  ┌───────────┐  ┌──────────────┐        │
-│  │ sonido-cli  │  │ sonido-gui  │  │ CLAP/VST  │  │sonido-hothouse│        │
-│  │  (binary)   │  │  (egui)     │  │ (future)  │  │  (embedded)   │        │
+│  │ sonido-cli  │  │ sonido-gui  │  │sonido-    │  │sonido-hothouse│        │
+│  │  (binary)   │  │  (egui)     │  │ plugin    │  │  (embedded)   │        │
+│  │             │  │             │  │(CLAP/egui)│  │               │        │
 │  └──────┬──────┘  └──────┬──────┘  └─────┬─────┘  └──────┬───────┘        │
 └─────────┼────────────────┼───────────────┼───────────────┼────────────────┘
           │                │               │               │
@@ -52,7 +53,7 @@ The library is built with stereo-first processing and no_std compatibility at it
                                     ▼
                            ┌───────────────┐
                            │sonido-effects │
-                           │  (15 effects) │
+                           │  (19 effects) │
                            │   [no_std]    │
                            └───────┬───────┘
                                    │
@@ -91,9 +92,9 @@ The foundation crate providing DSP primitives. Designed for `no_std` environment
 
 Audio effect implementations built on sonido-core. All `no_std` compatible with full stereo support.
 
-**Why separate effects from core?** The `Effect` trait and DSP primitives change rarely; effect implementations change often as new algorithms are added or refined. Separating them means adding a new effect never risks breaking the core infrastructure. It also means `sonido-core` can be used independently for custom DSP work without pulling in all 15 effect implementations.
+**Why separate effects from core?** The `Effect` trait and DSP primitives change rarely; effect implementations change often as new algorithms are added or refined. Separating them means adding a new effect never risks breaking the core infrastructure. It also means `sonido-core` can be used independently for custom DSP work without pulling in all 19 effect implementations.
 
-**15 Effects:**
+**19 Effects:**
 
 *True Stereo:*
 - `Reverb`: Freeverb-style with decorrelated L/R tanks, stereo width control
@@ -105,6 +106,7 @@ Audio effect implementations built on sonido-core. All `no_std` compatible with 
 *Dual-Mono:*
 - `Distortion`: Waveshaping with soft clip, hard clip, foldback, asymmetric modes
 - `Compressor`: Dynamics compressor with soft knee, attack/release, makeup gain
+- `Limiter`: Look-ahead brickwall limiter with auto-release
 - `Gate`: Noise gate with threshold, attack/release, hold time
 - `Wah`: Auto-wah and manual wah with resonant filter
 - `ParametricEq`: 3-band parametric EQ with Q control
@@ -113,6 +115,9 @@ Audio effect implementations built on sonido-core. All `no_std` compatible with 
 - `CleanPreamp`: Simple gain stage with input/output control
 - `LowPassFilter`: Resonant 2-pole lowpass (SVF-based)
 - `MultiVibrato`: 6-unit tape wow/flutter simulation
+- `Bitcrusher`: Sample rate and bit depth reduction
+- `RingMod`: Ring modulation with variable frequency
+- `Stage`: Signal conditioning and stereo utility
 
 ### sonido-analysis
 
@@ -295,11 +300,29 @@ Shared GUI infrastructure for both standalone and plugin UIs. Contains everythin
 
 **Key modules:**
 - `param_bridge.rs`: `ParamBridge` trait — the abstraction boundary between GUI and audio thread. Includes `begin_set`/`end_set` gesture protocol for CLAP/VST3 undo grouping and automation recording.
-- `effects_ui/`: Per-effect parameter panels (15 effects + `EffectPanel` dispatcher)
+- `effects_ui/`: Per-effect parameter panels (19 effects + `EffectPanel` dispatcher)
 - `widgets/`: Knob, LevelMeter, BypassToggle, FootswitchToggle
 - `theme.rs`: Dark theme shared across all targets
 
-**Why a separate gui-core?** Plugin hosts (CLAP via clack, VST3 via clap-wrapper) need effect UIs but not cpal audio streams, preset management, or ChainManager. By isolating widgets, effect panels, and the ParamBridge trait into gui-core, a future `sonido-plugin` crate can depend on gui-core alone and provide its own `ParamBridge` implementation backed by host parameters.
+**Why a separate gui-core?** Plugin hosts (CLAP via clack) need effect UIs but not cpal audio streams, preset management, or ChainManager. By isolating widgets, effect panels, and the ParamBridge trait into gui-core, `sonido-plugin` depends on gui-core alone and provides its own `ParamBridge` implementation (`PluginParamBridge`) backed by lock-free atomic host parameters.
+
+### sonido-plugin
+
+CLAP audio plugin adapter via the `clack` safe wrapper. Each of the 19 effects becomes an independent `.clap` plugin binary with full GUI.
+
+**Key modules:**
+- `lib.rs`: `sonido_effect_entry!` macro generates CLAP entry points
+- `audio.rs`: Real-time audio processor — parameter sync, stereo block processing
+- `gui.rs`: Plugin GUI — `PluginParamBridge` and `SonidoEditor` window lifecycle
+- `egui_bridge/`: Custom baseview-to-egui bridge (~350 lines), replacing `egui-baseview`
+- `main_thread.rs`: CLAP params, state save/load (JSON), GUI extension, audio ports
+- `shared.rs`: `SonidoShared` — lock-free atomic parameter store shared across threads
+
+**Architecture:**
+- Custom egui bridge: sonido owns its rendering pipeline (baseview + egui_glow), with no external `egui-baseview` dependency
+- Lock-free parameter sync: `AtomicU32` (f32 bit-cast) per parameter, `AtomicU8` gesture flags
+- Host notification: `host.request_process()` callback ensures GUI changes reach host even when playback is stopped
+- Plugin binaries: each effect is a `cdylib` example target using the `sonido_effect_entry!` macro
 
 ### sonido-gui
 
