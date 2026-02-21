@@ -27,8 +27,11 @@ clack-extensions = { git = "https://github.com/prokopyl/clack.git", rev = "57e89
 ] }
 
 sonido-gui-core = { path = "../sonido-gui-core" }
-egui-baseview = { git = "https://codeberg.org/BillyDM/egui-baseview.git", rev = "ec70c3fe" }
 baseview = { git = "https://github.com/RustAudio/baseview.git", rev = "9a0b42c09d712777b2edb4c5e0cb6baf21e988f0" }
+egui = "0.31"
+egui_glow = "0.31"
+glow = "0.16"
+keyboard-types = "0.7"
 raw-window-handle = "0.5"
 
 serde = { workspace = true }

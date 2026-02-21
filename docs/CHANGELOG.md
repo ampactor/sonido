@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Custom egui Bridge
+
+#### sonido-plugin
+- Replaced external `egui-baseview` git dependency with a custom `egui_bridge` module (~350 lines)
+- Plugin GUI rendering pipeline is now fully owned by sonido (baseview + egui_glow)
+- Removed dependencies: `egui-baseview`, `copypasta`, `open`
+- Added direct dependencies: `egui`, `egui_glow`, `glow`, `keyboard-types`
+- One fewer external git dependency in the plugin build
+
+#### Workspace
+- Added `default-members` to workspace Cargo.toml — `cargo build`/`cargo test` skip `sonido-plugin` by default (its git dependencies may not be fetchable in all environments)
+
+#### docs
+- Updated `ARCHITECTURE.md` with sonido-plugin section, corrected effect count to 19
+- Updated `CLAUDE.md` Key Files table with plugin crate entries
+
 ### Added — Effects Expansion + Plugin Stabilization
 
 #### sonido-effects

@@ -383,6 +383,12 @@ cd crates/sonido-gui && trunk serve                        # Dev server at :8080
 | File player | crates/sonido-gui/src/file_player.rs |
 | Effect UIs | crates/sonido-gui-core/src/effects_ui/ |
 | GUI theme overrides | crates/sonido-gui/src/theme.rs |
+| Plugin adapter | crates/sonido-plugin/src/lib.rs |
+| Plugin audio processor | crates/sonido-plugin/src/audio.rs |
+| Plugin GUI + ParamBridge | crates/sonido-plugin/src/gui.rs |
+| Plugin egui bridge | crates/sonido-plugin/src/egui_bridge/ |
+| Plugin main thread | crates/sonido-plugin/src/main_thread.rs |
+| Plugin shared state | crates/sonido-plugin/src/shared.rs |
 | CLI commands | crates/sonido-cli/src/main.rs |
 | CLI analyze commands | crates/sonido-cli/src/commands/analyze.rs |
 | CLI common utilities | crates/sonido-cli/src/commands/common.rs |
