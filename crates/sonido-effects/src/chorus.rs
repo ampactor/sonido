@@ -27,8 +27,9 @@
 use libm::ceilf;
 use sonido_core::math::soft_limit;
 use sonido_core::{
-    Effect, InterpolatedDelay, Lfo, LfoWaveform, ParamDescriptor, ParamFlags, ParamId, ParamUnit,
-    SmoothedParam, wet_dry_mix, wet_dry_mix_stereo,
+    DIVISION_LABELS, Effect, InterpolatedDelay, Lfo, LfoWaveform, NoteDivision, ParamDescriptor,
+    ParamFlags, ParamId, ParamUnit, SmoothedParam, TempoManager, division_to_index,
+    index_to_division, wet_dry_mix, wet_dry_mix_stereo,
 };
 
 /// Maximum modulation depth in milliseconds.
@@ -46,7 +47,9 @@ const MAX_MOD_MS: f32 = 5.0;
 /// | 3 | Voices | 2–4 (stepped) | 2 |
 /// | 4 | Feedback | 0–70% | 0.0 |
 /// | 5 | Base Delay | 5.0–25.0 ms | 15.0 |
-/// | 6 | Output | -20.0–20.0 dB | 0.0 |
+/// | 6 | Sync | Off/On | Off |
+/// | 7 | Division | 0–11 (note divisions) | 3 (Eighth) |
+/// | 8 | Output | -20.0–20.0 dB | 0.0 |
 ///
 /// # Example
 ///
@@ -87,6 +90,13 @@ pub struct Chorus {
     fb_state: [f32; 4],
     output_level: SmoothedParam,
     sample_rate: f32,
+    // -- Tempo sync --
+    /// Tempo manager for synced LFO rates.
+    tempo: TempoManager,
+    /// Whether tempo sync is active (rate derived from BPM + division).
+    sync: bool,
+    /// Selected note division for tempo sync.
+    division: NoteDivision,
 }
 
 impl Chorus {
@@ -133,6 +143,9 @@ impl Chorus {
             fb_state: [0.0; 4],
             output_level: sonido_core::gain::output_level_param(sample_rate),
             sample_rate,
+            tempo: TempoManager::new(sample_rate, 120.0),
+            sync: false,
+            division: NoteDivision::Quarter,
         }
     }
 
@@ -188,6 +201,33 @@ impl Chorus {
     /// doubling effect; longer values create a more ensemble-like character.
     pub fn set_base_delay_ms(&mut self, ms: f32) {
         self.base_delay_ms.set_target(ms.clamp(5.0, 25.0));
+    }
+
+    /// Enable or disable tempo sync.
+    ///
+    /// When enabled, LFO rate is derived from the current BPM and note
+    /// division, overriding the manual rate parameter.
+    pub fn set_sync(&mut self, enabled: bool) {
+        self.sync = enabled;
+        if enabled {
+            self.apply_synced_rate();
+        }
+    }
+
+    /// Set the note division for tempo sync.
+    ///
+    /// Only takes effect when sync is enabled.
+    pub fn set_division(&mut self, division: NoteDivision) {
+        self.division = division;
+        if self.sync {
+            self.apply_synced_rate();
+        }
+    }
+
+    /// Recalculate LFO rate from tempo and division.
+    fn apply_synced_rate(&mut self) {
+        let hz = self.tempo.division_to_hz(self.division);
+        self.rate.set_target(hz.clamp(0.1, 10.0));
     }
 
     /// Recalculate sample-domain values from the current base delay target.
@@ -307,6 +347,12 @@ impl Chorus {
     }
 }
 
+impl Default for Chorus {
+    fn default() -> Self {
+        Self::new(48000.0)
+    }
+}
+
 impl Effect for Chorus {
     #[inline]
     fn process(&mut self, input: f32) -> f32 {
@@ -394,6 +440,14 @@ impl Effect for Chorus {
         self.feedback.set_sample_rate(sample_rate);
         self.base_delay_ms.set_sample_rate(sample_rate);
         self.output_level.set_sample_rate(sample_rate);
+        self.tempo.set_sample_rate(sample_rate);
+    }
+
+    fn set_tempo_context(&mut self, ctx: &sonido_core::TempoContext) {
+        self.tempo.set_bpm(ctx.bpm);
+        if self.sync {
+            self.apply_synced_rate();
+        }
     }
 
     fn reset(&mut self) {
@@ -454,7 +508,23 @@ sonido_core::impl_params! {
             get: this.base_delay_ms.target(),
             set: |v| this.set_base_delay_ms(v);
 
-        [6] sonido_core::gain::output_param_descriptor()
+        [6] ParamDescriptor::custom("Sync", "Sync", 0.0, 1.0, 0.0)
+                .with_step(1.0)
+                .with_id(ParamId(707), "chor_sync")
+                .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED))
+                .with_step_labels(&["Off", "On"]),
+            get: if this.sync { 1.0 } else { 0.0 },
+            set: |v| this.set_sync(v > 0.5);
+
+        [7] ParamDescriptor::custom("Division", "Div", 0.0, 11.0, 3.0)
+                .with_step(1.0)
+                .with_id(ParamId(708), "chor_division")
+                .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED))
+                .with_step_labels(DIVISION_LABELS),
+            get: division_to_index(this.division) as f32,
+            set: |v| this.set_division(index_to_division(v as u8));
+
+        [8] sonido_core::gain::output_param_descriptor()
                 .with_id(ParamId(703), "chor_output"),
             get: sonido_core::gain::output_level_db(&this.output_level),
             set: |v| sonido_core::gain::set_output_level_db(&mut this.output_level, v);
@@ -575,7 +645,7 @@ mod tests {
     #[test]
     fn test_chorus_param_count() {
         let chorus = Chorus::new(44100.0);
-        assert_eq!(chorus.param_count(), 7);
+        assert_eq!(chorus.param_count(), 9);
     }
 
     #[test]
@@ -694,6 +764,24 @@ mod tests {
         assert_eq!(chorus.param_id(3), Some(ParamId(704))); // voices
         assert_eq!(chorus.param_id(4), Some(ParamId(705))); // feedback
         assert_eq!(chorus.param_id(5), Some(ParamId(706))); // base_delay
-        assert_eq!(chorus.param_id(6), Some(ParamId(703))); // output (kept stable)
+        assert_eq!(chorus.param_id(6), Some(ParamId(707))); // sync
+        assert_eq!(chorus.param_id(7), Some(ParamId(708))); // division
+        assert_eq!(chorus.param_id(8), Some(ParamId(703))); // output (kept stable)
+    }
+
+    #[test]
+    fn test_chorus_tempo_sync() {
+        let mut chorus = Chorus::new(44100.0);
+        // At 120 BPM, Eighth note = 4 Hz
+        chorus.set_sync(true);
+        chorus.set_division(sonido_core::NoteDivision::Eighth);
+        assert!((chorus.rate.target() - 4.0).abs() < 0.01);
+
+        // At 60 BPM, Eighth note = 2 Hz
+        chorus.set_tempo_context(&sonido_core::TempoContext {
+            bpm: 60.0,
+            ..Default::default()
+        });
+        assert!((chorus.rate.target() - 2.0).abs() < 0.01);
     }
 }

@@ -22,8 +22,9 @@
 
 use libm::ceilf;
 use sonido_core::{
-    Effect, InterpolatedDelay, Lfo, ParamDescriptor, ParamFlags, ParamId, ParamUnit, SmoothedParam,
-    flush_denormal, impl_params, wet_dry_mix, wet_dry_mix_stereo,
+    DIVISION_LABELS, Effect, InterpolatedDelay, Lfo, NoteDivision, ParamDescriptor, ParamFlags,
+    ParamId, ParamUnit, SmoothedParam, TempoManager, division_to_index, flush_denormal,
+    impl_params, index_to_division, wet_dry_mix, wet_dry_mix_stereo,
 };
 
 /// Flanger effect with LFO-modulated delay and optional through-zero flanging.
@@ -37,7 +38,9 @@ use sonido_core::{
 /// | 2 | Feedback | -95–95% | 50.0 |
 /// | 3 | Mix | 0–100% | 50.0 |
 /// | 4 | TZF | Off/On | Off |
-/// | 5 | Output | -20.0–20.0 dB | 0.0 |
+/// | 5 | Sync | Off/On | Off |
+/// | 6 | Division | 0–11 (note divisions) | 3 (Eighth) |
+/// | 7 | Output | -20.0–20.0 dB | 0.0 |
 ///
 /// # Example
 ///
@@ -94,6 +97,13 @@ pub struct Flanger {
     stereo_spread: f32,
     /// Through-zero flanging mode.
     tzf: bool,
+    // -- Tempo sync --
+    /// Tempo manager for synced LFO rates.
+    tempo: TempoManager,
+    /// Whether tempo sync is active (rate derived from BPM + division).
+    sync: bool,
+    /// Selected note division for tempo sync.
+    division: NoteDivision,
 }
 
 impl Flanger {
@@ -138,6 +148,9 @@ impl Flanger {
             feedback_sample_r: 0.0,
             stereo_spread: 0.25,
             tzf: false,
+            tempo: TempoManager::new(sample_rate, 120.0),
+            sync: false,
+            division: NoteDivision::Quarter,
         }
     }
 
@@ -197,6 +210,39 @@ impl Flanger {
     /// Returns whether through-zero flanging is enabled.
     pub fn tzf(&self) -> bool {
         self.tzf
+    }
+
+    /// Enable or disable tempo sync.
+    ///
+    /// When enabled, LFO rate is derived from the current BPM and note
+    /// division, overriding the manual rate parameter.
+    pub fn set_sync(&mut self, enabled: bool) {
+        self.sync = enabled;
+        if enabled {
+            self.apply_synced_rate();
+        }
+    }
+
+    /// Set the note division for tempo sync.
+    ///
+    /// Only takes effect when sync is enabled.
+    pub fn set_division(&mut self, division: NoteDivision) {
+        self.division = division;
+        if self.sync {
+            self.apply_synced_rate();
+        }
+    }
+
+    /// Recalculate LFO rate from tempo and division.
+    fn apply_synced_rate(&mut self) {
+        let hz = self.tempo.division_to_hz(self.division);
+        self.rate.set_target(hz.clamp(0.05, 5.0));
+    }
+}
+
+impl Default for Flanger {
+    fn default() -> Self {
+        Self::new(48000.0)
     }
 }
 
@@ -332,6 +378,14 @@ impl Effect for Flanger {
         self.feedback.set_sample_rate(sample_rate);
         self.mix.set_sample_rate(sample_rate);
         self.output_level.set_sample_rate(sample_rate);
+        self.tempo.set_sample_rate(sample_rate);
+    }
+
+    fn set_tempo_context(&mut self, ctx: &sonido_core::TempoContext) {
+        self.tempo.set_bpm(ctx.bpm);
+        if self.sync {
+            self.apply_synced_rate();
+        }
     }
 
     fn reset(&mut self) {
@@ -392,7 +446,23 @@ impl_params! {
             get: if this.tzf { 1.0 } else { 0.0 },
             set: |v| this.set_tzf(v >= 0.5);
 
-        [5] sonido_core::gain::output_param_descriptor()
+        [5] ParamDescriptor::custom("Sync", "Sync", 0.0, 1.0, 0.0)
+                .with_step(1.0)
+                .with_id(ParamId(806), "flgr_sync")
+                .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED))
+                .with_step_labels(&["Off", "On"]),
+            get: if this.sync { 1.0 } else { 0.0 },
+            set: |v| this.set_sync(v > 0.5);
+
+        [6] ParamDescriptor::custom("Division", "Div", 0.0, 11.0, 3.0)
+                .with_step(1.0)
+                .with_id(ParamId(807), "flgr_division")
+                .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED))
+                .with_step_labels(DIVISION_LABELS),
+            get: division_to_index(this.division) as f32,
+            set: |v| this.set_division(index_to_division(v as u8));
+
+        [7] sonido_core::gain::output_param_descriptor()
                 .with_id(ParamId(804), "flgr_output"),
             get: sonido_core::gain::output_level_db(&this.output_level),
             set: |v| sonido_core::gain::set_output_level_db(&mut this.output_level, v);
@@ -499,7 +569,7 @@ mod tests {
     fn test_flanger_parameter_info() {
         let flanger = Flanger::new(44100.0);
 
-        assert_eq!(flanger.param_count(), 6);
+        assert_eq!(flanger.param_count(), 8);
 
         let rate_info = flanger.param_info(0).unwrap();
         assert_eq!(rate_info.name, "Rate");
@@ -617,5 +687,21 @@ mod tests {
             output.abs() < 0.01,
             "Should be silent after TZF reset, got {output}",
         );
+    }
+
+    #[test]
+    fn test_flanger_tempo_sync() {
+        let mut flanger = Flanger::new(44100.0);
+        // At 120 BPM, Quarter note = 2 Hz
+        flanger.set_sync(true);
+        flanger.set_division(sonido_core::NoteDivision::Quarter);
+        assert!((flanger.rate.target() - 2.0).abs() < 0.01);
+
+        // At 60 BPM, Quarter note = 1 Hz
+        flanger.set_tempo_context(&sonido_core::TempoContext {
+            bpm: 60.0,
+            ..Default::default()
+        });
+        assert!((flanger.rate.target() - 1.0).abs() < 0.01);
     }
 }

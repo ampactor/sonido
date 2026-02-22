@@ -29,7 +29,10 @@ pub fn translate_mouse(
     let scale_recip = 1.0 / scale as f32;
 
     match event {
-        MouseEvent::CursorMoved { position, modifiers } => {
+        MouseEvent::CursorMoved {
+            position,
+            modifiers,
+        } => {
             let pos = Pos2::new(
                 position.x as f32 * scale_recip,
                 position.y as f32 * scale_recip,
@@ -63,18 +66,19 @@ pub fn translate_mouse(
             }
         }
 
-        MouseEvent::WheelScrolled(delta) => {
-            let (x, y) = match *delta {
+        MouseEvent::WheelScrolled {
+            delta,
+            modifiers: _,
+        } => {
+            let (x, y) = match delta {
                 ScrollDelta::Lines { x, y } => (x * 24.0, y * 24.0),
-                ScrollDelta::Pixels { x, y } => (x as f32 * scale_recip, y as f32 * scale_recip),
+                ScrollDelta::Pixels { x, y } => (x * scale_recip, y * scale_recip),
             };
-            raw_input
-                .events
-                .push(EguiEvent::MouseWheel {
-                    unit: egui::MouseWheelUnit::Point,
-                    delta: Vec2::new(x, y),
-                    modifiers: raw_input.modifiers,
-                });
+            raw_input.events.push(EguiEvent::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: Vec2::new(x, y),
+                modifiers: raw_input.modifiers,
+            });
         }
 
         MouseEvent::CursorEntered => {
@@ -122,10 +126,7 @@ pub fn translate_window(
 /// Called on keyboard events to keep `raw_input.modifiers` up to date.
 /// Individual key presses are not translated — only shift is needed
 /// (for fine-control knob dragging), and that is tracked via modifiers.
-pub fn update_modifiers_from_keyboard(
-    modifiers: KbModifiers,
-    raw_input: &mut RawInput,
-) {
+pub fn update_modifiers_from_keyboard(modifiers: KbModifiers, raw_input: &mut RawInput) {
     raw_input.modifiers = map_modifiers(modifiers);
 }
 

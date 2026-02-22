@@ -15,9 +15,9 @@
 //! - baseview windowing: <https://github.com/RustAudio/baseview>
 //! - Based on egui-baseview by BillyDM (Codeberg), reduced to plugin essentials
 
+use baseview::gl::GlConfig;
 use baseview::{
-    Event, EventStatus, GlConfig, Size, Window, WindowHandler, WindowOpenOptions,
-    WindowScalePolicy,
+    Event, EventStatus, Size, Window, WindowHandler, WindowOpenOptions, WindowScalePolicy,
 };
 use egui::{Context, Pos2, RawInput, Rect, Vec2};
 use raw_window_handle::HasRawWindowHandle;
@@ -148,7 +148,13 @@ struct EguiBridgeHandler<S> {
 impl<S: Send + 'static> WindowHandler for EguiBridgeHandler<S> {
     fn on_frame(&mut self, window: &mut Window<'_>) {
         let gl_context = window.gl_context().unwrap();
-        gl_context.make_current();
+        #[allow(unsafe_code)]
+        // SAFETY: make_current binds the OpenGL context to the current thread.
+        // This is called once per frame from the baseview window handler, which
+        // always runs on the same thread. The context is valid for the window lifetime.
+        unsafe {
+            gl_context.make_current();
+        }
 
         let ppp = self.scale as f32;
         let logical_w = self.physical_width as f32 / ppp;
@@ -174,15 +180,19 @@ impl<S: Send + 'static> WindowHandler for EguiBridgeHandler<S> {
         #[allow(unsafe_code)]
         unsafe {
             use glow::HasContext;
-            self.gl
-                .viewport(0, 0, self.physical_width as i32, self.physical_height as i32);
+            self.gl.viewport(
+                0,
+                0,
+                self.physical_width as i32,
+                self.physical_height as i32,
+            );
             self.gl.clear_color(0.1, 0.1, 0.12, 1.0);
             self.gl
                 .clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
         }
 
         // Render egui primitives via glow.
-        self.painter.paint_and_check_errors(
+        self.painter.paint_and_update_textures(
             [self.physical_width, self.physical_height],
             full_output.pixels_per_point,
             &primitives,
@@ -210,10 +220,7 @@ impl<S: Send + 'static> WindowHandler for EguiBridgeHandler<S> {
             }
 
             Event::Keyboard(kb_event) => {
-                translate::update_modifiers_from_keyboard(
-                    kb_event.modifiers,
-                    &mut self.raw_input,
-                );
+                translate::update_modifiers_from_keyboard(kb_event.modifiers, &mut self.raw_input);
                 EventStatus::Ignored
             }
 

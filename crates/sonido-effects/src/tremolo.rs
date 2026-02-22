@@ -3,8 +3,8 @@
 //! Classic amplitude modulation effect that creates rhythmic volume variations.
 
 use sonido_core::{
-    Effect, Lfo, LfoWaveform, ParamDescriptor, ParamFlags, ParamId, ParamUnit, SmoothedParam,
-    impl_params,
+    DIVISION_LABELS, Effect, Lfo, LfoWaveform, NoteDivision, ParamDescriptor, ParamFlags, ParamId,
+    ParamUnit, SmoothedParam, TempoManager, division_to_index, impl_params, index_to_division,
 };
 
 /// Tremolo waveform type.
@@ -66,7 +66,9 @@ impl TremoloWaveform {
 /// | 1 | Depth | 0–100% | 50.0 |
 /// | 2 | Waveform | 0–3 (Sine, Triangle, Square, SampleHold) | 0 |
 /// | 3 | Stereo Spread | 0–100% | 0.0 |
-/// | 4 | Output | -20.0–20.0 dB | 0.0 |
+/// | 4 | Sync | Off/On | Off |
+/// | 5 | Division | 0–11 (note divisions) | 3 (Eighth) |
+/// | 6 | Output | -20.0–20.0 dB | 0.0 |
 ///
 /// # Example
 ///
@@ -95,6 +97,13 @@ pub struct Tremolo {
     /// Stereo spread amount (0.0 = dual-mono, 1.0 = 180° phase offset / full auto-pan).
     stereo_spread: f32,
     sample_rate: f32,
+    // -- Tempo sync --
+    /// Tempo manager for synced LFO rates.
+    tempo: TempoManager,
+    /// Whether tempo sync is active (rate derived from BPM + division).
+    sync: bool,
+    /// Selected note division for tempo sync.
+    division: NoteDivision,
 }
 
 impl Tremolo {
@@ -116,6 +125,9 @@ impl Tremolo {
             waveform: TremoloWaveform::Sine,
             stereo_spread: 0.0,
             sample_rate,
+            tempo: TempoManager::new(sample_rate, 120.0),
+            sync: false,
+            division: NoteDivision::Quarter,
         }
     }
 
@@ -173,6 +185,39 @@ impl Tremolo {
     pub fn stereo_spread(&self) -> f32 {
         self.stereo_spread
     }
+
+    /// Enable or disable tempo sync.
+    ///
+    /// When enabled, LFO rate is derived from the current BPM and note
+    /// division, overriding the manual rate parameter.
+    pub fn set_sync(&mut self, enabled: bool) {
+        self.sync = enabled;
+        if enabled {
+            self.apply_synced_rate();
+        }
+    }
+
+    /// Set the note division for tempo sync.
+    ///
+    /// Only takes effect when sync is enabled.
+    pub fn set_division(&mut self, division: NoteDivision) {
+        self.division = division;
+        if self.sync {
+            self.apply_synced_rate();
+        }
+    }
+
+    /// Recalculate LFO rate from tempo and division.
+    fn apply_synced_rate(&mut self) {
+        let hz = self.tempo.division_to_hz(self.division);
+        self.rate.set_target(hz.clamp(0.5, 20.0));
+    }
+}
+
+impl Default for Tremolo {
+    fn default() -> Self {
+        Self::new(48000.0)
+    }
 }
 
 impl Effect for Tremolo {
@@ -227,6 +272,14 @@ impl Effect for Tremolo {
         self.rate.set_sample_rate(sample_rate);
         self.depth.set_sample_rate(sample_rate);
         self.output_level.set_sample_rate(sample_rate);
+        self.tempo.set_sample_rate(sample_rate);
+    }
+
+    fn set_tempo_context(&mut self, ctx: &sonido_core::TempoContext) {
+        self.tempo.set_bpm(ctx.bpm);
+        if self.sync {
+            self.apply_synced_rate();
+        }
     }
 
     fn reset(&mut self) {
@@ -274,7 +327,23 @@ impl_params! {
             get: this.stereo_spread * 100.0,
             set: |v| this.set_stereo_spread(v / 100.0);
 
-        [4] sonido_core::gain::output_param_descriptor()
+        [4] ParamDescriptor::custom("Sync", "Sync", 0.0, 1.0, 0.0)
+                .with_step(1.0)
+                .with_id(ParamId(1005), "trem_sync")
+                .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED))
+                .with_step_labels(&["Off", "On"]),
+            get: if this.sync { 1.0 } else { 0.0 },
+            set: |v| this.set_sync(v > 0.5);
+
+        [5] ParamDescriptor::custom("Division", "Div", 0.0, 11.0, 3.0)
+                .with_step(1.0)
+                .with_id(ParamId(1006), "trem_division")
+                .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED))
+                .with_step_labels(DIVISION_LABELS),
+            get: division_to_index(this.division) as f32,
+            set: |v| this.set_division(index_to_division(v as u8));
+
+        [6] sonido_core::gain::output_param_descriptor()
                 .with_id(ParamId(1003), "trem_output"),
             get: sonido_core::gain::output_level_db(&this.output_level),
             set: |v| sonido_core::gain::set_output_level_db(&mut this.output_level, v);
@@ -380,7 +449,7 @@ mod tests {
     fn test_tremolo_parameters() {
         let mut tremolo = Tremolo::new(44100.0);
 
-        assert_eq!(tremolo.param_count(), 5);
+        assert_eq!(tremolo.param_count(), 7);
 
         // Test rate parameter
         tremolo.set_param(0, 10.0);
@@ -470,5 +539,21 @@ mod tests {
         // First output should be predictable
         let output = tremolo.process(1.0);
         assert!(output.is_finite());
+    }
+
+    #[test]
+    fn test_tremolo_tempo_sync() {
+        let mut tremolo = Tremolo::new(44100.0);
+        // At 120 BPM, Quarter note = 2 Hz
+        tremolo.set_sync(true);
+        tremolo.set_division(sonido_core::NoteDivision::Quarter);
+        assert!((tremolo.rate.target() - 2.0).abs() < 0.01);
+
+        // At 240 BPM, Quarter note = 4 Hz
+        tremolo.set_tempo_context(&sonido_core::TempoContext {
+            bpm: 240.0,
+            ..Default::default()
+        });
+        assert!((tremolo.rate.target() - 4.0).abs() < 0.01);
     }
 }

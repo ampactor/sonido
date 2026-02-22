@@ -7,8 +7,9 @@
 
 use core::f32::consts::PI;
 use sonido_core::{
-    Effect, Lfo, ParamDescriptor, ParamFlags, ParamId, ParamScale, ParamUnit, SmoothedParam,
-    fast_exp2, fast_log2, fast_tan, flush_denormal, impl_params, wet_dry_mix,
+    DIVISION_LABELS, Effect, Lfo, NoteDivision, ParamDescriptor, ParamFlags, ParamId, ParamScale,
+    ParamUnit, SmoothedParam, TempoManager, division_to_index, fast_exp2, fast_log2, fast_tan,
+    flush_denormal, impl_params, index_to_division, wet_dry_mix,
 };
 
 /// Maximum number of allpass stages.
@@ -33,7 +34,9 @@ const COEFF_UPDATE_INTERVAL: u32 = 32;
 /// | 4 | Mix | 0–100% | 50.0 |
 /// | 5 | Min Freq | 20–2000 Hz | 200.0 |
 /// | 6 | Max Freq | 200–20000 Hz | 4000.0 |
-/// | 7 | Output | -20.0–20.0 dB | 0.0 |
+/// | 7 | Sync | Off/On | Off |
+/// | 8 | Division | 0–11 (note divisions) | 3 (Eighth) |
+/// | 9 | Output | -20.0–20.0 dB | 0.0 |
 ///
 /// # Algorithm
 ///
@@ -95,6 +98,13 @@ pub struct Phaser {
     /// Down-counter for block-rate coefficient decimation.
     /// Starts at 0 so the first sample triggers an immediate update.
     coeff_update_counter: u32,
+    // -- Tempo sync --
+    /// Tempo manager for synced LFO rates.
+    tempo: TempoManager,
+    /// Whether tempo sync is active (rate derived from BPM + division).
+    sync: bool,
+    /// Selected note division for tempo sync.
+    division: NoteDivision,
 }
 
 /// Simple first-order allpass filter for phaser.
@@ -177,6 +187,9 @@ impl Phaser {
             min_freq: Self::DEFAULT_MIN_FREQ,
             max_freq: Self::DEFAULT_MAX_FREQ,
             coeff_update_counter: 1,
+            tempo: TempoManager::new(sample_rate, 120.0),
+            sync: false,
+            division: NoteDivision::Quarter,
         }
     }
 
@@ -265,6 +278,39 @@ impl Phaser {
     /// Get current maximum sweep frequency in Hz.
     pub fn max_freq(&self) -> f32 {
         self.max_freq
+    }
+
+    /// Enable or disable tempo sync.
+    ///
+    /// When enabled, LFO rate is derived from the current BPM and note
+    /// division, overriding the manual rate parameter.
+    pub fn set_sync(&mut self, enabled: bool) {
+        self.sync = enabled;
+        if enabled {
+            self.apply_synced_rate();
+        }
+    }
+
+    /// Set the note division for tempo sync.
+    ///
+    /// Only takes effect when sync is enabled.
+    pub fn set_division(&mut self, division: NoteDivision) {
+        self.division = division;
+        if self.sync {
+            self.apply_synced_rate();
+        }
+    }
+
+    /// Recalculate LFO rate from tempo and division.
+    fn apply_synced_rate(&mut self) {
+        let hz = self.tempo.division_to_hz(self.division);
+        self.rate.set_target(hz.clamp(0.05, 5.0));
+    }
+}
+
+impl Default for Phaser {
+    fn default() -> Self {
+        Self::new(48000.0)
     }
 }
 
@@ -393,10 +439,18 @@ impl Effect for Phaser {
         self.feedback.set_sample_rate(sample_rate);
         self.mix.set_sample_rate(sample_rate);
         self.output_level.set_sample_rate(sample_rate);
+        self.tempo.set_sample_rate(sample_rate);
 
         // Re-clamp max_freq to new Nyquist limit
         let nyquist_limit = sample_rate * 0.45;
         self.max_freq = self.max_freq.min(nyquist_limit);
+    }
+
+    fn set_tempo_context(&mut self, ctx: &sonido_core::TempoContext) {
+        self.tempo.set_bpm(ctx.bpm);
+        if self.sync {
+            self.apply_synced_rate();
+        }
     }
 
     fn reset(&mut self) {
@@ -470,7 +524,23 @@ impl_params! {
             get: this.max_freq,
             set: |v| this.set_max_freq(v);
 
-        [7] sonido_core::gain::output_param_descriptor()
+        [7] ParamDescriptor::custom("Sync", "Sync", 0.0, 1.0, 0.0)
+                .with_step(1.0)
+                .with_id(ParamId(908), "phsr_sync")
+                .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED))
+                .with_step_labels(&["Off", "On"]),
+            get: if this.sync { 1.0 } else { 0.0 },
+            set: |v| this.set_sync(v > 0.5);
+
+        [8] ParamDescriptor::custom("Division", "Div", 0.0, 11.0, 3.0)
+                .with_step(1.0)
+                .with_id(ParamId(909), "phsr_division")
+                .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED))
+                .with_step_labels(DIVISION_LABELS),
+            get: division_to_index(this.division) as f32,
+            set: |v| this.set_division(index_to_division(v as u8));
+
+        [9] sonido_core::gain::output_param_descriptor()
                 .with_id(ParamId(905), "phsr_output"),
             get: sonido_core::gain::output_level_db(&this.output_level),
             set: |v| sonido_core::gain::set_output_level_db(&mut this.output_level, v);
@@ -548,7 +618,7 @@ mod tests {
     fn test_phaser_parameter_info() {
         let phaser = Phaser::new(44100.0);
 
-        assert_eq!(phaser.param_count(), 8);
+        assert_eq!(phaser.param_count(), 10);
 
         let rate_info = phaser.param_info(0).unwrap();
         assert_eq!(rate_info.name, "Rate");
@@ -690,5 +760,21 @@ mod tests {
             "max_freq should be re-clamped on sample rate change, got {}",
             phaser.max_freq()
         );
+    }
+
+    #[test]
+    fn test_phaser_tempo_sync() {
+        let mut phaser = Phaser::new(44100.0);
+        // At 120 BPM, Half note = 1 Hz
+        phaser.set_sync(true);
+        phaser.set_division(sonido_core::NoteDivision::Half);
+        assert!((phaser.rate.target() - 1.0).abs() < 0.01);
+
+        // At 60 BPM, Half note = 0.5 Hz
+        phaser.set_tempo_context(&sonido_core::TempoContext {
+            bpm: 60.0,
+            ..Default::default()
+        });
+        assert!((phaser.rate.target() - 0.5).abs() < 0.01);
     }
 }

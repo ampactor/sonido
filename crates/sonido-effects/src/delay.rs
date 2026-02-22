@@ -24,63 +24,11 @@
 
 use libm::ceilf;
 use sonido_core::{
-    AllpassFilter, Biquad, Effect, InterpolatedDelay, NoteDivision, OnePole, ParamDescriptor,
-    ParamFlags, ParamId, ParamScale, ParamUnit, SmoothedParam, TempoManager, flush_denormal,
-    highpass_coefficients, wet_dry_mix, wet_dry_mix_stereo,
+    AllpassFilter, Biquad, DIVISION_LABELS, Effect, InterpolatedDelay, NoteDivision, OnePole,
+    ParamDescriptor, ParamFlags, ParamId, ParamScale, ParamUnit, SmoothedParam, TempoManager,
+    division_to_index, flush_denormal, highpass_coefficients, index_to_division, wet_dry_mix,
+    wet_dry_mix_stereo,
 };
-
-/// Note division labels for the stepped division parameter.
-const DIVISION_LABELS: &[&str] = &[
-    "Whole",
-    "Half",
-    "Quarter",
-    "Eighth",
-    "Sixteenth",
-    "32nd",
-    "Dot Half",
-    "Dot Qtr",
-    "Dot 8th",
-    "Trip Qtr",
-    "Trip 8th",
-    "Trip 16th",
-];
-
-/// Map integer index (0–11) to [`NoteDivision`] variant.
-fn index_to_division(index: u8) -> NoteDivision {
-    match index {
-        0 => NoteDivision::Whole,
-        1 => NoteDivision::Half,
-        2 => NoteDivision::Quarter,
-        3 => NoteDivision::Eighth,
-        4 => NoteDivision::Sixteenth,
-        5 => NoteDivision::ThirtySecond,
-        6 => NoteDivision::DottedHalf,
-        7 => NoteDivision::DottedQuarter,
-        8 => NoteDivision::DottedEighth,
-        9 => NoteDivision::TripletQuarter,
-        10 => NoteDivision::TripletEighth,
-        11 => NoteDivision::TripletSixteenth,
-        _ => NoteDivision::Quarter,
-    }
-}
-
-/// Map [`NoteDivision`] variant to integer index (0–11).
-fn division_to_index(div: NoteDivision) -> u8 {
-    match div {
-        NoteDivision::Whole => 0,
-        NoteDivision::Half => 1,
-        NoteDivision::Quarter => 2,
-        NoteDivision::Eighth => 3,
-        NoteDivision::Sixteenth => 4,
-        NoteDivision::ThirtySecond => 5,
-        NoteDivision::DottedHalf => 6,
-        NoteDivision::DottedQuarter => 7,
-        NoteDivision::DottedEighth => 8,
-        NoteDivision::TripletQuarter => 9,
-        NoteDivision::TripletEighth => 10,
-        NoteDivision::TripletSixteenth => 11,
-    }
-}
 
 /// Classic delay effect with feedback filtering, diffusion, and tempo sync.
 ///
@@ -357,6 +305,12 @@ impl Delay {
     }
 }
 
+impl Default for Delay {
+    fn default() -> Self {
+        Self::new(48000.0)
+    }
+}
+
 impl Effect for Delay {
     #[inline]
     fn process(&mut self, input: f32) -> f32 {
@@ -462,6 +416,13 @@ impl Effect for Delay {
         self.diffusion_ap2_l.clear();
         self.diffusion_ap1_r.clear();
         self.diffusion_ap2_r.clear();
+    }
+
+    fn set_tempo_context(&mut self, ctx: &sonido_core::TempoContext) {
+        self.tempo.set_bpm(ctx.bpm);
+        if self.sync {
+            self.apply_synced_time();
+        }
     }
 }
 
