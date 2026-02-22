@@ -13,7 +13,7 @@ default = ["std"]
 std = ["sonido-core/std"]
 
 [dependencies]
-sonido-core = { path = "../sonido-core", default-features = false }
+sonido-core = { workspace = true }
 libm = { workspace = true }
 
 [lints]

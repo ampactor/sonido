@@ -25,8 +25,7 @@ indicatif = { workspace = true }
 thiserror = { workspace = true }
 ctrlc = "3.4"
 anyhow = "1.0"
-serde_json = "1.0"
-num-traits = { workspace = true }
+serde_json = { workspace = true }
 rustfft = { workspace = true }
 
 [lints]

@@ -8,10 +8,10 @@ description = "Shared GUI widgets, theme, and parameter bridge for Sonido"
 
 [dependencies]
 # GUI framework
-egui = "0.31"
+egui = { workspace = true }
 
 # Core types (ParamDescriptor, ParamUnit)
-sonido-core = { path = "../sonido-core", features = ["std"] }
+sonido-core = { workspace = true, features = ["std"] }
 
 [lints]
 workspace = true

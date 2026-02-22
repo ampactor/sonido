@@ -14,14 +14,13 @@ std = []
 
 [dependencies]
 libm = { workspace = true }
-num-traits = { workspace = true }
 
 [lints]
 workspace = true
 
 [dev-dependencies]
 criterion = { workspace = true }
-proptest = "1"
+proptest = { workspace = true }
 
 [[bench]]
 name = "core_bench"

@@ -9,11 +9,11 @@ authors.workspace = true
 [dependencies]
 sonido-core = { workspace = true, features = ["std"] }
 cpal.workspace = true
-hound = "3.5"
-thiserror = "2.0"
+hound = { workspace = true }
+thiserror = { workspace = true }
 
 [lints]
 workspace = true
 
 [dev-dependencies]
-tempfile = "3.15"
+tempfile = { workspace = true }
