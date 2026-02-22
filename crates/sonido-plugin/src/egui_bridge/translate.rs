@@ -117,7 +117,7 @@ pub fn translate_window(
             *physical_height = info.physical_size().height;
             true
         }
-        _ => false,
+        WindowEvent::WillClose => false,
     }
 }
 

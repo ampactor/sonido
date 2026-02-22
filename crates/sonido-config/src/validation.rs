@@ -802,6 +802,207 @@ fn get_effect_params(effect_id: &str) -> Vec<ParamValidationInfo> {
                 default: 1.0,
             },
         ],
+        // Limiter: 5 params
+        "limiter" => vec![
+            ParamValidationInfo {
+                name: "threshold".into(),
+                index: 0,
+                min: -30.0,
+                max: 0.0,
+                default: -6.0,
+            },
+            ParamValidationInfo {
+                name: "ceiling".into(),
+                index: 1,
+                min: -30.0,
+                max: 0.0,
+                default: -0.3,
+            },
+            ParamValidationInfo {
+                name: "release".into(),
+                index: 2,
+                min: 10.0,
+                max: 500.0,
+                default: 100.0,
+            },
+            ParamValidationInfo {
+                name: "lookahead".into(),
+                index: 3,
+                min: 0.0,
+                max: 10.0,
+                default: 5.0,
+            },
+            ParamValidationInfo {
+                name: "output".into(),
+                index: 4,
+                min: -20.0,
+                max: 20.0,
+                default: 0.0,
+            },
+        ],
+        // Bitcrusher: 5 params
+        "bitcrusher" => vec![
+            ParamValidationInfo {
+                name: "bit_depth".into(),
+                index: 0,
+                min: 2.0,
+                max: 16.0,
+                default: 8.0,
+            },
+            ParamValidationInfo {
+                name: "downsample".into(),
+                index: 1,
+                min: 1.0,
+                max: 64.0,
+                default: 1.0,
+            },
+            ParamValidationInfo {
+                name: "jitter".into(),
+                index: 2,
+                min: 0.0,
+                max: 100.0,
+                default: 0.0,
+            },
+            ParamValidationInfo {
+                name: "mix".into(),
+                index: 3,
+                min: 0.0,
+                max: 100.0,
+                default: 100.0,
+            },
+            ParamValidationInfo {
+                name: "output".into(),
+                index: 4,
+                min: -20.0,
+                max: 20.0,
+                default: 0.0,
+            },
+        ],
+        // RingMod: 5 params
+        "ringmod" => vec![
+            ParamValidationInfo {
+                name: "frequency".into(),
+                index: 0,
+                min: 20.0,
+                max: 2000.0,
+                default: 220.0,
+            },
+            ParamValidationInfo {
+                name: "depth".into(),
+                index: 1,
+                min: 0.0,
+                max: 100.0,
+                default: 100.0,
+            },
+            ParamValidationInfo {
+                name: "waveform".into(),
+                index: 2,
+                min: 0.0,
+                max: 2.0,
+                default: 0.0,
+            },
+            ParamValidationInfo {
+                name: "mix".into(),
+                index: 3,
+                min: 0.0,
+                max: 100.0,
+                default: 50.0,
+            },
+            ParamValidationInfo {
+                name: "output".into(),
+                index: 4,
+                min: -20.0,
+                max: 20.0,
+                default: 0.0,
+            },
+        ],
+        // Stage: 12 params
+        "stage" => vec![
+            ParamValidationInfo {
+                name: "gain".into(),
+                index: 0,
+                min: -40.0,
+                max: 12.0,
+                default: 0.0,
+            },
+            ParamValidationInfo {
+                name: "width".into(),
+                index: 1,
+                min: 0.0,
+                max: 200.0,
+                default: 100.0,
+            },
+            ParamValidationInfo {
+                name: "balance".into(),
+                index: 2,
+                min: -100.0,
+                max: 100.0,
+                default: 0.0,
+            },
+            ParamValidationInfo {
+                name: "phase_l".into(),
+                index: 3,
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+            },
+            ParamValidationInfo {
+                name: "phase_r".into(),
+                index: 4,
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+            },
+            ParamValidationInfo {
+                name: "channel".into(),
+                index: 5,
+                min: 0.0,
+                max: 3.0,
+                default: 0.0,
+            },
+            ParamValidationInfo {
+                name: "dc_block".into(),
+                index: 6,
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+            },
+            ParamValidationInfo {
+                name: "bass_mono".into(),
+                index: 7,
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+            },
+            ParamValidationInfo {
+                name: "bass_freq".into(),
+                index: 8,
+                min: 20.0,
+                max: 500.0,
+                default: 120.0,
+            },
+            ParamValidationInfo {
+                name: "haas".into(),
+                index: 9,
+                min: 0.0,
+                max: 30.0,
+                default: 0.0,
+            },
+            ParamValidationInfo {
+                name: "haas_side".into(),
+                index: 10,
+                min: 0.0,
+                max: 1.0,
+                default: 1.0,
+            },
+            ParamValidationInfo {
+                name: "output".into(),
+                index: 11,
+                min: -20.0,
+                max: 20.0,
+                default: 0.0,
+            },
+        ],
         _ => vec![],
     }
 }
@@ -1061,7 +1262,7 @@ mod tests {
         assert!(ids.contains(&"distortion"));
         assert!(ids.contains(&"reverb"));
         assert!(ids.contains(&"compressor"));
-        assert_eq!(ids.len(), 15); // 15 effects registered
+        assert_eq!(ids.len(), 19); // 19 effects registered
     }
 
     #[test]

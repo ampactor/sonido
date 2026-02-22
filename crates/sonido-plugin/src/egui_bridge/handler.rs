@@ -49,6 +49,7 @@ use super::translate;
 /// - `state` — User state passed to both closures
 /// - `build` — One-time setup (e.g., font configuration)
 /// - `update` — Per-frame UI rendering
+#[allow(clippy::too_many_arguments)]
 pub fn open_parented<P, S>(
     parent: &P,
     title: String,
@@ -142,6 +143,7 @@ struct EguiBridgeHandler<S> {
     /// User state passed to the update closure.
     state: S,
     /// Per-frame UI callback.
+    #[allow(clippy::type_complexity)]
     update_fn: Box<dyn FnMut(&Context, &mut S) + Send>,
 }
 

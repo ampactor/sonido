@@ -1,8 +1,8 @@
 //! Main application state and UI layout.
 //!
-//! Audio-thread processing (the [`AudioProcessor`] and stream construction) lives
-//! in the sibling [`audio_processor`](super::audio_processor) module to keep GUI
-//! and real-time concerns cleanly separated.
+//! Audio-thread processing (the `AudioProcessor` and stream construction) lives
+//! in the sibling `audio_processor` module to keep GUI and real-time concerns
+//! cleanly separated.
 
 use crate::atomic_param_bridge::AtomicParamBridge;
 use crate::audio_bridge::{AudioBridge, MeteringData};

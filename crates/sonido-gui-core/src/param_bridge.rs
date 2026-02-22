@@ -178,10 +178,10 @@ mod tests {
         }
 
         fn set(&self, slot: SlotIndex, param: ParamIndex, value: f32) {
-            if let Some(slot_vals) = self.values.lock().unwrap().get_mut(slot.0) {
-                if let Some(v) = slot_vals.get_mut(param.0) {
-                    *v = value;
-                }
+            if let Some(slot_vals) = self.values.lock().unwrap().get_mut(slot.0)
+                && let Some(v) = slot_vals.get_mut(param.0)
+            {
+                *v = value;
             }
         }
 
