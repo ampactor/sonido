@@ -195,10 +195,52 @@ jobs:
 
       - name: Verify plugin binaries exist
         run: |
-          for plugin in preamp distortion compressor gate eq wah chorus flanger phaser tremolo delay filter multivibrato tape reverb; do
+          for plugin in preamp distortion compressor gate eq wah chorus flanger phaser tremolo delay filter multivibrato tape reverb limiter bitcrusher ringmod stage; do
             test -f "target/release/examples/libsonido_${plugin}.so" || { echo "Missing libsonido_${plugin}.so"; exit 1; }
           done
-          echo "All 15 plugin binaries verified"
+          echo "All 19 plugin binaries verified"
+
+  clap-validate:
+    name: CLAP Plugin Validation
+    needs: plugin
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ubuntu-latest-cargo-plugin-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ubuntu-latest-cargo-plugin-
+
+      - name: Build plugin binaries
+        run: cargo build --release -p sonido-plugin --examples
+
+      - name: Download clap-validator
+        run: |
+          curl -L https://github.com/free-audio/clap-validator/releases/download/0.3.2/clap-validator-0.3.2-ubuntu-18.04.tar.gz -o clap-validator.tar.gz
+          tar xzf clap-validator.tar.gz
+          chmod +x clap-validator
+
+      - name: Validate CLAP plugins
+        run: |
+          for plugin in preamp distortion compressor gate eq wah chorus flanger phaser tremolo delay filter multivibrato tape reverb limiter bitcrusher ringmod stage; do
+            echo "Validating sonido_${plugin}..."
+            ./clap-validator validate "target/release/examples/libsonido_${plugin}.so" || { echo "Validation failed for sonido_${plugin}"; exit 1; }
+          done
+          echo "All 19 CLAP plugins validated"
 
   wasm-check:
     name: Wasm Check

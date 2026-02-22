@@ -120,7 +120,7 @@ Coefficient calculation overhead:
 
 ### Individual Effects (Mono Block Processing)
 
-All 16 effects benchmarked with typical parameter settings. Measured on
+All 19 effects benchmarked with typical parameter settings. Measured on
 Intel i5-6300U @ 3.0 GHz (turbo).
 
 | Effect | Key Parameters | 256 samples | ns/sample |
@@ -140,6 +140,10 @@ Intel i5-6300U @ 3.0 GHz (turbo).
 | Compressor | thresh=-20dB, ratio=4:1 | 80.02 µs | 312.6 |
 | ParametricEq | 3-band, typical boosts | 113.06 µs | 441.6 |
 | MultiVibrato | depth=1.0 | 113.43 µs | 443.1 |
+| Limiter | thresh=-6dB, ceil=-0.3dB | TBD | TBD |
+| Bitcrusher | bits=8, ds=4 | TBD | TBD |
+| RingMod | freq=440Hz, depth=1.0 | TBD | TBD |
+| Stage | gain=6dB, width=120% | TBD | TBD |
 
 ### Stereo Processing (True Stereo Effects)
 
@@ -218,6 +222,10 @@ Est. cycles/sample = desktop_ns/sample × (desktop_GHz / cortex_GHz) × arch_pen
 | Compressor | 312.6 | 7,815 | 78.2% |
 | ParametricEq (3-band) | 441.6 | 11,040 | 110.4% |
 | MultiVibrato | 443.1 | 11,078 | 110.8% |
+| Limiter | TBD | TBD | TBD |
+| Bitcrusher | TBD | TBD | TBD |
+| RingMod | TBD | TBD | TBD |
+| Stage | TBD | TBD | TBD |
 
 ### Core Primitive Estimates
 
