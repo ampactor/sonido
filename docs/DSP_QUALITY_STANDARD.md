@@ -151,7 +151,7 @@ Short names are 8 characters or fewer for hardware display compatibility.
 
 ## Per-Effect Compliance
 
-Status as of 2026-02-12 against 0 dBFS sine input at 48 kHz, default parameters.
+Status as of 2026-02-22 against 0 dBFS sine input at 48 kHz, default parameters.
 
 | Effect | Category | R1 Peak | R2 Bypass | R3 Output | R4 Mix | R5 Feedback | R6 Headroom | R7 Vocab |
 |--------|----------|---------|-----------|-----------|--------|-------------|-------------|----------|
@@ -171,6 +171,10 @@ Status as of 2026-02-12 against 0 dBFS sine input at 48 kHz, default parameters.
 | Wah | Filter | PASS | PASS | PASS | PASS | N/A | PASS | PASS |
 | Parametric EQ | Filter | PASS | PASS | PASS | N/A | N/A | PASS | PASS |
 | Clean Preamp | Utility | PASS | PASS** | PASS | N/A | N/A | PASS | PASS |
+| Limiter | Dynamics | PASS | PASS** | PASS | N/A | N/A | PASS | PASS |
+| Bitcrusher | Distortion | PASS | PASS | PASS | PASS | N/A | PASS | PASS |
+| Ring Mod | Modulation | PASS | PASS | PASS | PASS | N/A | PASS | PASS |
+| Stage | Utility | PASS | PASS** | PASS | N/A | N/A | PASS | PASS |
 
 **Legend:**
 - `*` Exception to Rule 3 naming (see Rule 3 table)
