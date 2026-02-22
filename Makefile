@@ -1,5 +1,5 @@
 .PHONY: build test bench clean check fmt doc demo walkthrough verify-demos
-.PHONY: quick-check verify test-nostd dev-install install plugins ci
+.PHONY: quick-check verify test-nostd dev-install install plugins ci install-hooks
 
 # Build
 build:
@@ -90,6 +90,15 @@ plugins:
 	done
 	@echo "All plugins installed to ~/.clap/"
 
-# Full CI check
-ci: check test test-nostd doc
+# Full CI check (same subset as pre-push hook)
+ci:
+	cargo fmt --all -- --check
+	cargo clippy --workspace --all-targets -- -D warnings
+	cargo test --workspace
 	@echo "All CI checks passed"
+
+# Install local pre-push git hook
+install-hooks:
+	@cp scripts/pre-push .git/hooks/pre-push
+	@chmod +x .git/hooks/pre-push
+	@echo "Pre-push hook installed at .git/hooks/pre-push"

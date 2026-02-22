@@ -86,7 +86,8 @@ fn rule1_peak_ceiling() {
         assert!(
             pk < 4.0,
             "Rule 1 FAIL: effect '{}' peak {:.4} exceeds universal bound (4.0 / +12 dBFS)",
-            id, pk
+            id,
+            pk
         );
 
         // Strict bound for passive effects
@@ -94,7 +95,9 @@ fn rule1_peak_ceiling() {
             assert!(
                 pk <= ceiling_linear,
                 "Rule 1 FAIL: effect '{}' peak {:.4} exceeds -1 dBFS ceiling ({:.4})",
-                id, pk, ceiling_linear
+                id,
+                pk,
+                ceiling_linear
             );
         }
     }
@@ -106,9 +109,7 @@ fn rule1_peak_ceiling() {
 // at default params with a 1 kHz sine. Only test effects that are
 // expected to be roughly unity-gain and flat at 1 kHz by default.
 
-const RULE2_TESTED: &[&str] = &[
-    "gate", "eq", "bitcrusher", "tremolo", "multivibrato",
-];
+const RULE2_TESTED: &[&str] = &["gate", "eq", "bitcrusher", "tremolo", "multivibrato"];
 
 #[test]
 fn rule2_bypass_parity() {
@@ -127,7 +128,10 @@ fn rule2_bypass_parity() {
         assert!(
             ratio >= lower && ratio <= upper,
             "Rule 2 FAIL: effect '{}' RMS ratio {:.4} not within ±3 dB (expected {:.4}..{:.4})",
-            id, ratio, lower, upper
+            id,
+            ratio,
+            lower,
+            upper
         );
     }
 }
@@ -187,7 +191,12 @@ fn rule3_output_parameter() {
 // Only test effects that have a "Mix" parameter and a clean dry path.
 
 const RULE4_TESTED: &[&str] = &[
-    "delay", "flanger", "phaser", "reverb", "ringmod", "bitcrusher",
+    "delay",
+    "flanger",
+    "phaser",
+    "reverb",
+    "ringmod",
+    "bitcrusher",
     "multivibrato",
 ];
 
@@ -234,7 +243,11 @@ fn rule4_wet_dry_exactness() {
             assert!(
                 diff < 5e-4,
                 "Rule 4 FAIL: effect '{}' at mix=0, sample {} input={} output={} diff={}",
-                id, i, inp, out, diff
+                id,
+                i,
+                inp,
+                out,
+                diff
             );
         }
     }
@@ -270,12 +283,15 @@ fn rule5_feedback_stability() {
             assert!(
                 sample.is_finite(),
                 "Rule 5 FAIL: effect '{}' produced non-finite output at sample {}",
-                id, i
+                id,
+                i
             );
             assert!(
                 sample.abs() < 10.0,
                 "Rule 5 FAIL: effect '{}' output {} exceeds bound at sample {}",
-                id, sample, i
+                id,
+                sample,
+                i
             );
         }
     }
@@ -287,10 +303,7 @@ fn rule5_feedback_stability() {
 #[test]
 fn rule6_headroom() {
     let registry = EffectRegistry::new();
-    let amplitudes = [
-        ("0 dBFS", 1.0f32),
-        ("-18 dBFS", 10.0f32.powf(-18.0 / 20.0)),
-    ];
+    let amplitudes = [("0 dBFS", 1.0f32), ("-18 dBFS", 10.0f32.powf(-18.0 / 20.0))];
 
     for id in all_effect_ids() {
         for &(label, amplitude) in &amplitudes {
@@ -306,12 +319,17 @@ fn rule6_headroom() {
                 assert!(
                     sample.is_finite(),
                     "Rule 6 FAIL: effect '{}' at {} produced non-finite output at sample {}",
-                    id, label, i
+                    id,
+                    label,
+                    i
                 );
                 assert!(
                     sample.abs() < 10.0,
                     "Rule 6 FAIL: effect '{}' at {} output {} exceeds bound at sample {}",
-                    id, label, sample, i
+                    id,
+                    label,
+                    sample,
+                    i
                 );
             }
         }
@@ -330,20 +348,25 @@ fn rule7_vocabulary() {
         let count = effect.effect_param_count();
 
         for i in 0..count {
-            let desc = effect.effect_param_info(i).unwrap_or_else(|| {
-                panic!("Effect '{}' param index {} returned None", id, i)
-            });
+            let desc = effect
+                .effect_param_info(i)
+                .unwrap_or_else(|| panic!("Effect '{}' param index {} returned None", id, i));
 
             assert!(
                 !desc.name.is_empty(),
                 "Rule 7 FAIL: effect '{}' param index {} has empty name",
-                id, i
+                id,
+                i
             );
 
             assert!(
                 desc.min < desc.max,
                 "Rule 7 FAIL: effect '{}' param '{}' (index {}): min ({}) >= max ({})",
-                id, desc.name, i, desc.min, desc.max
+                id,
+                desc.name,
+                i,
+                desc.min,
+                desc.max
             );
         }
     }
