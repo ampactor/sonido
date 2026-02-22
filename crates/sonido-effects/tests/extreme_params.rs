@@ -6,8 +6,9 @@
 
 use sonido_core::{Effect, ParameterInfo};
 use sonido_effects::{
-    Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, LowPassFilter, MultiVibrato,
-    ParametricEq, Phaser, Reverb, TapeSaturation, Tremolo, Wah,
+    Bitcrusher, Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, Limiter,
+    LowPassFilter, MultiVibrato, ParametricEq, Phaser, Reverb, RingMod, Stage, TapeSaturation,
+    Tremolo, Wah,
 };
 
 const DEFAULT_SAMPLE_RATE: f32 = 48000.0;
@@ -170,4 +171,24 @@ fn test_extreme_wah() {
 #[test]
 fn test_extreme_parametric_eq() {
     run_extreme_test("ParametricEq", ParametricEq::new);
+}
+
+#[test]
+fn test_extreme_limiter() {
+    run_extreme_test("Limiter", Limiter::new);
+}
+
+#[test]
+fn test_extreme_bitcrusher() {
+    run_extreme_test("Bitcrusher", Bitcrusher::new);
+}
+
+#[test]
+fn test_extreme_ringmod() {
+    run_extreme_test("RingMod", RingMod::new);
+}
+
+#[test]
+fn test_extreme_stage() {
+    run_extreme_test("Stage", Stage::new);
 }

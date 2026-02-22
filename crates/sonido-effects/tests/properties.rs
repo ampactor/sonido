@@ -33,7 +33,7 @@ proptest! {
     fn all_effects_finite_output(
         input in prop::array::uniform32(-1.0f32..=1.0f32),
         param_values in prop::array::uniform16(0.0f32..=1.0f32),
-        effect_idx in 0usize..15,
+        effect_idx in 0usize..19,
     ) {
         let ids = all_effect_ids();
         let id = ids[effect_idx % ids.len()];
@@ -70,7 +70,7 @@ proptest! {
     fn all_effects_bounded_output(
         input in prop::array::uniform32(-1.0f32..=1.0f32),
         param_values in prop::array::uniform16(0.0f32..=1.0f32),
-        effect_idx in 0usize..15,
+        effect_idx in 0usize..19,
     ) {
         let ids = all_effect_ids();
         let id = ids[effect_idx % ids.len()];
@@ -103,7 +103,7 @@ proptest! {
     fn all_effects_reset_clears_state(
         input in prop::array::uniform32(-1.0f32..=1.0f32),
         param_values in prop::array::uniform16(0.0f32..=1.0f32),
-        effect_idx in 0usize..15,
+        effect_idx in 0usize..19,
     ) {
         let ids = all_effect_ids();
         let id = ids[effect_idx % ids.len()];
