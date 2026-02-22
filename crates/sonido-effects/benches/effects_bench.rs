@@ -6,8 +6,9 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use sonido_core::{Effect, EffectExt, Oversampled};
 use sonido_effects::{
-    Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, LowPassFilter, MultiVibrato,
-    ParametricEq, Phaser, Reverb, TapeSaturation, Tremolo, Wah,
+    Bitcrusher, Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, Limiter,
+    LowPassFilter, MultiVibrato, ParametricEq, Phaser, Reverb, RingMod, Stage, TapeSaturation,
+    Tremolo, Wah,
 };
 
 const SAMPLE_RATE: f32 = 48000.0;
@@ -167,6 +168,36 @@ fn bench_parametric_eq(c: &mut Criterion) {
     effect.set_high_gain(2.0);
     effect.set_high_q(1.0);
     bench_effect(c, "ParametricEq", effect);
+}
+
+fn bench_limiter(c: &mut Criterion) {
+    let mut effect = Limiter::new(SAMPLE_RATE);
+    effect.set_threshold_db(-6.0);
+    effect.set_ceiling_db(-0.3);
+    effect.set_release_ms(100.0);
+    bench_effect(c, "Limiter", effect);
+}
+
+fn bench_bitcrusher(c: &mut Criterion) {
+    let mut effect = Bitcrusher::new(SAMPLE_RATE);
+    effect.set_bit_depth(8.0);
+    effect.set_downsample(4.0);
+    bench_effect(c, "Bitcrusher", effect);
+}
+
+fn bench_ringmod(c: &mut Criterion) {
+    let mut effect = RingMod::new(SAMPLE_RATE);
+    effect.set_frequency(440.0);
+    effect.set_depth(1.0);
+    effect.set_mix(0.5);
+    bench_effect(c, "RingMod", effect);
+}
+
+fn bench_stage(c: &mut Criterion) {
+    let mut effect = Stage::new(SAMPLE_RATE);
+    effect.set_gain_db(6.0);
+    effect.set_width(120.0);
+    bench_effect(c, "Stage", effect);
 }
 
 // --- Stereo benchmarks ---
@@ -343,6 +374,10 @@ criterion_group!(
     bench_tremolo,
     bench_wah,
     bench_parametric_eq,
+    bench_limiter,
+    bench_bitcrusher,
+    bench_ringmod,
+    bench_stage,
     bench_stereo_chorus,
     bench_stereo_reverb,
     bench_stereo_phaser,
