@@ -1,8 +1,12 @@
 //! Flanger effect UI panel.
 
-use crate::widgets::{BypassToggle, bridged_knob};
+use crate::widgets::{BypassToggle, bridged_combo, bridged_knob};
 use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
+use sonido_core::DIVISION_LABELS;
+
+/// Sync toggle labels.
+const SYNC_LABELS: &[&str] = &["Off", "On"];
 
 /// UI panel for the flanger effect.
 pub struct FlangerPanel;
@@ -15,7 +19,9 @@ impl FlangerPanel {
 
     /// Render the flanger effect controls.
     ///
-    /// Param indices: 0 = rate (Hz), 1 = depth (%), 2 = feedback (%), 3 = mix (%).
+    /// Param indices: 0 = rate (Hz), 1 = depth (%), 2 = feedback (%),
+    /// 3 = mix (%), 4 = TZF (on/off),
+    /// 5 = sync (on/off), 6 = division (note value), 7 = output (dB).
     pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: SlotIndex) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
@@ -23,6 +29,23 @@ impl FlangerPanel {
                 if ui.add(BypassToggle::new(&mut active, "Active")).changed() {
                     bridge.set_bypassed(slot, !active);
                 }
+
+                ui.add_space(20.0);
+
+                ui.label("Sync:");
+                bridged_combo(ui, bridge, slot, ParamIndex(5), "flanger_sync", SYNC_LABELS);
+
+                ui.add_space(8.0);
+
+                ui.label("Div:");
+                bridged_combo(
+                    ui,
+                    bridge,
+                    slot,
+                    ParamIndex(6),
+                    "flanger_division",
+                    DIVISION_LABELS,
+                );
             });
 
             ui.add_space(12.0);
@@ -35,6 +58,22 @@ impl FlangerPanel {
                 bridged_knob(ui, bridge, slot, ParamIndex(2), "FDBK");
                 ui.add_space(16.0);
                 bridged_knob(ui, bridge, slot, ParamIndex(3), "MIX");
+            });
+
+            ui.add_space(8.0);
+
+            ui.horizontal(|ui| {
+                ui.label("TZF:");
+                bridged_combo(
+                    ui,
+                    bridge,
+                    slot,
+                    ParamIndex(4),
+                    "flanger_tzf",
+                    &["Off", "On"],
+                );
+                ui.add_space(16.0);
+                bridged_knob(ui, bridge, slot, ParamIndex(7), "OUTPUT");
             });
         });
     }

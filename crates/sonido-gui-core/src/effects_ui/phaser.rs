@@ -1,8 +1,12 @@
 //! Phaser effect UI panel.
 
-use crate::widgets::{BypassToggle, bridged_knob};
+use crate::widgets::{BypassToggle, bridged_combo, bridged_knob};
 use crate::{ParamBridge, ParamIndex, SlotIndex};
 use egui::Ui;
+use sonido_core::DIVISION_LABELS;
+
+/// Sync toggle labels.
+const SYNC_LABELS: &[&str] = &["Off", "On"];
 
 /// UI panel for the phaser effect.
 pub struct PhaserPanel;
@@ -16,7 +20,8 @@ impl PhaserPanel {
     /// Render the phaser effect controls.
     ///
     /// Param indices: 0 = rate (Hz), 1 = depth (%), 2 = stages (enum),
-    /// 3 = feedback (%), 4 = mix (%).
+    /// 3 = feedback (%), 4 = mix (%), 5 = min freq (Hz), 6 = max freq (Hz),
+    /// 7 = sync (on/off), 8 = division (note value), 9 = output (dB).
     pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: SlotIndex) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
@@ -44,6 +49,23 @@ impl PhaserPanel {
                             }
                         }
                     });
+
+                ui.add_space(12.0);
+
+                ui.label("Sync:");
+                bridged_combo(ui, bridge, slot, ParamIndex(7), "phaser_sync", SYNC_LABELS);
+
+                ui.add_space(8.0);
+
+                ui.label("Div:");
+                bridged_combo(
+                    ui,
+                    bridge,
+                    slot,
+                    ParamIndex(8),
+                    "phaser_division",
+                    DIVISION_LABELS,
+                );
             });
 
             ui.add_space(12.0);
@@ -64,6 +86,8 @@ impl PhaserPanel {
                 bridged_knob(ui, bridge, slot, ParamIndex(5), "MIN F");
                 ui.add_space(16.0);
                 bridged_knob(ui, bridge, slot, ParamIndex(6), "MAX F");
+                ui.add_space(16.0);
+                bridged_knob(ui, bridge, slot, ParamIndex(9), "OUTPUT");
             });
         });
     }
