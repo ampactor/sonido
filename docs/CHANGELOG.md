@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Pluggable Audio Backend Abstraction
+
+#### sonido-io
+- `AudioBackend` trait in `backend.rs`: Platform-agnostic interface for device enumeration and stream construction
+- `CpalBackend` in `cpal_backend.rs`: Default backend wrapping cpal (ALSA, CoreAudio, WASAPI, WebAudio)
+- `StreamHandle`: Type-erased RAII stream handle — dropping stops playback
+- `BackendStreamConfig`: Backend-agnostic stream configuration (sample rate, buffer size, channels, device name)
+
+#### Workspace Dependencies
+- Centralized `egui`, `eframe`, `egui_extras`, `egui_glow` in workspace dependencies (was declared independently in 3 crates)
+- Centralized `proptest` and `tempfile` dev-dependencies (3 different version strings unified)
+- Fixed `sonido-ui` using path reference for `sonido-gl` instead of workspace
+- Fixed `sonido-gui` wasm target using bare `hound` dep instead of workspace
+
+### Added — Tempo Sync for Modulation Effects
+
+#### sonido-core
+- Shared division helpers in `tempo.rs`: `DIVISION_LABELS`, `index_to_division()`, `division_to_index()`
+- Exported via `sonido_core::{DIVISION_LABELS, index_to_division, division_to_index}`
+
+#### sonido-effects
+- **Chorus**: Tempo sync via Sync (ParamId 707) and Division (ParamId 708) parameters — 9 total params
+- **Flanger**: Tempo sync via Sync (ParamId 806) and Division (ParamId 807) parameters — 8 total params
+- **Phaser**: Tempo sync via Sync (ParamId 908) and Division (ParamId 909) parameters — 10 total params
+- **Tremolo**: Tempo sync via Sync (ParamId 1005) and Division (ParamId 1006) parameters — 7 total params
+- All four effects implement `set_tempo_context()` for host BPM synchronization
+
+#### sonido-gui-core
+- Updated Chorus, Flanger, Phaser, Tremolo UIs with Sync/Division controls
+- Updated Delay UI to expose all 10 parameters (was showing only 3)
+
+#### sonido-plugin
+- Added Stage effect plugin example (`sonido-stage.rs`, 19 total plugins)
+- Fixed 12 pre-existing compilation errors in `egui_bridge`:
+  - Enabled baseview `"opengl"` feature
+  - Fixed `GlConfig` import path (`baseview::gl::GlConfig`)
+  - Wrapped `make_current()` in unsafe block (baseview API change)
+  - Renamed `paint_and_check_errors` → `paint_and_update_textures` (egui_glow 0.31)
+  - Updated `WheelScrolled` from tuple to struct variant (baseview API change)
+  - Downgraded `keyboard-types` from 0.7 to 0.6 (matching baseview's dependency)
+
+#### sonido-registry
+- Updated param counts: Chorus 7→9, Flanger 6→8, Phaser 8→10, Tremolo 5→7
+
 ### Changed — Custom egui Bridge
 
 #### sonido-plugin

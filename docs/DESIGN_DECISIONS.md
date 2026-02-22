@@ -25,6 +25,8 @@ Architecture Decision Records (ADRs) for the Sonido DSP framework. Each record c
 - [ADR-019: Generalized Feedback Compensation](#adr-019-generalized-feedback-compensation)
 - [ADR-020: Fast Math Approximations for Embedded DSP](#adr-020-fast-math-approximations-for-embedded-dsp)
 - [ADR-021: Block Processing Overrides](#adr-021-block-processing-overrides)
+- [ADR-022: Parameter System Hardening for Plugin Integration](#adr-022-parameter-system-hardening-for-plugin-integration)
+- [ADR-023: Pluggable Audio Backend Abstraction](#adr-023-pluggable-audio-backend-abstraction)
 
 ---
 
@@ -847,3 +849,55 @@ Stable IDs follow a base+offset convention per effect (Preamp=100, Distortion=20
 
 - `step_labels` is static — effects with runtime-dynamic enum lists would need to override `effect_format_value()` on the `EffectWithParams` trait.
 - `format_value()` returns `String` (heap allocation), acceptable for GUI/host display paths but not audio-thread safe. Plugin wrappers should call it from the main thread or cache results.
+
+---
+
+## ADR-023: Pluggable Audio Backend Abstraction
+
+**Status:** Accepted
+**Source:** `crates/sonido-io/src/backend.rs`, `crates/sonido-io/src/cpal_backend.rs`
+
+### Context
+
+Sonido's audio I/O was tightly coupled to cpal. The `AudioStream` struct held cpal `Host`, `Device`, and `Stream` types directly in its fields, and the GUI (`audio_processor.rs`) independently reimplemented cpal stream setup because `AudioStream` lacked the flexibility it needed (optional mic input, per-sample crossbeam channels, atomic error counts). This created two maintenance points for the same platform dependency.
+
+Meanwhile, sonido's DSP core is deliberately platform-agnostic (`no_std`, buffer-based `Effect` trait), and the `sonido-platform` crate already defines hardware control abstraction (`PlatformController`). The audio I/O layer was the remaining gap: no trait boundary existed between the processing pipeline and the platform audio API.
+
+### Decision
+
+Introduce an `AudioBackend` trait in `sonido-io` that abstracts over platform audio APIs. Provide `CpalBackend` as the default implementation.
+
+**Key design choices:**
+
+1. **Boxed closures for callbacks** — `OutputCallback = Box<dyn FnMut(&mut [f32]) + Send>` makes the trait object-safe, enabling `Box<dyn AudioBackend>` for runtime backend selection.
+
+2. **Type-erased stream handles** — `StreamHandle` wraps `Box<dyn Send>` via RAII. Backend-specific stream types (cpal `Stream`, ALSA `pcm_t*`, etc.) stay internal. Dropping the handle stops playback.
+
+3. **Interleaved f32 buffers** — Consistent with sonido's f32-throughout design (ADR-010) and the callback signatures of cpal, WASAPI, CoreAudio, and WebAudio.
+
+4. **`BackendStreamConfig` separate from `StreamConfig`** — The new config struct adds `channels` and is purpose-built for the trait. The existing `StreamConfig` (with device name strings and input/output separation) remains for backward compatibility.
+
+5. **Additive, non-breaking** — The existing `AudioStream` still works unchanged. The new trait is a parallel path that consumers can adopt incrementally.
+
+### Alternatives Considered
+
+- **Generic type parameter on `AudioStream<B: AudioBackend>`**: Compile-time backend selection, zero-cost dispatch. Rejected because it makes `AudioStream` generic everywhere it's stored, complicating GUI and CLI code. Runtime backend selection (important for testing and embedded targets) would require `Box<dyn AudioBackend>` anyway.
+
+- **Trait with associated types for stream handles**: `type StreamHandle: Send + 'static` on the trait. More type-safe than `Box<dyn Send>`, but breaks object safety — you can't use `Box<dyn AudioBackend>` because the associated type is unknown. The type erasure overhead (one `Box` allocation per stream creation) is negligible for audio setup.
+
+- **Remove cpal entirely, implement direct platform backends**: Maximally independent, but high effort per platform (ALSA, CoreAudio, WASAPI, AAudio all require separate unsafe FFI). cpal already provides tested implementations. The trait abstraction means we can add direct backends later without changing application code.
+
+- **Feature-gated cpal in `sonido-io`**: Make cpal optional via `features = ["cpal-backend"]`. Valid future step, but premature now while cpal is the only implementation. The module structure (`cpal_backend.rs`) is already isolated for this.
+
+### Tradeoffs
+
+- **One `Box` allocation per callback**: Boxed closures for `OutputCallback`/`InputCallback`/`ErrorCallback` each allocate. This happens once at stream setup, not per audio buffer. Negligible.
+- **`StreamHandle` is opaque**: Application code can't inspect or downcast the inner stream. This is intentional — it prevents backend types from leaking. If a consumer truly needs backend-specific access, they can use `CpalBackend` directly instead of `dyn AudioBackend`.
+- **No duplex stream method**: The trait exposes `build_output_stream` and `build_input_stream` separately. Full-duplex (simultaneous I/O with shared buffer) is a future extension. Current users bridge input/output via channels, which is adequate for non-pro-audio latency requirements.
+
+### Future Directions
+
+- **Android AAudio backend**: Direct AAudio/Oboe integration for lower latency than cpal's Android backend.
+- **Embedded DMA backend**: Interrupt-driven I/O for Cortex-M targets (Daisy Seed). The no_std DSP core is ready; the backend would bridge DMA buffer completion interrupts to the callback.
+- **Mock backend**: Deterministic, clock-free backend for CI testing. Push a known buffer, assert output.
+- **Feature-gate cpal**: Make `cpal` an optional dependency once an alternative backend exists.

@@ -10,7 +10,7 @@ Production-grade DSP library in Rust for audio effects, plugins, and embedded sy
 | sonido-effects | 19 effects: Distortion, Compressor, Limiter, Chorus, Delay, Reverb, Bitcrusher, Ring Mod, Stage, etc. (all implement ParameterInfo) | Yes |
 | sonido-synth | Synthesis engine: oscillators (PolyBLEP), ADSR envelopes, voices, modulation matrix | Yes |
 | sonido-registry | Effect factory and discovery by name/category | Yes |
-| sonido-config | CLI-first configuration and preset management | No |
+| sonido-config | CLI-first configuration and preset management | Partial (paths module gated behind std) |
 | sonido-platform | Hardware abstraction: PlatformController trait, ControlMapper, ControlId | Yes |
 | sonido-analysis | FFT, spectral analysis, transfer functions, CFC/PAC analysis | No |
 | sonido-io | WAV I/O, real-time audio streaming (cpal), stereo support | No |
@@ -45,10 +45,11 @@ When you modify a source file, you **must** update every documentation target li
 | `crates/sonido-effects/src/reverb.rs` | `docs/EFFECTS_REFERENCE.md` (Reverb), `docs/DSP_FUNDAMENTALS.md` (Freeverb), `docs/DESIGN_DECISIONS.md` ADR-009 | Comb tunings, stereo spread, parameters |
 | `crates/sonido-effects/src/distortion.rs` | `docs/EFFECTS_REFERENCE.md` (Distortion), `docs/DSP_FUNDAMENTALS.md` (Waveshaping) | Clipping modes, waveshaper transfer functions |
 | `crates/sonido-effects/src/compressor.rs` | `docs/EFFECTS_REFERENCE.md` (Compressor), `docs/DSP_FUNDAMENTALS.md` (Dynamics) | Attack/release, knee, ratio, makeup gain |
-| `crates/sonido-effects/src/chorus.rs` | `docs/EFFECTS_REFERENCE.md` (Chorus), `docs/DSP_FUNDAMENTALS.md` (Modulation Effects) | Delay modulation, voice count, stereo spread |
-| `crates/sonido-effects/src/delay.rs` | `docs/EFFECTS_REFERENCE.md` (Delay) | Feedback, ping-pong, tempo sync |
-| `crates/sonido-effects/src/phaser.rs` | `docs/EFFECTS_REFERENCE.md` (Phaser) | Allpass stage count, sweep range |
-| `crates/sonido-effects/src/flanger.rs` | `docs/EFFECTS_REFERENCE.md` (Flanger) | Feedback polarity, delay range |
+| `crates/sonido-effects/src/chorus.rs` | `docs/EFFECTS_REFERENCE.md` (Chorus), `docs/DSP_FUNDAMENTALS.md` (Modulation Effects) | Delay modulation, voice count, feedback, tempo sync |
+| `crates/sonido-effects/src/delay.rs` | `docs/EFFECTS_REFERENCE.md` (Delay) | Feedback, ping-pong, diffusion, tempo sync |
+| `crates/sonido-effects/src/phaser.rs` | `docs/EFFECTS_REFERENCE.md` (Phaser), `docs/DSP_FUNDAMENTALS.md` (Modulation Effects) | Allpass stage count, sweep range, tempo sync |
+| `crates/sonido-effects/src/flanger.rs` | `docs/EFFECTS_REFERENCE.md` (Flanger), `docs/DSP_FUNDAMENTALS.md` (Modulation Effects) | Feedback polarity, TZF, delay range, tempo sync |
+| `crates/sonido-effects/src/tremolo.rs` | `docs/EFFECTS_REFERENCE.md` (Tremolo), `docs/DSP_FUNDAMENTALS.md` (Modulation Effects) | Waveform types, stereo spread, tempo sync |
 | `crates/sonido-effects/src/*.rs` (any new effect) | `docs/EFFECTS_REFERENCE.md`, `README.md` (features + count), this file (Key Files) | Full effect entry with parameters, DSP theory, example |
 | `crates/sonido-core/src/math.rs` | `docs/DSP_FUNDAMENTALS.md` (Gain Staging, Soft Limiting) | Mix/gain helpers, safety limiters, dB conversions |
 | `crates/sonido-effects/src/*.rs`, `crates/sonido-core/src/gain.rs` | `docs/DSP_QUALITY_STANDARD.md` | Quality rules, compliance table, measurement protocol |
@@ -61,6 +62,7 @@ When you modify a source file, you **must** update every documentation target li
 | `crates/sonido-analysis/src/filterbank.rs` | `docs/BIOSIGNAL_ANALYSIS.md` | EEG band definitions, filter bank design |
 | `crates/sonido-analysis/src/hilbert.rs` | `docs/BIOSIGNAL_ANALYSIS.md` | Analytic signal, instantaneous phase/amplitude |
 | `crates/sonido-platform/src/*.rs` | `docs/HARDWARE.md`, `docs/DESIGN_DECISIONS.md` ADR-012 | PlatformController trait, ControlId namespaces |
+| `crates/sonido-io/src/backend.rs`, `cpal_backend.rs` | `docs/ARCHITECTURE.md` (sonido-io section), `docs/DESIGN_DECISIONS.md` ADR-023 | AudioBackend trait, CpalBackend, StreamHandle, BackendStreamConfig |
 | `crates/sonido-cli/src/commands/*.rs` | `docs/CLI_GUIDE.md` | Command syntax, flags, examples |
 | `crates/sonido-gui/src/app.rs` | `docs/GUI.md` | GUI features, layout, controls |
 | `crates/sonido-config/src/*.rs` | `docs/GETTING_STARTED.md` (presets section) | Preset format, config paths, validation |
@@ -380,6 +382,7 @@ cd crates/sonido-gui && trunk serve                        # Dev server at :8080
 | AtomicParamBridge | crates/sonido-gui/src/atomic_param_bridge.rs |
 | Preset manager | crates/sonido-gui/src/preset_manager.rs |
 | Audio bridge | crates/sonido-gui/src/audio_bridge.rs |
+| Audio processor (cpal) | crates/sonido-gui/src/audio_processor.rs |
 | File player | crates/sonido-gui/src/file_player.rs |
 | Effect UIs | crates/sonido-gui-core/src/effects_ui/ |
 | GUI theme overrides | crates/sonido-gui/src/theme.rs |
@@ -401,8 +404,10 @@ cd crates/sonido-gui && trunk serve                        # Dev server at :8080
 | CLI play command | crates/sonido-cli/src/commands/play.rs |
 | CLI compare command | crates/sonido-cli/src/commands/compare.rs |
 | CLI realtime command | crates/sonido-cli/src/commands/realtime.rs |
+| AudioBackend trait | crates/sonido-io/src/backend.rs |
+| CpalBackend | crates/sonido-io/src/cpal_backend.rs |
 | Audio engine | crates/sonido-io/src/engine.rs |
-| Audio stream | crates/sonido-io/src/stream.rs |
+| Audio stream (legacy) | crates/sonido-io/src/stream.rs |
 | Regression tests | crates/sonido-effects/tests/regression.rs |
 | DSP Theory Reference | docs/DSP_FUNDAMENTALS.md |
 | Architecture Decisions | docs/DESIGN_DECISIONS.md |
@@ -440,7 +445,7 @@ cd crates/sonido-gui && trunk serve                        # Dev server at :8080
 
 ## Common Pitfalls
 
-1. **no_std math**: Use `libm::sinf()` / `libm::floorf()`, never `f32::sin()` / `f32::floor()` in no_std crates (sonido-core, effects, synth, registry, platform). The `rem_euclid_f32()` helper in oscillator.rs exists because `f32::rem_euclid()` requires std.
+1. **no_std math**: Use `libm::sinf()` / `libm::floorf()`, never `f32::sin()` / `f32::floor()` in the 5 DSP crates (sonido-core, effects, synth, registry, platform). GUI crates (sonido-gui-core, sonido-gui) use std and should use native `f32` methods. The `rem_euclid_f32()` helper in oscillator.rs exists because `f32::rem_euclid()` requires std.
 
 2. **SmoothedParam must advance()**: Call `advance()` once per sample in your process loop. Forgetting this means parameters never actually smooth — they jump instantly.
 
