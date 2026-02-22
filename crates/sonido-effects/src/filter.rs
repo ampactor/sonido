@@ -80,6 +80,12 @@ impl LowPassFilter {
     }
 }
 
+impl Default for LowPassFilter {
+    fn default() -> Self {
+        Self::new(48000.0)
+    }
+}
+
 impl Effect for LowPassFilter {
     #[inline]
     fn process(&mut self, input: f32) -> f32 {
@@ -200,7 +206,7 @@ mod tests {
         let mut sum = 0.0;
         for i in 0..1000 {
             let t = i as f32 / 44100.0;
-            let input = (2.0 * core::f32::consts::PI * 10000.0 * t).sin();
+            let input = libm::sinf(2.0 * core::f32::consts::PI * 10000.0 * t);
             let output = filter.process(input);
             sum += output.abs();
         }
