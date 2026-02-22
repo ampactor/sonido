@@ -4,28 +4,46 @@
 //!
 //! - **WAV file I/O**: [`read_wav`] and [`write_wav`] for loading/saving audio files
 //! - **Real-time streaming**: [`AudioStream`] for live audio input/output
+//! - **Pluggable audio backends**: [`backend::AudioBackend`] trait for platform abstraction
 //! - **Effect processing**: [`ProcessingEngine`] for applying effect chains to audio
 //!
-//! ## Quick Start
+//! ## Audio Backend Architecture
+//!
+//! The [`backend::AudioBackend`] trait decouples audio streaming from platform APIs.
+//! The default [`cpal_backend::CpalBackend`] wraps cpal for desktop platforms. Custom
+//! backends can be implemented for embedded targets, testing, or direct platform APIs.
+//!
+//! ```rust,ignore
+//! use sonido_io::cpal_backend::CpalBackend;
+//! use sonido_io::backend::{AudioBackend, BackendStreamConfig};
+//!
+//! let backend = CpalBackend::new();
+//! let config = BackendStreamConfig::default();
+//!
+//! let _stream = backend.build_output_stream(
+//!     &config,
+//!     Box::new(|buf| buf.fill(0.0)),  // silence
+//!     Box::new(|err| eprintln!("{}", err)),
+//! )?;
+//! ```
+//!
+//! ## Quick Start (File Processing)
 //!
 //! ```rust,ignore
 //! use sonido_io::{read_wav, write_wav, ProcessingEngine};
 //! use sonido_effects::Reverb;
 //!
-//! // Load audio file
 //! let (samples, spec) = read_wav("input.wav")?;
-//!
-//! // Process with effects
 //! let mut engine = ProcessingEngine::new(spec.sample_rate as f32);
 //! engine.add_effect(Box::new(Reverb::new(spec.sample_rate as f32)));
 //! let processed = engine.process_buffer(&samples);
-//!
-//! // Save result
 //! write_wav("output.wav", &processed, spec)?;
 //! ```
 
+pub mod backend;
+pub mod cpal_backend;
 mod engine;
-mod stream;
+pub(crate) mod stream;
 mod wav;
 
 pub use engine::ProcessingEngine;
