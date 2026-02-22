@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Pre-push hook: fast CI subset before every push.
+# Install via: make install-hooks
+# Skip via:    SKIP_CI=1 git push
+
+set -euo pipefail
+
+if [[ "${SKIP_CI:-0}" == "1" ]]; then
+  echo "SKIP_CI=1 set, skipping pre-push checks"
+  exit 0
+fi
+
+echo "Running pre-push checks..."
+
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+
+echo "Pre-push checks passed."
