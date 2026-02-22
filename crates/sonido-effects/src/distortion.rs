@@ -229,6 +229,12 @@ impl Distortion {
     }
 }
 
+impl Default for Distortion {
+    fn default() -> Self {
+        Self::new(48000.0)
+    }
+}
+
 impl Effect for Distortion {
     #[inline]
     fn process(&mut self, input: f32) -> f32 {

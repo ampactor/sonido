@@ -341,12 +341,10 @@ impl_params! {
 
 #[cfg(test)]
 mod tests {
+    extern crate alloc;
     use super::*;
-    #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
     use sonido_core::ParameterInfo;
-    #[cfg(feature = "std")]
-    use std::vec::Vec;
 
     #[test]
     fn test_wah_basic_processing() {

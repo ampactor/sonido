@@ -223,6 +223,12 @@ impl Bitcrusher {
     }
 }
 
+impl Default for Bitcrusher {
+    fn default() -> Self {
+        Self::new(48000.0)
+    }
+}
+
 impl Effect for Bitcrusher {
     /// Process a single mono sample through the bitcrusher.
     ///
@@ -334,7 +340,9 @@ sonido_core::impl_params! {
 
 #[cfg(test)]
 mod tests {
+    extern crate alloc;
     use super::*;
+    use alloc::vec::Vec;
     use sonido_core::ParameterInfo;
 
     #[test]
@@ -369,7 +377,7 @@ mod tests {
         //   x=0.9 → floor(1.8+0.5)/2 = floor(2.3)/2 = 2/2 = 1.0
         //   x=0.1 → floor(0.2+0.5)/2 = floor(0.7)/2 = 0/2 = 0.0
         //   x=-0.9 → floor(-1.8+0.5)/2 = floor(-1.3)/2 = -2/2 = -1.0
-        let crusher = Bitcrusher::new(44100.0);
+        let _crusher = Bitcrusher::new(44100.0);
         let q_high = Bitcrusher::quantize(0.9, 1.0);
         assert!(
             (q_high - 1.0).abs() < 1e-5,
@@ -394,7 +402,7 @@ mod tests {
 
     #[test]
     fn test_bit_reduction_transparent_at_16bit() {
-        let crusher = Bitcrusher::new(44100.0);
+        let _crusher = Bitcrusher::new(44100.0);
         let input = 0.123_456_78;
         let q = Bitcrusher::quantize(input, 16.0);
         // 16-bit gives ~0.000015 step — difference should be tiny

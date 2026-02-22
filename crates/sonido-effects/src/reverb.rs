@@ -592,7 +592,14 @@ impl Reverb {
     }
 }
 
+impl Default for Reverb {
+    fn default() -> Self {
+        Self::new(48000.0)
+    }
+}
+
 impl Effect for Reverb {
+    #[inline]
     fn process(&mut self, input: f32) -> f32 {
         let (predelay, mix, er_lvl, output_gain) = self.advance_params();
 
@@ -618,6 +625,7 @@ impl Effect for Reverb {
         wet_dry_mix(input, wet, mix) * output_gain
     }
 
+    #[inline]
     fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
         let (predelay, mix, er_lvl, output_gain) = self.advance_params();
 

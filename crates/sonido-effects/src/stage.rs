@@ -384,7 +384,7 @@ impl Stage {
 
 impl Default for Stage {
     fn default() -> Self {
-        Self::new(44100.0)
+        Self::new(48000.0)
     }
 }
 

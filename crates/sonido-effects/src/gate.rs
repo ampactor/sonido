@@ -342,6 +342,12 @@ impl Gate {
     }
 }
 
+impl Default for Gate {
+    fn default() -> Self {
+        Self::new(48000.0)
+    }
+}
+
 impl Effect for Gate {
     #[inline]
     fn process(&mut self, input: f32) -> f32 {
@@ -532,12 +538,10 @@ impl_params! {
 
 #[cfg(test)]
 mod tests {
+    extern crate alloc;
     use super::*;
-    #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
     use sonido_core::ParameterInfo;
-    #[cfg(feature = "std")]
-    use std::vec::Vec;
 
     #[test]
     fn test_gate_basic() {

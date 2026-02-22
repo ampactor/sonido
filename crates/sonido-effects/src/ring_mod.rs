@@ -194,6 +194,12 @@ impl RingMod {
     }
 }
 
+impl Default for RingMod {
+    fn default() -> Self {
+        Self::new(48000.0)
+    }
+}
+
 impl Effect for RingMod {
     #[inline]
     fn process(&mut self, input: f32) -> f32 {
@@ -287,7 +293,9 @@ impl_params! {
 
 #[cfg(test)]
 mod tests {
+    extern crate alloc;
     use super::*;
+    use alloc::vec::Vec;
     use sonido_core::ParameterInfo;
 
     #[test]
@@ -392,13 +400,13 @@ mod tests {
         let diff_sine_tri: f32 = sine_out
             .iter()
             .zip(tri_out.iter())
-            .map(|(a, b)| (a - b).abs())
+            .map(|(a, b): (&f32, &f32)| (a - b).abs())
             .sum::<f32>()
             / 1000.0;
         let diff_sine_sq: f32 = sine_out
             .iter()
             .zip(sq_out.iter())
-            .map(|(a, b)| (a - b).abs())
+            .map(|(a, b): (&f32, &f32)| (a - b).abs())
             .sum::<f32>()
             / 1000.0;
 
@@ -436,7 +444,7 @@ mod tests {
         let mean_diff: f32 = low
             .iter()
             .zip(high.iter())
-            .map(|(a, b)| (a - b).abs())
+            .map(|(a, b): (&f32, &f32)| (a - b).abs())
             .sum::<f32>()
             / 500.0;
 
