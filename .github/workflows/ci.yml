@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 1
 
 jobs:
   lint:
@@ -20,13 +21,13 @@ jobs:
         with:
           clean: false
 
-      - name: Prune target dir if over 5 GB
+      - name: Prune target dir if over 3 GB
         run: |
           if [ -d target ]; then
             size_kb=$(du -sk target | cut -f1)
             size_gb=$((size_kb / 1048576))
             echo "Target dir: ${size_gb} GB"
-            if [ "$size_gb" -ge 5 ]; then
+            if [ "$size_gb" -ge 3 ]; then
               echo "Pruning target dir..."
               cargo clean
               echo "Cleaned."
