@@ -19,7 +19,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
+        run: |
+          pkgs=""
+          dpkg -s libasound2-dev >/dev/null 2>&1 || pkgs="$pkgs libasound2-dev"
+          dpkg -s libudev-dev >/dev/null 2>&1 || pkgs="$pkgs libudev-dev"
+          [ -z "$pkgs" ] || (sudo apt-get update && sudo apt-get install -y $pkgs)
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -82,7 +86,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
+        run: |
+          pkgs=""
+          dpkg -s libasound2-dev >/dev/null 2>&1 || pkgs="$pkgs libasound2-dev"
+          dpkg -s libudev-dev >/dev/null 2>&1 || pkgs="$pkgs libudev-dev"
+          [ -z "$pkgs" ] || (sudo apt-get update && sudo apt-get install -y $pkgs)
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -111,7 +119,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
+        run: |
+          pkgs=""
+          dpkg -s libasound2-dev >/dev/null 2>&1 || pkgs="$pkgs libasound2-dev"
+          dpkg -s libudev-dev >/dev/null 2>&1 || pkgs="$pkgs libudev-dev"
+          [ -z "$pkgs" ] || (sudo apt-get update && sudo apt-get install -y $pkgs)
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -168,7 +180,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
+        run: |
+          pkgs=""
+          dpkg -s libasound2-dev >/dev/null 2>&1 || pkgs="$pkgs libasound2-dev"
+          dpkg -s libudev-dev >/dev/null 2>&1 || pkgs="$pkgs libudev-dev"
+          [ -z "$pkgs" ] || (sudo apt-get update && sudo apt-get install -y $pkgs)
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -206,7 +222,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
+        run: |
+          pkgs=""
+          dpkg -s libasound2-dev >/dev/null 2>&1 || pkgs="$pkgs libasound2-dev"
+          dpkg -s libudev-dev >/dev/null 2>&1 || pkgs="$pkgs libudev-dev"
+          [ -z "$pkgs" ] || (sudo apt-get update && sudo apt-get install -y $pkgs)
 
       - uses: dtolnay/rust-toolchain@stable
 
