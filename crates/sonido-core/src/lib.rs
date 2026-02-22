@@ -139,4 +139,7 @@ pub use oversample::{MAX_OVERSAMPLE_FACTOR, Oversampled};
 pub use param::{LinearSmoothedParam, SmoothedParam};
 pub use param_info::{ParamDescriptor, ParamFlags, ParamId, ParamScale, ParamUnit, ParameterInfo};
 pub use svf::{FourPoleSvf, StateVariableFilter, SvfOutput};
-pub use tempo::{NoteDivision, TempoManager, TransportState};
+pub use tempo::{
+    DIVISION_LABELS, NoteDivision, TempoContext, TempoManager, TransportState, division_to_index,
+    index_to_division,
+};

@@ -27,6 +27,10 @@ struct SonidoSharedData {
     ///
     /// GUI thread sets flags via `fetch_or`; audio thread clears via `swap(0)`.
     gesture_flags: Vec<AtomicU8>,
+    /// Cached latency in samples, written by audio thread during `activate()`.
+    ///
+    /// Read by the main thread to implement `PluginLatencyImpl::get()`.
+    latency_samples: AtomicU32,
     /// Host notification callback, called from GUI thread to request
     /// the host to schedule a `process()`/`flush()` call.
     ///
@@ -90,6 +94,7 @@ impl SonidoShared {
                 values,
                 bypassed: AtomicBool::new(false),
                 gesture_flags,
+                latency_samples: AtomicU32::new(0),
                 host_notify,
             }),
         }
@@ -149,6 +154,21 @@ impl SonidoShared {
     /// Set the bypass state (GUI toggle).
     pub fn set_bypassed(&self, bypassed: bool) {
         self.inner.bypassed.store(bypassed, Ordering::Release);
+    }
+
+    /// Get the cached latency in samples.
+    ///
+    /// Written by the audio thread during `activate()`; read by the main
+    /// thread to implement the CLAP latency extension.
+    pub fn latency_samples(&self) -> u32 {
+        self.inner.latency_samples.load(Ordering::Acquire)
+    }
+
+    /// Cache the effect's latency in samples.
+    ///
+    /// Called by the audio processor after creating the effect instance.
+    pub fn set_latency_samples(&self, samples: u32) {
+        self.inner.latency_samples.store(samples, Ordering::Release);
     }
 
     /// Notify the host that GUI-originated changes are pending.

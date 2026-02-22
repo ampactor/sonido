@@ -315,6 +315,16 @@ pub trait Effect {
     fn latency_samples(&self) -> usize {
         0
     }
+
+    /// Receive tempo and transport information from the host.
+    ///
+    /// Called once per buffer before processing begins. Effects that support
+    /// tempo sync (delays, LFO-based modulation) should override this to
+    /// update their internal timing. The default implementation is a no-op.
+    ///
+    /// # Arguments
+    /// * `ctx` - Current tempo, transport state, and musical position
+    fn set_tempo_context(&mut self, _ctx: &crate::tempo::TempoContext) {}
 }
 
 /// Extension trait for chaining effects.
@@ -402,6 +412,11 @@ impl<A: Effect, B: Effect> Effect for Chain<A, B> {
     fn is_true_stereo(&self) -> bool {
         // Chain is true stereo if either component is true stereo
         self.first.is_true_stereo() || self.second.is_true_stereo()
+    }
+
+    fn set_tempo_context(&mut self, ctx: &crate::tempo::TempoContext) {
+        self.first.set_tempo_context(ctx);
+        self.second.set_tempo_context(ctx);
     }
 }
 

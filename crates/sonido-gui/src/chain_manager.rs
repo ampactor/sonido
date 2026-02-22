@@ -5,7 +5,7 @@
 //! reordered without reallocating the effects themselves.
 
 use crate::atomic_param_bridge::AtomicParamBridge;
-use sonido_core::{ParamDescriptor, SmoothedParam};
+use sonido_core::{ParamDescriptor, SmoothedParam, TempoContext};
 use sonido_gui_core::SlotIndex;
 use sonido_registry::{EffectRegistry, EffectWithParams};
 
@@ -188,6 +188,17 @@ impl ChainManager {
     /// Returns the effect ID for a slot, or `""` if out of range.
     pub fn effect_id(&self, slot: usize) -> &str {
         self.slots.get(slot).map_or("", |s| s.id)
+    }
+
+    /// Propagates tempo context to all effects in the chain.
+    ///
+    /// Call once per buffer before processing. Effects that override
+    /// [`Effect::set_tempo_context`](sonido_core::Effect::set_tempo_context)
+    /// will receive the updated BPM, transport state, and beat position.
+    pub fn set_tempo_context(&mut self, ctx: &TempoContext) {
+        for slot in &mut self.slots {
+            slot.effect.set_tempo_context(ctx);
+        }
     }
 
     /// Appends an effect to the chain, returning its slot index.

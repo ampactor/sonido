@@ -38,6 +38,9 @@ impl<'a> PluginAudioProcessor<'a, SonidoShared, SonidoMainThread<'a>> for Sonido
         // Initialize effect parameters from shared atomic state.
         shared.apply_to_effect(effect.as_mut());
 
+        // Cache latency so the main thread can report it to the host.
+        shared.set_latency_samples(effect.latency_samples() as u32);
+
         Ok(Self { shared, effect })
     }
 
