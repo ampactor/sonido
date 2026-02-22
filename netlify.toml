@@ -1,0 +1,12 @@
+[build]
+  command = "curl -L https://github.com/trunk-rs/trunk/releases/latest/download/trunk-x86_64-unknown-linux-gnu.tar.gz | tar xz && rustup target add wasm32-unknown-unknown && ./trunk build --release crates/sonido-gui/index.html"
+  publish = "crates/sonido-gui/dist"
+
+[build.environment]
+  RUSTUP_TOOLCHAIN = "stable"
+  CARGO_TARGET_DIR = "/opt/buildhome/.cargo-target"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
