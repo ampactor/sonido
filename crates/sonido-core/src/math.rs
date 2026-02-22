@@ -545,7 +545,7 @@ mod tests {
     fn test_foldback_extreme_input() {
         let result = foldback(100.0, 1.0);
         assert!(
-            result >= -1.0 && result <= 1.0,
+            (-1.0..=1.0).contains(&result),
             "Result {} out of bounds",
             result
         );
