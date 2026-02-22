@@ -21,7 +21,7 @@ workspace = true
 
 [dev-dependencies]
 criterion = { workspace = true }
-proptest = "1"
+proptest = { workspace = true }
 sonido-analysis = { workspace = true }
 sonido-registry = { workspace = true }
 

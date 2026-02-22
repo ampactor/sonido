@@ -12,17 +12,17 @@ path = "src/main.rs"
 
 [dependencies]
 # GUI framework
-eframe = "0.31"
-egui = "0.31"
-egui_extras = "0.31"
+eframe = { workspace = true }
+egui = { workspace = true }
+egui_extras = { workspace = true }
 
 # Audio (workspace)
 cpal.workspace = true
-sonido-core = { path = "../sonido-core", features = ["std"] }
-sonido-effects = { path = "../sonido-effects", features = ["std"] }
-sonido-config = { path = "../sonido-config", features = ["std"] }
-sonido-gui-core = { path = "../sonido-gui-core" }
-sonido-registry = { path = "../sonido-registry", features = ["std"] }
+sonido-core = { workspace = true, features = ["std"] }
+sonido-effects = { workspace = true, features = ["std"] }
+sonido-config = { workspace = true, features = ["std"] }
+sonido-gui-core = { workspace = true }
+sonido-registry = { workspace = true, features = ["std"] }
 
 # Thread-safety
 arc-swap = "1.8"
@@ -34,7 +34,7 @@ rfd = "0.15"
 
 # Presets
 serde.workspace = true
-serde_json = "1.0"
+serde_json = { workspace = true }
 
 # Error handling
 thiserror.workspace = true
@@ -43,10 +43,9 @@ thiserror.workspace = true
 log = "0.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-sonido-io = { path = "../sonido-io" }
+sonido-io = { workspace = true }
 clap.workspace = true
 env_logger = "0.11"
-dirs = "5.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 cpal = { version = "0.17", features = ["wasm-bindgen"] }
@@ -54,7 +53,7 @@ wasm-bindgen-futures = "0.4"
 wasm-bindgen = "0.2"
 web-sys = { version = "0.3", features = ["HtmlCanvasElement", "Window", "Document"] }
 web-time = "1.1"
-hound = "3.5"
+hound = { workspace = true }
 
 [lints]
 workspace = true

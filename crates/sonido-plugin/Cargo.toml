@@ -20,22 +20,23 @@ clack-plugin = { git = "https://github.com/prokopyl/clack.git", rev = "57e89b3" 
 clack-extensions = { git = "https://github.com/prokopyl/clack.git", rev = "57e89b3", features = [
     "clack-plugin",
     "audio-ports",
+    "latency",
     "params",
     "state",
     "gui",
     "raw-window-handle_05",
 ] }
 
-sonido-gui-core = { path = "../sonido-gui-core" }
-baseview = { git = "https://github.com/RustAudio/baseview.git", rev = "9a0b42c09d712777b2edb4c5e0cb6baf21e988f0" }
-egui = "0.31"
-egui_glow = "0.31"
+sonido-gui-core = { workspace = true }
+baseview = { git = "https://github.com/RustAudio/baseview.git", rev = "9a0b42c09d712777b2edb4c5e0cb6baf21e988f0", features = ["opengl"] }
+egui = { workspace = true }
+egui_glow = { workspace = true }
 glow = "0.16"
-keyboard-types = "0.7"
+keyboard-types = "0.6"
 raw-window-handle = "0.5"
 
 serde = { workspace = true }
-serde_json = "1.0"
+serde_json = { workspace = true }
 
 [lints]
 workspace = true
@@ -110,4 +111,8 @@ crate-type = ["cdylib"]
 
 [[example]]
 name = "sonido-ringmod"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "sonido-stage"
 crate-type = ["cdylib"]

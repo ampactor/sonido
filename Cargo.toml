@@ -42,9 +42,6 @@ libm = "0.2"
 # FFT for analysis (std only)
 rustfft = "6.2"
 
-# Numeric traits for generic code
-num-traits = { version = "0.2", default-features = false }
-
 # Benchmarking
 criterion = "0.5"
 
@@ -57,6 +54,13 @@ sonido-registry = { path = "crates/sonido-registry", default-features = false }
 sonido-platform = { path = "crates/sonido-platform", default-features = false }
 sonido-config = { path = "crates/sonido-config", default-features = false }
 sonido-synth = { path = "crates/sonido-synth", default-features = false }
+sonido-gui-core = { path = "crates/sonido-gui-core" }
+
+# GUI framework
+egui = "0.31"
+eframe = "0.31"
+egui_extras = "0.31"
+egui_glow = "0.31"
 
 # CLI dependencies
 clap = { version = "4", features = ["derive"] }
@@ -64,8 +68,13 @@ cpal = "0.17"
 hound = "3.5"
 thiserror = "2.0"
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 toml = "0.8"
 indicatif = "0.17"
+
+# Testing
+proptest = "1"
+tempfile = "3.15"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
