@@ -1,7 +1,7 @@
-# Use faster linker on Linux if available
+# Use mold linker on Linux for faster linking
 [target.x86_64-unknown-linux-gnu]
-# Uncomment if mold is installed: linker = "clang"
-# rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 
 [build]
 # Parallel frontend for faster compilation
