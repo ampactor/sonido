@@ -113,26 +113,35 @@ sonido process in.wav --effect compressor \
 
 ## chorus
 
-Dual-voice modulated delay chorus.
+Multi-voice modulated delay chorus with feedback and tempo sync.
 
 **How chorus works**: A chorus effect creates the illusion of multiple instruments playing in unison by mixing the dry signal with copies that have slightly varying pitch. The pitch variation is achieved by modulating a short delay time with an LFO. When a delay time changes over time, it effectively time-stretches or compresses the signal, producing a Doppler-like pitch shift.
 
-**Implementation** (`crates/sonido-effects/src/chorus.rs`): Two `InterpolatedDelay` lines with independent LFOs provide two modulated voices. The base delay is 15 ms with up to 5 ms of LFO modulation, sweeping the total delay between 10-20 ms. The two LFOs are phase-offset by 90 degrees (`lfo2.set_phase(0.25)` at line 59) so the voices move independently, creating a richer effect.
+**Implementation** (`crates/sonido-effects/src/chorus.rs`): Up to four `InterpolatedDelay` lines with independent LFOs provide 2-4 modulated voices. The configurable base delay (5-25 ms, default 15 ms) determines the centre of modulation. Each voice's LFO is phase-offset so the voices move independently, creating a richer effect. A feedback path recirculates the wet signal for resonant tones.
 
-**Stereo processing** (`chorus.rs:118-148`): In stereo mode, voice 1 is panned 80% left / 20% right and voice 2 is 20% left / 80% right. This creates a wide stereo image from a mono source -- a classic technique for thickening synth pads and guitar tracks.
+**Stereo processing**: In stereo mode, voices are panned across the stereo field with alternating bias (odd voices left, even voices right). This creates a wide stereo image from a mono source — a classic technique for thickening synth pads and guitar tracks.
 
 | Parameter | Description | Default | Range |
 |-----------|-------------|---------|-------|
 | `rate` | LFO rate in Hz | 1.0 | 0.1-10 |
 | `depth` | Modulation depth (0-1) | 0.5 | 0-1 |
 | `mix` | Wet/dry mix (0-1) | 0.5 | 0-1 |
+| `voices` | Number of chorus voices | 2 | 2-4 |
+| `feedback` | Feedback amount (0-1) | 0.0 | 0-0.7 |
+| `base_delay` | Base delay in ms | 15.0 | 5-25 |
+| `sync` | Tempo sync on/off | off | off, on |
+| `division` | Note division (when synced) | eighth | whole, half, quarter, eighth, etc. |
 | `output` | Output level in dB | 0.0 | -20 to 20 |
+
+### Tempo Sync
+
+When `sync=on`, the LFO rate locks to the host tempo at the selected note division. The rate parameter is overridden by the computed Hz value from the current BPM and division. Sync responds to `set_tempo_context()` calls from the host/DAW.
 
 ### Tips
 
 - **Subtle chorus**: rate=0.5, depth=0.3, mix=0.3
 - **Classic chorus**: rate=1.0, depth=0.5, mix=0.5
-- **Thick chorus**: rate=2.0, depth=0.7, mix=0.6
+- **Thick chorus**: rate=2.0, depth=0.7, mix=0.6, voices=4
 
 ### Example
 
@@ -161,6 +170,11 @@ Feedback delay with optional ping-pong stereo mode.
 | `feedback` | Feedback amount (0-1) | 0.4 | 0-0.95 |
 | `mix` | Wet/dry mix (0-1) | 0.5 | 0-1 |
 | `ping_pong` | Ping-pong stereo mode (0=off, 1=on) | 0.0 | 0-1 |
+| `feedback_lp` | Feedback lowpass frequency in Hz | 20000.0 | 200-20000 |
+| `feedback_hp` | Feedback highpass frequency in Hz | 20.0 | 20-2000 |
+| `diffusion` | Diffusion amount (0-1) | 0.0 | 0-1 |
+| `sync` | Tempo sync on/off | off | off, on |
+| `division` | Note division (when synced) | quarter | whole, half, quarter, eighth, etc. |
 | `output` | Output level in dB | 0.0 | -20 to 20 |
 
 ### Tips
@@ -366,6 +380,9 @@ Amplitude modulation with multiple waveforms.
 | `rate` | LFO rate in Hz | 5.0 | 0.5-20 |
 | `depth` | Modulation depth (0-1) | 0.5 | 0-1 |
 | `waveform` | Waveform type | sine | sine, triangle, square, samplehold |
+| `spread` | Stereo spread (0-1) | 0.0 | 0-1 |
+| `sync` | Tempo sync on/off | off | off, on |
+| `division` | Note division (when synced) | eighth | whole, half, quarter, eighth, etc. |
 | `output` | Output level in dB | 0.0 | -20 to 20 |
 
 ### Waveform Types
@@ -433,9 +450,12 @@ Classic flanger with modulated short delay.
 | Parameter | Description | Default | Range |
 |-----------|-------------|---------|-------|
 | `rate` | LFO rate in Hz | 0.5 | 0.05-5 |
-| `depth` | Modulation depth (0-1) | 0.5 | 0-1 |
-| `feedback` | Feedback amount (0-1) | 0.5 | 0-0.95 |
+| `depth` | Modulation depth (0-1) | 0.35 | 0-1 |
+| `feedback` | Feedback amount (-0.95 to 0.95) | 0.5 | -0.95 to 0.95 |
 | `mix` | Wet/dry mix (0-1) | 0.5 | 0-1 |
+| `tzf` | Through-zero flanging on/off | off | off, on |
+| `sync` | Tempo sync on/off | off | off, on |
+| `division` | Note division (when synced) | eighth | whole, half, quarter, eighth, etc. |
 | `output` | Output level in dB | 0.0 | -20 to 20 |
 
 ### Flanger vs. Chorus vs. Phaser
@@ -487,7 +507,10 @@ When the allpass-shifted signal is mixed with the original, a notch appears at t
 | `stages` | Number of allpass stages | 6 | 2-12 |
 | `feedback` | Feedback/resonance (0-1) | 0.5 | 0-0.95 |
 | `mix` | Wet/dry mix (0-1) | 0.5 | 0-1 |
-| `stereo_spread` | Stereo LFO phase offset (0=mono, 0.5=180°) | 0.25 | 0-0.5 |
+| `min_freq` | Minimum sweep frequency in Hz | 200.0 | 20-2000 |
+| `max_freq` | Maximum sweep frequency in Hz | 4000.0 | 200-20000 |
+| `sync` | Tempo sync on/off | off | off, on |
+| `division` | Note division (when synced) | eighth | whole, half, quarter, eighth, etc. |
 | `output` | Output level in dB | 0.0 | -20 to 20 |
 
 ### Tips

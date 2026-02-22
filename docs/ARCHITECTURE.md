@@ -141,13 +141,19 @@ Spectral analysis tools for reverse engineering hardware and biosignal research.
 
 ### sonido-io
 
-Audio I/O layer using cpal and hound. Full stereo support.
+Audio I/O layer with pluggable backend abstraction, WAV file I/O, and full stereo support.
+
+**Audio Backend Architecture (ADR-023):**
+- `AudioBackend` trait: Platform-agnostic interface for device enumeration and stream construction
+- `CpalBackend`: Default backend wrapping cpal (ALSA, CoreAudio, WASAPI, WebAudio)
+- `StreamHandle`: Type-erased RAII stream handle — dropping stops playback
+- `BackendStreamConfig`: Backend-agnostic stream configuration
 
 **Components:**
 - `read_wav` / `write_wav`: Mono WAV file I/O
 - `read_wav_stereo` / `write_wav_stereo`: Stereo WAV file I/O
 - `StereoSamples`: Helper struct for stereo audio with conversions
-- `AudioStream`: Real-time audio streaming (mono and stereo)
+- `AudioStream`: Real-time audio streaming (mono and stereo) — legacy cpal integration
 - `ProcessingEngine`: Block-based effect chain runner with stereo methods
 
 **Stereo I/O:**

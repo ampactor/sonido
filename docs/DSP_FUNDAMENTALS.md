@@ -638,13 +638,29 @@ Default methods provide bipolar-to-unipolar and unipolar-to-bipolar conversions:
 
 This allows effects to accept any modulation source interchangeably without caring about the source's native range.
 
-### Chorus, Flanger, Phaser
+### Chorus, Flanger, Phaser, Tremolo
 
-These effects all use an LFO to modulate a delay line or filter parameter:
+These effects all use an LFO to modulate a delay line, filter, or amplitude parameter:
 
 - **Chorus**: LFO modulates a ~10-30 ms delay time, creating a detuned copy that mixes with the original
 - **Flanger**: LFO modulates a shorter delay (~1-10 ms) with feedback, creating the characteristic comb-filter sweep
 - **Phaser**: LFO modulates the frequencies of a series of allpass filters, creating notches that sweep through the spectrum
+- **Tremolo**: LFO modulates the signal amplitude, creating rhythmic volume pulsing
+
+### Tempo Sync for Modulation Effects
+
+All four modulation effects support tempo sync via `set_tempo_context()`. When the **Sync** parameter is enabled, the LFO rate is overridden by a frequency derived from the host BPM and a selected **Division** (musical note value).
+
+The conversion uses `TempoManager::division_to_hz()`:
+```
+lfo_hz = (bpm / 60.0) / division.beats()
+```
+
+For example, at 120 BPM with an eighth-note division: `(120/60) / 0.5 = 4.0 Hz`.
+
+The computed Hz is clamped to each effect's rate range to prevent extreme values. Shared helpers in `sonido-core/src/tempo.rs` (`DIVISION_LABELS`, `index_to_division()`, `division_to_index()`) map between the 12 supported note divisions and UI-friendly indices.
+
+**Source:** `crates/sonido-effects/src/{chorus,flanger,phaser,tremolo}.rs`
 
 ---
 
