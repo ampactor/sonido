@@ -3910,7 +3910,9 @@ dependencies = [
  "sonido-core",
  "sonido-effects",
  "sonido-io",
+ "sonido-registry",
  "sonido-synth",
+ "tempfile",
  "thiserror 2.0.18",
  "toml",
 ]
@@ -3996,6 +3998,7 @@ dependencies = [
  "cpal",
  "hound",
  "sonido-core",
+ "sonido-effects",
  "tempfile",
  "thiserror 2.0.18",
 ]

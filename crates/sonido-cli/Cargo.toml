@@ -15,7 +15,7 @@ sonido-core = { workspace = true, features = ["std"] }
 sonido-effects = { workspace = true, features = ["std"] }
 sonido-analysis = { workspace = true }
 sonido-io = { workspace = true }
-sonido-config = { workspace = true }
+sonido-config = { workspace = true, features = ["std"] }
 sonido-synth = { workspace = true, features = ["std"] }
 
 clap = { workspace = true }
@@ -27,6 +27,10 @@ ctrlc = "3.4"
 anyhow = "1.0"
 serde_json = { workspace = true }
 rustfft = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+sonido-registry = { workspace = true, features = ["std"] }
 
 [lints]
 workspace = true
