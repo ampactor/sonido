@@ -282,11 +282,18 @@ impl Limiter {
     }
 }
 
+impl Default for Limiter {
+    fn default() -> Self {
+        Self::new(48000.0)
+    }
+}
+
 impl Effect for Limiter {
     /// Process one mono sample through the limiter.
     ///
     /// Uses the left channel buffer only. For stereo signals, prefer
     /// [`process_stereo`](Self::process_stereo) to ensure linked gain reduction.
+    #[inline]
     fn process(&mut self, input: f32) -> f32 {
         let (out, _) = self.process_stereo_inner(input, input);
         out
@@ -296,6 +303,7 @@ impl Effect for Limiter {
     ///
     /// Peak detection uses `max(|L|, |R|)` so both channels receive the same
     /// gain reduction, preserving the stereo image under heavy limiting.
+    #[inline]
     fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
         self.process_stereo_inner(left, right)
     }
@@ -320,12 +328,14 @@ impl Effect for Limiter {
             ms_to_samples(self.lookahead_ms, sample_rate).min(max_samples.saturating_sub(1));
     }
 
-    /// Reset all state: clear delay buffers and reset gain to unity.
+    /// Reset all state: clear delay buffers, snap smoothed params, reset gain to unity.
     fn reset(&mut self) {
         self.buffer_l.fill(0.0);
         self.buffer_r.fill(0.0);
         self.write_pos = 0;
         self.gain_reduction = 1.0;
+        self.threshold.snap_to_target();
+        self.output_level.snap_to_target();
     }
 
     /// Reports latency in samples equal to the current lookahead setting.
@@ -384,10 +394,6 @@ fn compute_release_coeff(release_ms: f32, sample_rate: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(not(feature = "std"))]
-    extern crate alloc;
-    #[cfg(not(feature = "std"))]
-    use alloc::vec;
     use sonido_core::ParameterInfo;
 
     #[test]
