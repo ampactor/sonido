@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Extract device name via `description()` (cpal 0.17+).
-fn device_name(device: &Device) -> std::result::Result<String, cpal::DeviceNameError> {
+pub(crate) fn device_name(device: &Device) -> std::result::Result<String, cpal::DeviceNameError> {
     device.description().map(|d| d.name().to_string())
 }
 
