@@ -109,6 +109,47 @@ pub enum TransportState {
     Playing,
 }
 
+/// Tempo and transport snapshot passed to effects once per block.
+///
+/// A lightweight message carrying the current BPM, transport state, and musical
+/// position. Created by [`TempoManager::snapshot`] and delivered to each effect
+/// via [`Effect::set_tempo_context`](crate::Effect::set_tempo_context) before
+/// processing a block.
+///
+/// # Example
+///
+/// ```rust
+/// use sonido_core::{TempoManager, TempoContext};
+///
+/// let mut tempo = TempoManager::new(48000.0, 140.0);
+/// tempo.play();
+/// let ctx = tempo.snapshot();
+/// assert!((ctx.bpm - 140.0).abs() < 0.001);
+/// assert!(ctx.is_playing);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TempoContext {
+    /// Current tempo in beats per minute.
+    pub bpm: f32,
+    /// Whether the transport is playing.
+    pub is_playing: bool,
+    /// Current position in beats from the transport origin.
+    pub beat_position: f32,
+    /// Sample rate in Hz (passed through for convenience).
+    pub sample_rate: f32,
+}
+
+impl Default for TempoContext {
+    fn default() -> Self {
+        Self {
+            bpm: 120.0,
+            is_playing: false,
+            beat_position: 0.0,
+            sample_rate: 48000.0,
+        }
+    }
+}
+
 /// Manages tempo and transport for synchronized effects.
 ///
 /// Tracks musical position and provides timing utilities for
@@ -254,6 +295,29 @@ impl TempoManager {
         division.to_samples(self.bpm, self.sample_rate)
     }
 
+    /// Create a [`TempoContext`] snapshot of the current state.
+    ///
+    /// Call once per buffer and pass to each effect via
+    /// [`Effect::set_tempo_context`](crate::Effect::set_tempo_context).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use sonido_core::TempoManager;
+    ///
+    /// let tempo = TempoManager::new(48000.0, 120.0);
+    /// let ctx = tempo.snapshot();
+    /// assert!((ctx.bpm - 120.0).abs() < 0.001);
+    /// ```
+    pub fn snapshot(&self) -> TempoContext {
+        TempoContext {
+            bpm: self.bpm,
+            is_playing: self.transport == TransportState::Playing,
+            beat_position: self.beat_position(),
+            sample_rate: self.sample_rate,
+        }
+    }
+
     /// Check if we're on a beat boundary (within tolerance).
     pub fn is_on_beat(&self, tolerance_samples: u64) -> bool {
         let samples_into_beat = self.position % (self.samples_per_beat as u64);
@@ -265,6 +329,64 @@ impl TempoManager {
 impl Default for TempoManager {
     fn default() -> Self {
         Self::new(48000.0, 120.0)
+    }
+}
+
+/// Human-readable labels for each [`NoteDivision`] variant, indexed 0–11.
+///
+/// Used by `impl_params!` step labels for tempo sync division parameters
+/// in effects that support tempo-synced LFO rates or delay times.
+pub const DIVISION_LABELS: &[&str] = &[
+    "Whole",
+    "Half",
+    "Quarter",
+    "Eighth",
+    "Sixteenth",
+    "32nd",
+    "Dot Half",
+    "Dot Qtr",
+    "Dot 8th",
+    "Trip Qtr",
+    "Trip 8th",
+    "Trip 16th",
+];
+
+/// Map integer index (0–11) to [`NoteDivision`] variant.
+///
+/// Out-of-range indices default to [`NoteDivision::Quarter`].
+pub fn index_to_division(index: u8) -> NoteDivision {
+    match index {
+        0 => NoteDivision::Whole,
+        1 => NoteDivision::Half,
+        2 => NoteDivision::Quarter,
+        3 => NoteDivision::Eighth,
+        4 => NoteDivision::Sixteenth,
+        5 => NoteDivision::ThirtySecond,
+        6 => NoteDivision::DottedHalf,
+        7 => NoteDivision::DottedQuarter,
+        8 => NoteDivision::DottedEighth,
+        9 => NoteDivision::TripletQuarter,
+        10 => NoteDivision::TripletEighth,
+        11 => NoteDivision::TripletSixteenth,
+        _ => NoteDivision::Quarter,
+    }
+}
+
+/// Map a [`NoteDivision`] variant to its integer index (0–11).
+pub fn division_to_index(div: NoteDivision) -> u8 {
+    match div {
+        NoteDivision::Whole => 0,
+        NoteDivision::Half => 1,
+        NoteDivision::Quarter => 2,
+        NoteDivision::Eighth => 3,
+        NoteDivision::Sixteenth => 4,
+        NoteDivision::ThirtySecond => 5,
+        NoteDivision::DottedHalf => 6,
+        NoteDivision::DottedQuarter => 7,
+        NoteDivision::DottedEighth => 8,
+        NoteDivision::TripletQuarter => 9,
+        NoteDivision::TripletEighth => 10,
+        NoteDivision::TripletSixteenth => 11,
     }
 }
 
@@ -368,5 +490,47 @@ mod tests {
         // At 120 BPM, 48kHz: quarter note = 24000 samples
         let samples = tempo.division_to_samples(NoteDivision::Quarter);
         assert!((samples - 24000.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_snapshot() {
+        let mut tempo = TempoManager::new(48000.0, 140.0);
+        tempo.play();
+        for _ in 0..24000 {
+            tempo.advance();
+        }
+
+        let ctx = tempo.snapshot();
+        assert!((ctx.bpm - 140.0).abs() < 0.001);
+        assert!(ctx.is_playing);
+        assert!(ctx.beat_position > 0.0);
+        assert!((ctx.sample_rate - 48000.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_tempo_context_default() {
+        let ctx = TempoContext::default();
+        assert!((ctx.bpm - 120.0).abs() < 0.001);
+        assert!(!ctx.is_playing);
+        assert!((ctx.beat_position - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_division_index_roundtrip() {
+        for i in 0..12u8 {
+            let div = index_to_division(i);
+            let back = division_to_index(div);
+            assert_eq!(i, back, "Roundtrip failed for index {i}");
+        }
+    }
+
+    #[test]
+    fn test_division_labels_count() {
+        assert_eq!(DIVISION_LABELS.len(), 12);
+    }
+
+    #[test]
+    fn test_index_to_division_out_of_range() {
+        assert_eq!(index_to_division(255), NoteDivision::Quarter);
     }
 }

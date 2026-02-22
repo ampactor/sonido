@@ -10,6 +10,7 @@ use clack_extensions::audio_ports::{
     AudioPortFlags, AudioPortInfo, AudioPortInfoWriter, AudioPortType, PluginAudioPortsImpl,
 };
 use clack_extensions::gui::{GuiApiType, GuiConfiguration, GuiSize, PluginGuiImpl, Window};
+use clack_extensions::latency::PluginLatencyImpl;
 use clack_extensions::params::{
     ParamDisplayWriter, ParamInfo, ParamInfoFlags, ParamInfoWriter, PluginMainThreadParams,
 };
@@ -275,6 +276,14 @@ impl PluginGuiImpl for SonidoMainThread<'_> {
 
     fn set_transient(&mut self, _window: Window) -> Result<(), PluginError> {
         Ok(()) // embedded only, no floating window support
+    }
+}
+
+// ── Latency Extension ───────────────────────────────────────────────────────
+
+impl PluginLatencyImpl for SonidoMainThread<'_> {
+    fn get(&mut self) -> u32 {
+        self.shared.latency_samples()
     }
 }
 

@@ -85,11 +85,13 @@ macro_rules! sonido_effect_entry {
             ) {
                 use ::clack_extensions::audio_ports::PluginAudioPorts;
                 use ::clack_extensions::gui::PluginGui;
+                use ::clack_extensions::latency::PluginLatency;
                 use ::clack_extensions::params::PluginParams;
                 use ::clack_extensions::state::PluginState;
 
                 builder.register::<PluginAudioPorts>();
                 builder.register::<PluginGui>();
+                builder.register::<PluginLatency>();
                 builder.register::<PluginParams>();
                 builder.register::<PluginState>();
             }
