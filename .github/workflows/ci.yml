@@ -10,80 +10,28 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    name: Test (Linux)
-    timeout-minutes: 30
+  lint:
+    name: Lint
     runs-on: self-hosted
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          clean: false
 
-      - name: Install system dependencies
+      - name: Prune target dir if over 5 GB
         run: |
-          pkgs=""
-          dpkg -s libasound2-dev >/dev/null 2>&1 || pkgs="$pkgs libasound2-dev"
-          dpkg -s libudev-dev >/dev/null 2>&1 || pkgs="$pkgs libudev-dev"
-          [ -z "$pkgs" ] || (sudo apt-get update && sudo apt-get install -y $pkgs)
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
-      - name: Run tests
-        run: cargo test --workspace
-
-  no-std:
-    name: no_std Check
-    runs-on: self-hosted
-    timeout-minutes: 30
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ubuntu-latest-cargo-nostd-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ubuntu-latest-cargo-nostd-
-
-      - name: Check sonido-core (no_std)
-        run: cargo test --no-default-features -p sonido-core
-
-      - name: Check sonido-effects (no_std)
-        run: cargo test --no-default-features -p sonido-effects
-
-      - name: Check sonido-synth (no_std)
-        run: cargo test --no-default-features -p sonido-synth
-
-      - name: Check sonido-registry (no_std)
-        run: cargo test --no-default-features -p sonido-registry
-
-      - name: Check sonido-platform (no_std)
-        run: cargo test --no-default-features -p sonido-platform
-
-  clippy:
-    name: Clippy
-    runs-on: self-hosted
-    timeout-minutes: 30
-
-    steps:
-      - uses: actions/checkout@v4
+          if [ -d target ]; then
+            size_kb=$(du -sk target | cut -f1)
+            size_gb=$((size_kb / 1048576))
+            echo "Target dir: ${size_gb} GB"
+            if [ "$size_gb" -ge 5 ]; then
+              echo "Pruning target dir..."
+              cargo clean
+              echo "Cleaned."
+            fi
+          fi
 
       - name: Install system dependencies
         run: |
@@ -94,29 +42,23 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: rustfmt, clippy
 
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ubuntu-latest-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ubuntu-latest-cargo-clippy-
+      - name: Check formatting
+        run: cargo fmt --all -- --check
 
       - name: Run clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-  docs:
-    name: Documentation
+  test:
+    name: Test
     runs-on: self-hosted
-    timeout-minutes: 30
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          clean: false
 
       - name: Install system dependencies
         run: |
@@ -127,57 +69,43 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ubuntu-latest-cargo-docs-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ubuntu-latest-cargo-docs-
+      - name: Run tests
+        run: cargo test --workspace
 
       - name: Build documentation
         run: cargo doc --workspace --no-deps
         env:
           RUSTDOCFLAGS: "-D warnings"
 
-      - name: Run doc tests
-        run: cargo test --workspace --doc
-
-  fmt:
-    name: Format
+  no-std:
+    name: no_std Check
     runs-on: self-hosted
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          clean: false
 
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-  deny:
-    name: Dependency Check
-    runs-on: self-hosted
-    timeout-minutes: 30
-    continue-on-error: true
-
-    steps:
-      - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v1
+      - name: Check no_std crates
+        run: |
+          cargo test --no-default-features -p sonido-core
+          cargo test --no-default-features -p sonido-effects
+          cargo test --no-default-features -p sonido-synth
+          cargo test --no-default-features -p sonido-registry
+          cargo test --no-default-features -p sonido-platform
 
   plugin:
-    name: Plugin Build & Test
+    name: Plugin
     runs-on: self-hosted
-    timeout-minutes: 30
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          clean: false
 
       - name: Install system dependencies
         run: |
@@ -187,17 +115,6 @@ jobs:
           [ -z "$pkgs" ] || (sudo apt-get update && sudo apt-get install -y $pkgs)
 
       - uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ubuntu-latest-cargo-plugin-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ubuntu-latest-cargo-plugin-
 
       - name: Run plugin tests
         run: cargo test -p sonido-plugin
@@ -212,43 +129,13 @@ jobs:
           done
           echo "All 19 plugin binaries verified"
 
-  clap-validate:
-    name: CLAP Plugin Validation
-    needs: plugin
-    runs-on: self-hosted
-    timeout-minutes: 30
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install system dependencies
-        run: |
-          pkgs=""
-          dpkg -s libasound2-dev >/dev/null 2>&1 || pkgs="$pkgs libasound2-dev"
-          dpkg -s libudev-dev >/dev/null 2>&1 || pkgs="$pkgs libudev-dev"
-          [ -z "$pkgs" ] || (sudo apt-get update && sudo apt-get install -y $pkgs)
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ubuntu-latest-cargo-plugin-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ubuntu-latest-cargo-plugin-
-
-      - name: Build plugin binaries
-        run: cargo build --release -p sonido-plugin --examples
-
       - name: Download clap-validator
         run: |
-          curl -L https://github.com/free-audio/clap-validator/releases/download/0.3.2/clap-validator-0.3.2-ubuntu-18.04.tar.gz -o clap-validator.tar.gz
-          tar xzf clap-validator.tar.gz
-          chmod +x clap-validator
+          if [ ! -x clap-validator ]; then
+            curl -L https://github.com/free-audio/clap-validator/releases/download/0.3.2/clap-validator-0.3.2-ubuntu-18.04.tar.gz -o clap-validator.tar.gz
+            tar xzf clap-validator.tar.gz
+            chmod +x clap-validator
+          fi
 
       - name: Validate CLAP plugins
         run: |
@@ -261,10 +148,12 @@ jobs:
   wasm-check:
     name: Wasm Check
     runs-on: self-hosted
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          clean: false
 
       - uses: dtolnay/rust-toolchain@stable
         with:
