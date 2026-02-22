@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Pre-push hook: fast CI subset before every push.
+# Pre-push hook: fast local guard (format only).
+# Full tests, clippy, etc. run in CI — no need to replicate here.
 # Install via: make install-hooks
 # Skip via:    SKIP_CI=1 git push
 
@@ -10,10 +11,6 @@ if [[ "${SKIP_CI:-0}" == "1" ]]; then
   exit 0
 fi
 
-echo "Running pre-push checks..."
-
+echo "Pre-push: checking format..."
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-
 echo "Pre-push checks passed."
