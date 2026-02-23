@@ -117,8 +117,11 @@ impl AtomicParamBridge {
     pub fn sync_to_chain(&self, chain: &mut crate::chain_manager::ChainManager) {
         let snap = self.state.load();
         for (slot_raw, slot_state) in snap.slots.iter().enumerate() {
-            // Bypass sync is unconditional — cheap and doesn't go through set()
-            chain.set_bypassed(slot_raw, slot_state.bypassed.load(Ordering::Relaxed));
+            // Only update bypass if it changed
+            let bridge_bypassed = slot_state.bypassed.load(Ordering::Relaxed);
+            if chain.is_bypassed(slot_raw) != bridge_bypassed {
+                chain.set_bypassed(slot_raw, bridge_bypassed);
+            }
 
             // Only push params for slots where the GUI changed something
             if slot_state.dirty.load(Ordering::Acquire) {
@@ -197,6 +200,24 @@ impl AtomicParamBridge {
     /// Returns a clone of the current processing order.
     pub fn get_order(&self) -> Vec<usize> {
         self.state.load().order.clone()
+    }
+
+    /// Returns the effect IDs in their current processing order.
+    pub fn ordered_static_ids(&self) -> Vec<&'static str> {
+        let snap = self.state.load();
+        snap.order
+            .iter()
+            .map(|&i| snap.slots[i].effect_id)
+            .collect()
+    }
+
+    /// Returns the bypass states in their current processing order.
+    pub fn ordered_bypass_states(&self) -> Vec<bool> {
+        let snap = self.state.load();
+        snap.order
+            .iter()
+            .map(|&i| snap.slots[i].bypassed.load(Ordering::Acquire))
+            .collect()
     }
 
     /// Move an effect from one position to another in the processing order.

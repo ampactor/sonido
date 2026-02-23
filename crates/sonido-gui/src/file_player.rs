@@ -258,6 +258,13 @@ impl FilePlayer {
             let _ = self
                 .transport_tx
                 .send(TransportCommand::SetFileMode(self.use_file_input));
+
+            // If switching away from file mode, stop playback
+            if !self.use_file_input {
+                let _ = self.transport_tx.send(TransportCommand::Stop);
+                self.is_playing = false;
+                self.position_secs = 0.0;
+            }
         }
     }
 

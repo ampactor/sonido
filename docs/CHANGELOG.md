@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — GUI Usability Improvements
+
+#### sonido-gui
+- **Preset loading**: Selecting a preset now performs a "hard reset" — stops audio, rebuilds the entire effect chain to match the preset (adding/removing effects as needed), applies all parameters, and restarts audio. This ensures exact preset reconstruction.
+- **Input gain safety**: Default input gain changed from 0 dB to -120 dB (effectively muted) to prevent audio feedback loops on startup. Users must explicitly increase the GAIN knob to enable microphone input. Knob range now -120 to +20 dB.
+- **Level meter**: Updated to Ableton-style combined Peak/RMS display. RMS bar shows average level with gradient coloring; Peak bar overlays in brighter colors (green→yellow→red at >0.7→>0.95); thin white line indicates peak hold.
+- **Drag-and-drop reordering**: Effects can now be dragged to any slot in a single motion. A translucent drop target indicator appears when hovering over a slot, and the effect moves directly to the drop position on mouse release. This replaces the previous incremental arrow-step reordering.
+- **NaN guard**: Audio input samples are checked for finiteness; non-finite values are replaced with 0.0 to prevent signal corruption.
+
+#### Buffer Management and Real-Time Monitoring
+- **Configurable buffer size**: Interactive buffer size selector in the status bar with presets: Low Latency (256), Very Low (512), Balanced (1024), Stable (2048), Maximum (4096). Buffer changes restart audio automatically with validation against hardware limits.
+- **Buffer overrun detection**: Real-time monitoring of audio processing time vs. buffer duration. Multiple overruns trigger automatic effects bypass to maintain stability. Overrun count displayed in status bar with color-coded warnings (yellow for warning, red for critical).
+- **CPU usage monitoring**: CPU sparkline graph displays last 60 frames of audio thread CPU usage for trend visualization. Color-coded based on load: green (<80%), yellow (80-100%), red (>100%).
+- **Buffer health indicators**: Comprehensive buffer status tracking with history (60 frames) and alert levels. GUI displays buffer duration, latency, and overrun warnings.
+- **Adaptive processing**: When buffer overruns are detected, the system can automatically bypass effects to maintain audio output (user can re-enable after closing other applications).
+
+#### sonido-plugin
+- Plugin GUI remains fixed-size (240×320 minimum) per CLAP specification. Resizable plugin windows may be considered in a future release.
+
+#### Documentation
+- `docs/GUI.md`: Updated with details on preset loading, input gain, meter visuals, and drag-drop behavior.
+- `README.md`: Revised feature list for clarity and professionalism; removed speculative claims.
+
 ### Added — Pluggable Audio Backend Abstraction
 
 #### sonido-io

@@ -6,11 +6,11 @@ Production-grade DSP library in Rust for audio effects, plugins, and embedded sy
 
 - **19 audio effects**: distortion, compressor, limiter, chorus, delay, filter, vibrato, tape saturation, bitcrusher, preamp, reverb, tremolo, gate, flanger, phaser, ring modulator, wah, parametric EQ, stage (utility)
 - **Synthesis engine**: Oscillators with PolyBLEP anti-aliasing, ADSR envelopes, voice management, modulation matrix
-- **CLAP audio plugins**: 19 CLAP effect plugins for use in any DAW that supports CLAP (FL Studio, Bitwig, Reaper, etc.) *VST3 coming soon.
+- **CLAP audio plugins**: 19 CLAP effect plugins for use in any DAW that supports CLAP (Bitwig, Reaper, Ardour, etc.)
 - **no_std compatible**: Core primitives work on embedded targets (Daisy Seed) without heap allocation
 - **Stereo-first processing**: True stereo effects with decorrelated L/R, backwards-compatible mono API
 - **Real-time audio I/O**: Process live audio via the CLI or GUI
-- **Standalone GUI**: egui-based interface with real-time metering, preset management, and drag-and-drop effect chaining
+- **GUI**: egui-based interface with real-time metering, preset management, and drag-and-drop effect chaining
 - **Spectral analysis toolkit**: FFT-based tools for analyzing, decomposing, and reverse-engineering
 - **Zero-cost effect chaining**: Build complex signal chains with static or dynamic composition
 - **Parameter smoothing**: Click-free automation with exponential and linear smoothing
@@ -154,12 +154,6 @@ sonido analyze transfer dry.wav wet.wav --output response.json
 
 # Extract impulse response from sweep recording
 sonido analyze ir sweep.wav recorded.wav --output ir.wav
-
-# Analyze phase-amplitude coupling (for EEG/biosignal research)
-sonido analyze pac eeg.wav --phase-low 4 --phase-high 8 --amp-low 30 --amp-high 80
-
-# Generate comodulogram across frequency pairs
-sonido analyze comodulogram eeg.wav --phase-range 2-20 --amp-range 20-200 -o comod.csv
 ```
 
 ### List available effects
