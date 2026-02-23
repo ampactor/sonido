@@ -35,6 +35,10 @@ impl ChainView {
         }
     }
 
+    /// Replace the current parameter bridge with a new one.
+    ///
+    /// This is used when the entire effect chain is rebuilt (e.g. loading a preset).
+    /// Clears any active selection or drag state.
     pub fn set_bridge(&mut self, bridge: Arc<AtomicParamBridge>) {
         self.bridge = bridge;
         self.selected = None;
@@ -67,6 +71,16 @@ impl ChainView {
         self.pending_remove.take()
     }
 
+    #[allow(clippy::collapsible_if)]
+    /// Render the effect chain strip and handle user interaction.
+    ///
+    /// Displays effects in their processing order. Supports:
+    /// - Click to select
+    /// - Double-click to toggle bypass
+    /// - Drag-and-drop to reorder
+    /// - Arrow keys (when selected) to move left/right
+    /// - Right-click for context menu
+    /// - "+" button to add new effects
     pub fn ui(
         &mut self,
         ui: &mut Ui,
@@ -82,6 +96,21 @@ impl ChainView {
         {
             self.selected = None;
         }
+
+        // Handle keyboard reordering (Arrow Keys)
+        if let Some(selected_slot) = self.selected {
+            // Find current position of selected slot in the visible order
+            if let Some(pos) = order.iter().position(|&idx| idx == selected_slot.0) {
+                if ui.input(|i| i.key_pressed(egui::Key::ArrowLeft)) && pos > 0 {
+                    self.bridge.move_effect(pos, pos - 1);
+                } else if ui.input(|i| i.key_pressed(egui::Key::ArrowRight))
+                    && pos < order.len() - 1
+                {
+                    self.bridge.move_effect(pos, pos + 1);
+                }
+            }
+        }
+
         let effect_width = 70.0;
         let spacing = 8.0;
         let arrow_width = 20.0;
@@ -208,6 +237,7 @@ impl ChainView {
 
         self.selected
     }
+    #[allow(clippy::too_many_arguments)]
     /// Draw a single effect pedal in the chain.
     ///
     /// Returns `(response, close_clicked)` where `close_clicked` is `true`
@@ -287,7 +317,12 @@ impl ChainView {
             painter.circle_filled(
                 led_pos,
                 4.0,
-                Color32::from_rgba_premultiplied(led_color.r(), led_color.g(), led_color.b(), alpha),
+                Color32::from_rgba_premultiplied(
+                    led_color.r(),
+                    led_color.g(),
+                    led_color.b(),
+                    alpha,
+                ),
             );
             if !is_bypassed {
                 // Glow effect

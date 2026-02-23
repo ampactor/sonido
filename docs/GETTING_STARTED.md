@@ -378,7 +378,7 @@ use sonido_analysis::{
     Fft, Window, magnitude_spectrum, spectral_centroid,
     rms, rms_db, peak, crest_factor,
 };
-use sonido_analysis::filterbank::{FilterBank, eeg_bands};
+use sonido_analysis::filterbank::{FilterBank, FrequencyBand};
 use std::f32::consts::PI;
 
 fn main() {
@@ -399,9 +399,13 @@ fn main() {
     println!("RMS: {:.1} dB, Peak: {:.4}", rms_db(&signal), peak(&signal));
     println!("Crest factor: {:.2}", crest_factor(&signal));
 
-    // Filter bank for frequency band extraction
-    let bands = [eeg_bands::THETA, eeg_bands::ALPHA, eeg_bands::BETA];
-    let mut bank = FilterBank::new(1000.0, &bands); // 1 kHz sample rate for EEG
+    // Filter bank for audio frequency band extraction
+    let sub_bass = FrequencyBand::new(20.0, 60.0);
+    let bass = FrequencyBand::new(60.0, 250.0);
+    let mid = FrequencyBand::new(250.0, 4000.0);
+    let presence = FrequencyBand::new(4000.0, 8000.0);
+    let bands = [sub_bass, bass, mid, presence];
+    let mut bank = FilterBank::new(sample_rate, &bands);
     let extracted = bank.extract(&signal);
 }
 ```

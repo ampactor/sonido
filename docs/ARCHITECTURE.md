@@ -44,7 +44,7 @@ The library is built with stereo-first processing and no_std compatibility at it
           ▼                ▼               ▼               ▼
 ┌────────────────┐ ┌─────────────────┐ ┌─────────────┐ ┌─────────────────┐
 │  sonido-io     │ │ sonido-analysis │ │  sonido-    │ │  sonido-synth   │
-│  (audio I/O)   │ │ (FFT/CFC/PAC)   │ │  registry   │ │  (synthesis)    │
+│  (audio I/O)   │ │ (FFT, spectral analysis)   │ │  registry   │ │  (synthesis)    │
 │     [std]      │ │     [std]       │ │  [no_std]   │ │    [no_std]     │
 └───────┬────────┘ └────────┬────────┘ └──────┬──────┘ └────────┬────────┘
         │                   │                 │                  │
@@ -121,9 +121,9 @@ Audio effect implementations built on sonido-core. All `no_std` compatible with 
 
 ### sonido-analysis
 
-Spectral analysis tools for reverse engineering hardware and biosignal research. Requires `std` for FFT.
+Spectral analysis tools for reverse engineering hardware and signal analysis. Requires `std` for FFT.
 
-**Why include biosignal analysis in an audio DSP library?** The mathematics of spectral analysis are domain-agnostic -- an FFT doesn't care whether its input is a guitar chord or an EEG trace. Including cross-frequency coupling (CFC/PAC) analysis alongside audio tools means researchers working with biosignals can leverage the same proven filter implementations, windowing functions, and I/O infrastructure. The `sonido-analysis` crate requires `std` because FFT computation uses heap allocation for twiddle factors and scratch buffers, which is acceptable since analysis is never performed in real-time audio callbacks.
+**Why include advanced analysis?** The same FFT and filtering tools used for audio can analyze any 1D signal. The `sonido-analysis` crate requires `std` because FFT computation uses heap allocation for twiddle factors and scratch buffers, which is acceptable since analysis runs offline.
 
 **Components:**
 - `Fft`: FFT wrapper around rustfft
@@ -131,9 +131,9 @@ Spectral analysis tools for reverse engineering hardware and biosignal research.
 - `TransferFunction`: Measure frequency response between two signals
 - `SineSweep`: Generate logarithmic sine sweeps for IR capture
 
-**Cross-Frequency Coupling (CFC):**
+**Advanced Spectral Analysis:**
 - `FilterBank`: Multi-band bandpass filter bank with 4th-order Butterworth filters
-- `FrequencyBand`: Frequency band specification with EEG bands (delta, theta, alpha, beta, gamma)
+- `FrequencyBand`: Frequency band specification with standard bands (delta, theta, alpha, beta, gamma)
 - `HilbertTransform`: FFT-based Hilbert transform for instantaneous phase/amplitude
 - `PacAnalyzer`: Phase-Amplitude Coupling analyzer (Mean Vector Length, Kullback-Leibler)
 - `PacResult`: PAC analysis results (modulation index, preferred phase, phase histogram)
@@ -294,7 +294,7 @@ Command-line interface tying everything together.
 - `effects`: List available effects
 - `presets`: Preset management (list, show, save, delete)
 
-**Analyze subcommands for CFC research:**
+**Additional analyze subcommands:**
 - `pac`: Phase-Amplitude Coupling analysis with surrogate testing
 - `comodulogram`: Multi-frequency PAC matrix for coupling visualization
 - `bandpass`: Extract frequency band with configurable filter order

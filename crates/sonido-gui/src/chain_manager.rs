@@ -21,6 +21,8 @@ pub enum ChainCommand {
         id: &'static str,
         /// Pre-created effect instance (constructed on the GUI thread).
         effect: Box<dyn EffectWithParams + Send>,
+        /// The slot index already reserved in the bridge for this effect.
+        slot: SlotIndex,
     },
     /// Remove an effect slot from the chain.
     Remove {
@@ -67,16 +69,25 @@ impl ChainManager {
     /// # Arguments
     /// * `registry` - Effect registry to look up effect factories
     /// * `ids` - Ordered slice of effect identifiers to instantiate
+    /// * `bypassed` - Optional slice of initial bypass states. If provided, must match `ids` length.
     /// * `sample_rate` - Sample rate in Hz for all created effects
-    pub fn new(registry: &EffectRegistry, ids: &[&'static str], sample_rate: f32) -> Self {
+    pub fn new(
+        registry: &EffectRegistry,
+        ids: &[&'static str],
+        bypassed: Option<&[bool]>,
+        sample_rate: f32,
+    ) -> Self {
         let mut slots = Vec::with_capacity(ids.len());
-        for &id in ids {
+        for (i, &id) in ids.iter().enumerate() {
             if let Some(effect) = registry.create(id, sample_rate) {
+                let is_bypassed = bypassed.and_then(|b| b.get(i)).copied().unwrap_or(false);
+                let fade_val = if is_bypassed { 0.0 } else { 1.0 };
+
                 slots.push(ChainSlot {
                     effect,
                     id,
-                    bypassed: false,
-                    bypass_fade: SmoothedParam::fast(1.0, sample_rate),
+                    bypassed: is_bypassed,
+                    bypass_fade: SmoothedParam::fast(fade_val, sample_rate),
                 });
             } else {
                 log::warn!("Unknown effect id \"{id}\", skipping");
@@ -298,7 +309,7 @@ mod tests {
     #[test]
     fn creation_with_known_ids() {
         let reg = registry();
-        let chain = ChainManager::new(&reg, &["distortion", "reverb"], 48000.0);
+        let chain = ChainManager::new(&reg, &["distortion", "reverb"], None, 48000.0);
         assert_eq!(chain.slot_count(), 2);
         assert_eq!(chain.effect_id(0), "distortion");
         assert_eq!(chain.effect_id(1), "reverb");
@@ -308,7 +319,7 @@ mod tests {
     #[test]
     fn unknown_ids_skipped() {
         let reg = registry();
-        let chain = ChainManager::new(&reg, &["distortion", "bogus", "reverb"], 48000.0);
+        let chain = ChainManager::new(&reg, &["distortion", "bogus", "reverb"], None, 48000.0);
         assert_eq!(chain.slot_count(), 2);
         assert_eq!(chain.effect_id(0), "distortion");
         assert_eq!(chain.effect_id(1), "reverb");
@@ -317,7 +328,7 @@ mod tests {
     #[test]
     fn process_stereo_runs() {
         let reg = registry();
-        let mut chain = ChainManager::new(&reg, &["distortion"], 48000.0);
+        let mut chain = ChainManager::new(&reg, &["distortion"], None, 48000.0);
         let (l, r) = chain.process_stereo(0.5, 0.5);
         assert!(l.is_finite());
         assert!(r.is_finite());
@@ -327,7 +338,7 @@ mod tests {
     fn bypass_skips_processing() {
         let reg = registry();
         // Preamp with default gain should modify signal
-        let mut chain = ChainManager::new(&reg, &["preamp"], 48000.0);
+        let mut chain = ChainManager::new(&reg, &["preamp"], None, 48000.0);
 
         let (l_active, _) = chain.process_stereo(0.5, 0.5);
 
@@ -353,7 +364,7 @@ mod tests {
     fn reorder_changes_processing_order() {
         let reg = registry();
         // Two different effects so order matters
-        let mut chain = ChainManager::new(&reg, &["distortion", "compressor"], 48000.0);
+        let mut chain = ChainManager::new(&reg, &["distortion", "compressor"], None, 48000.0);
 
         let (l_orig, r_orig) = chain.process_stereo(0.3, 0.3);
 
@@ -378,7 +389,7 @@ mod tests {
     #[test]
     fn invalid_reorder_rejected() {
         let reg = registry();
-        let mut chain = ChainManager::new(&reg, &["distortion"], 48000.0);
+        let mut chain = ChainManager::new(&reg, &["distortion"], None, 48000.0);
         chain.reorder(vec![5]); // out of range
         assert_eq!(chain.order(), &[0]); // unchanged
     }
@@ -386,7 +397,7 @@ mod tests {
     #[test]
     fn out_of_range_access_safe() {
         let reg = registry();
-        let chain = ChainManager::new(&reg, &[], 48000.0);
+        let chain = ChainManager::new(&reg, &[], None, 48000.0);
         assert!(chain.slot(0).is_none());
         assert!(!chain.is_bypassed(99));
         assert_eq!(chain.effect_id(99), "");
@@ -395,7 +406,7 @@ mod tests {
     #[test]
     fn add_effect_basic() {
         let reg = registry();
-        let mut chain = ChainManager::new(&reg, &["distortion"], 48000.0);
+        let mut chain = ChainManager::new(&reg, &["distortion"], None, 48000.0);
         assert_eq!(chain.slot_count(), 1);
 
         let effect = reg.create("reverb", 48000.0).unwrap();
@@ -409,7 +420,7 @@ mod tests {
     #[test]
     fn remove_effect_last_slot() {
         let reg = registry();
-        let mut chain = ChainManager::new(&reg, &["distortion", "reverb"], 48000.0);
+        let mut chain = ChainManager::new(&reg, &["distortion", "reverb"], None, 48000.0);
         let removed = chain.remove_effect(1);
         assert_eq!(removed, Some("reverb"));
         assert_eq!(chain.slot_count(), 1);
@@ -420,7 +431,8 @@ mod tests {
     #[test]
     fn remove_effect_swap_semantics() {
         let reg = registry();
-        let mut chain = ChainManager::new(&reg, &["distortion", "compressor", "reverb"], 48000.0);
+        let mut chain =
+            ChainManager::new(&reg, &["distortion", "compressor", "reverb"], None, 48000.0);
         // Remove slot 0 → "reverb" (last) swaps into position 0
         let removed = chain.remove_effect(0);
         assert_eq!(removed, Some("distortion"));
@@ -434,7 +446,8 @@ mod tests {
     #[test]
     fn remove_effect_updates_order() {
         let reg = registry();
-        let mut chain = ChainManager::new(&reg, &["distortion", "compressor", "reverb"], 48000.0);
+        let mut chain =
+            ChainManager::new(&reg, &["distortion", "compressor", "reverb"], None, 48000.0);
         // Order is [0, 1, 2]. Remove slot 0 → slot 2 moves to 0.
         chain.remove_effect(0);
         // Order should no longer contain 0 (the removed slot), and old index 2
@@ -446,7 +459,7 @@ mod tests {
     #[test]
     fn remove_effect_out_of_range() {
         let reg = registry();
-        let mut chain = ChainManager::new(&reg, &["distortion"], 48000.0);
+        let mut chain = ChainManager::new(&reg, &["distortion"], None, 48000.0);
         assert_eq!(chain.remove_effect(5), None);
         assert_eq!(chain.slot_count(), 1);
     }

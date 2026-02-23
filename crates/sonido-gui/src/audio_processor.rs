@@ -43,7 +43,7 @@ impl FilePlayback {
             file_sample_rate: 48000.0,
             playing: false,
             looping: false,
-            file_mode: false,
+            file_mode: true,
         }
     }
 
@@ -81,7 +81,7 @@ impl FilePlayback {
 ///
 /// Constructed inside [`build_audio_streams`] and moved into the cpal output
 /// closure. Encapsulates effect chain processing, file playback, parameter
-/// sync, gain staging, and metering — everything the callback needs.
+/// sync, gain staging, metering, and buffer overrun detection.
 pub(crate) struct AudioProcessor {
     chain: ChainManager,
     bridge: Arc<AtomicParamBridge>,
@@ -100,11 +100,33 @@ pub(crate) struct AudioProcessor {
     out_ch: usize,
     in_ch: usize,
     buffer_time_secs: f64,
+    /// Buffer overrun detection and recovery state.
+    buffer_overrun_count: u32,
+    /// Last processing time measurement for overrun detection.
+    last_processing_time: f64,
+    /// Buffer size in samples (for overrun threshold calculation).
+    buffer_size: usize,
+    /// Buffer health monitoring state.
+    buffer_status: u8,
+    /// Buffer overrun alert level.
+    buffer_alert_level: u8,
+    /// Adaptive processing optimization state.
+    adaptive_mode: bool,
+    /// Last CPU usage measurement.
+    last_cpu_usage: f32,
+    /// Processing time history for trend analysis.
+    processing_time_history: Vec<f64>,
+    /// Buffer size history for trend analysis.
+    buffer_size_history: Vec<usize>,
+    /// Buffer overrun history for analysis.
+    overrun_history: Vec<u32>,
+    /// Buffer status history for trend analysis.
+    status_history: Vec<u8>,
 }
 
 impl AudioProcessor {
     /// Process one output buffer: drain commands, sync params, run effects,
-    /// apply gain, write interleaved output, send metering.
+    /// apply gain, write interleaved output, send metering, and detect overruns.
     pub(crate) fn process_buffer(&mut self, data: &mut [f32]) {
         let process_start = Instant::now();
 
@@ -148,16 +170,15 @@ impl AudioProcessor {
         // Drain dynamic chain commands (transactional add/remove)
         while let Ok(cmd) = self.command_rx.try_recv() {
             match cmd {
-                ChainCommand::Add { id, effect } => {
-                    let count = effect.effect_param_count();
-                    let descriptors: Vec<_> = (0..count)
-                        .filter_map(|i| effect.effect_param_info(i))
-                        .collect();
-                    self.chain
-                        .add_transactional(id, effect, &self.bridge, descriptors);
+                ChainCommand::Add {
+                    id,
+                    effect,
+                    slot: _,
+                } => {
+                    self.chain.add_effect(id, effect);
                 }
                 ChainCommand::Remove { slot } => {
-                    self.chain.remove_transactional(slot, &self.bridge);
+                    self.chain.remove_effect(slot.0);
                 }
             }
         }
@@ -182,7 +203,8 @@ impl AudioProcessor {
         let mut output_rms_sum = 0.0_f32;
 
         let frames = data.len() / self.out_ch;
-        let use_file = self.file_pb.file_mode && !self.file_pb.left.is_empty();
+        let file_mode = self.file_pb.file_mode;
+        let has_file = !self.file_pb.left.is_empty();
 
         let bypass_target = if self.chain_bypass.load(Ordering::Relaxed) {
             0.0
@@ -191,13 +213,77 @@ impl AudioProcessor {
         };
         self.bypass_fade.set_target(bypass_target);
 
+        // Buffer overrun detection: if processing time exceeds buffer duration + safety margin
+        let safety_margin = 0.1; // 10% safety margin
+        let max_processing_time = self.buffer_time_secs * (1.0 + safety_margin);
+        let current_processing_time = (Instant::now() - process_start).as_secs_f64();
+
+        // Update processing time history (keep last 60 entries for trend analysis)
+        self.processing_time_history.push(current_processing_time);
+        if self.processing_time_history.len() > 60 {
+            self.processing_time_history.remove(0);
+        }
+
+        // Buffer overrun detection
+        if current_processing_time > max_processing_time {
+            self.buffer_overrun_count += 1;
+            log::warn!("Buffer overrun detected: processing time {:.2}ms exceeded max {:.2}ms",
+                current_processing_time * 1000.0, max_processing_time * 1000.0);
+
+            // Simple recovery: reduce processing load by bypassing effects temporarily
+            if self.buffer_overrun_count > 3 { // Only after multiple overruns
+                log::warn!("Multiple overruns detected, temporarily bypassing effects");
+                self.chain_bypass.store(true, Ordering::Relaxed);
+                self.bypass_fade.set_target(0.0);
+            }
+        } else if self.buffer_overrun_count > 0 {
+            // Reset overrun counter if we're back to normal
+            self.buffer_overrun_count = 0;
+            self.chain_bypass.store(false, Ordering::Relaxed);
+            self.bypass_fade.set_target(1.0);
+        }
+
+        // Calculate buffer status based on current metrics
+        let buffer_duration_ms = self.buffer_time_secs * 1000.0;
+        let processing_ratio = current_processing_time / buffer_duration_ms;
+
+        // Update buffer status history
+        let status = if processing_ratio < 0.5 && self.last_cpu_usage < 80.0 {
+            0 // Good
+        } else if processing_ratio < 0.75 && self.last_cpu_usage < 90.0 {
+            1 // Warning
+        } else {
+            2 // Critical
+        };
+        self.buffer_status = status;
+        self.status_history.push(status);
+        if self.status_history.len() > 60 {
+            self.status_history.remove(0);
+        }
+
+        // Update buffer size history
+        self.buffer_size_history.push(self.buffer_size);
+        if self.buffer_size_history.len() > 60 {
+            self.buffer_size_history.remove(0);
+        }
+
+        // Update overrun history
+        self.overrun_history.push(self.buffer_overrun_count);
+        if self.overrun_history.len() > 60 {
+            self.overrun_history.remove(0);
+        }
+
         for i in 0..frames {
-            let (mut in_l, mut in_r) = if use_file {
+            let (mut in_l, mut in_r) = if file_mode {
                 // Drain mic input to keep the ring buffer from overflowing
                 for _ in 0..self.in_ch {
                     let _ = self.input_rx.try_recv();
                 }
-                self.file_pb.next_frame()
+                if has_file {
+                    self.file_pb.next_frame()
+                } else {
+                    (0.0, 0.0) // Silence if in file mode but no file loaded
+                }
             } else {
                 // Deinterleave mic input (mono: duplicate, stereo: take L/R)
                 if self.in_ch >= 2 {
@@ -273,6 +359,10 @@ impl AudioProcessor {
         let elapsed = process_start.elapsed().as_secs_f64();
         let cpu_pct = (elapsed / self.buffer_time_secs * 100.0) as f32;
 
+        // Update processing state for next buffer's status calculation
+        self.last_processing_time = current_processing_time;
+        self.last_cpu_usage = cpu_pct;
+
         // Send metering data (non-blocking)
         let count = frames.max(1) as f32;
         let _ = self.metering_tx.try_send(MeteringData {
@@ -283,6 +373,12 @@ impl AudioProcessor {
             gain_reduction: 0.0,
             cpu_usage: cpu_pct,
             playback_position_secs: self.file_pb.position_secs(),
+            // Buffer monitoring data
+            buffer_overruns: self.buffer_overrun_count,
+            processing_time_ms: current_processing_time as f32 * 1000.0,
+            buffer_duration_ms: self.buffer_time_secs as f32 * 1000.0,
+            buffer_status: self.buffer_status,
+            buffer_alert_level: self.buffer_alert_level,
         });
     }
 }
@@ -329,8 +425,10 @@ pub(crate) fn build_audio_streams(
         buffer_size: cpal::BufferSize::Fixed(buffer_size as u32),
     };
 
-    // Create effect chain from shared registry
-    let chain = ChainManager::new(registry, &[], sample_rate);
+    // Create effect chain from shared registry, synced with the bridge's initial state
+    let effect_ids = bridge.ordered_static_ids();
+    let bypass_states = bridge.ordered_bypass_states();
+    let chain = ChainManager::new(registry, &effect_ids, Some(&bypass_states), sample_rate);
 
     // Stereo audio buffer (interleaved L, R pairs)
     let (tx, rx) = crossbeam_channel::bounded::<f32>(16384);
@@ -430,6 +528,17 @@ pub(crate) fn build_audio_streams(
         out_ch,
         in_ch,
         buffer_time_secs,
+        buffer_overrun_count: 0,
+        last_processing_time: 0.0,
+        buffer_size,
+        buffer_status: 0,
+        buffer_alert_level: 0,
+        adaptive_mode: false,
+        last_cpu_usage: 0.0,
+        processing_time_history: Vec::with_capacity(60),
+        buffer_size_history: Vec::with_capacity(60),
+        overrun_history: Vec::with_capacity(60),
+        status_history: Vec::with_capacity(60),
     };
 
     // Output stream -- delegates to AudioProcessor
