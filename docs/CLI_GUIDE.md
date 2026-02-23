@@ -574,14 +574,14 @@ sonido analyze pac <INPUT> [OPTIONS]
 | `-o, --output <FILE>` | Output JSON file | - |
 
 ```bash
-# Analyze theta-gamma coupling
-sonido analyze pac eeg_recording.wav \
+# Analyze phase-amplitude coupling between frequency bands
+sonido analyze pac input.wav \
     --phase-low 4 --phase-high 8 \
     --amp-low 30 --amp-high 80 \
     --method mvl
 
 # With surrogate significance testing
-sonido analyze pac eeg_recording.wav \
+sonido analyze pac input.wav \
     --phase-low 4 --phase-high 8 \
     --amp-low 30 --amp-high 100 \
     --surrogates 200 \

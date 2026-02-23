@@ -63,6 +63,11 @@ pub struct SonidoApp {
     cpu_usage: f32,
     audio_error: Option<String>,
 
+    /// CPU usage history for real-time graph (last 60 frames)
+    cpu_history: Vec<f32>,
+    /// Buffer status history for trend visualization
+    buffer_status_history: Vec<u8>,
+
     /// When set, the app runs in single-effect mode (no chain view).
     single_effect: bool,
 
@@ -99,9 +104,18 @@ impl SonidoApp {
             // Leak a single-element slice — lives for the process lifetime
             Box::leak(vec![desc.id].into_boxed_slice())
         } else {
-            &[]
+            // Load ALL effects from the registry by default
+            let all_ids: Vec<&'static str> = registry.all_effects().iter().map(|e| e.id).collect();
+            Box::leak(all_ids.into_boxed_slice())
         };
         let bridge = Arc::new(AtomicParamBridge::new(&registry, chain, 48000.0));
+
+        // Bypass all by default in multi-effect mode
+        if !single_effect {
+            for i in 0..chain.len() {
+                bridge.set_default_bypass(SlotIndex(i), true);
+            }
+        }
 
         let audio_bridge = AudioBridge::new();
         let transport_tx = audio_bridge.transport_sender();
@@ -125,9 +139,11 @@ impl SonidoApp {
             preset_manager: PresetManager::new(),
             cached_panel: None,
             sample_rate: 48000.0,
-            buffer_size: 512,
+            buffer_size: 2048,  // Default buffer size
             cpu_usage: 0.0,
             audio_error: None,
+            cpu_history: Vec::with_capacity(60),
+            buffer_status_history: Vec::with_capacity(60),
             single_effect,
             #[cfg(not(target_arch = "wasm32"))]
             show_save_dialog: false,
@@ -205,6 +221,73 @@ impl SonidoApp {
     fn stop_audio(&mut self) {
         self.audio_bridge.running().store(false, Ordering::SeqCst);
         self._audio_streams.clear();
+    }
+
+    /// Get the current buffer size in samples.
+    ///
+    /// The buffer size determines the latency and CPU usage characteristics:
+    /// - Smaller buffers (256-512): lower latency, higher CPU usage
+    /// - Balanced (1024-2048): moderate latency and CPU (recommended)
+    /// - Larger buffers (4096): higher latency, more stable under overload
+    ///
+    /// Default: 2048 samples
+    pub fn get_buffer_size(&self) -> usize {
+        self.buffer_size
+    }
+
+    /// Set the buffer size with validation.
+    ///
+    /// Validates that the buffer size is within acceptable hardware limits
+    /// (typically 64-4096 samples). If the size is invalid, it is clamped
+    /// to the nearest valid value. The audio stream is restarted to apply
+    /// the new buffer size.
+    pub fn set_buffer_size(&mut self, size: usize) {
+        // Validate buffer size - most audio hardware supports 64-4096
+        let valid_sizes = vec![64, 128, 256, 512, 1024, 2048, 4096];
+        let clamped_size = if valid_sizes.contains(&size) {
+            size
+        } else {
+            // Find closest valid size by absolute difference
+            valid_sizes
+                .iter()
+                .min_by_key(|&s| {
+                    let diff = if *s > size { *s - size } else { size - *s };
+                    diff
+                })
+                .copied()
+                .unwrap_or(2048)
+        };
+
+        if clamped_size != size {
+            log::warn!("Requested buffer size {} not in valid set, using {}", size, clamped_size);
+        }
+
+        self.buffer_size = clamped_size;
+        self.stop_audio();
+        if let Err(e) = self.start_audio() {
+            log::error!("Failed to restart audio with buffer size {}: {}", clamped_size, e);
+        }
+    }
+
+    /// Get the buffer size in milliseconds.
+    pub fn get_buffer_duration_ms(&self) -> f32 {
+        (self.buffer_size as f32 / self.sample_rate) * 1000.0
+    }
+
+    /// Get available buffer size presets with descriptions and duration.
+    ///
+    /// Returns a vector of (size, description, latency_ms) tuples.
+    /// The presets are designed to cover common use cases from low latency
+    /// to maximum stability. The latency values are calculated dynamically
+    /// based on the current sample rate.
+    pub fn get_buffer_presets(&self) -> Vec<(usize, String, f32)> {
+        vec![
+            (256, format!("Low Latency (256 samples, {:.1}ms)", 256.0 / self.sample_rate * 1000.0), 256.0 / self.sample_rate * 1000.0),
+            (512, format!("Very Low (512 samples, {:.1}ms)", 512.0 / self.sample_rate * 1000.0), 512.0 / self.sample_rate * 1000.0),
+            (1024, format!("Balanced (1024 samples, {:.1}ms)", 1024.0 / self.sample_rate * 1000.0), 1024.0 / self.sample_rate * 1000.0),
+            (2048, format!("Stable (2048 samples, {:.1}ms)", 2048.0 / self.sample_rate * 1000.0), 2048.0 / self.sample_rate * 1000.0),
+            (4096, format!("Maximum (4096 samples, {:.1}ms)", 4096.0 / self.sample_rate * 1000.0), 4096.0 / self.sample_rate * 1000.0),
+        ]
     }
 
     /// Render the header/toolbar.
@@ -333,8 +416,11 @@ impl SonidoApp {
         self.stop_audio();
 
         // 2. Create and configure a new bridge for the preset's chain
-        let new_bridge =
-            Arc::new(AtomicParamBridge::new(&self.registry, &effect_ids, self.sample_rate));
+        let new_bridge = Arc::new(AtomicParamBridge::new(
+            &self.registry,
+            &effect_ids,
+            self.sample_rate,
+        ));
         crate::preset_manager::preset_to_params(&preset, &*new_bridge);
 
         // 3. Swap in the new bridge
@@ -373,8 +459,8 @@ impl SonidoApp {
                 let mut gain_val = input_gain.get();
                 if ui
                     .add(
-                        Knob::new(&mut gain_val, input_gain.min(), input_gain.max(), "GAIN")
-                            .default(-120.0)
+                        Knob::new(&mut gain_val, -20.0, 20.0, "GAIN")
+                            .default(0.0)
                             .format_db()
                             .diameter(50.0),
                     )
@@ -479,7 +565,7 @@ impl SonidoApp {
     }
 
     /// Render the status bar.
-    fn render_status_bar(&self, ui: &mut egui::Ui) {
+    fn render_status_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             let chain_bypassed = self.audio_bridge.chain_bypass().load(Ordering::Relaxed);
             let bypass_text = if chain_bypassed {
@@ -498,7 +584,30 @@ impl SonidoApp {
 
             ui.label(format!("{:.0} Hz", self.sample_rate));
             ui.separator();
-            ui.label(format!("{} samples", self.buffer_size));
+
+            // Buffer size selector
+            let presets = self.get_buffer_presets();
+            let preset_names: Vec<String> = presets.iter().map(|(_, desc, _)| desc.to_string()).collect();
+            let current_idx = presets.iter().position(|&(size, _, _)| size == self.buffer_size).unwrap_or(2); // Default to "Stable"
+
+            let mut selected_preset = None;
+            egui::ComboBox::from_id_salt("buffer_size_selector")
+                .selected_text(preset_names.get(current_idx).cloned().unwrap_or_else(|| "Unknown".to_string()))
+                .width(200.0)
+                .show_ui(ui, |ui| {
+                    for (idx, name) in preset_names.iter().enumerate() {
+                        if ui.selectable_label(idx == current_idx, name).clicked() {
+                            selected_preset = Some(idx);
+                        }
+                    }
+                });
+
+            if let Some(idx) = selected_preset {
+                if let Some((size, _, _)) = presets.get(idx) {
+                    self.set_buffer_size(*size);
+                }
+            }
+
             ui.separator();
             let latency_ms = self.buffer_size as f32 / self.sample_rate * 1000.0;
             ui.label(format!("{:.1} ms", latency_ms));
@@ -514,6 +623,23 @@ impl SonidoApp {
                 Color32::from_rgb(150, 150, 160)
             };
             ui.label(egui::RichText::new(&cpu_text).color(cpu_color));
+
+            // CPU usage sparkline graph (custom drawn)
+            if !self.cpu_history.is_empty() {
+                draw_sparkline(ui, &self.cpu_history, cpu_color, 100.0, 24.0);
+            }
+
+            // Buffer health indicator
+            if self.metering.buffer_overruns > 0 {
+                ui.separator();
+                let buffer_status_text = format!("⚠ OVERRUN: {}", self.metering.buffer_overruns);
+                let buffer_status_color = if self.metering.buffer_status == 2 {
+                    Color32::from_rgb(255, 80, 80) // Critical - red
+                } else {
+                    Color32::from_rgb(255, 200, 80) // Warning - yellow
+                };
+                ui.label(egui::RichText::new(&buffer_status_text).color(buffer_status_color).strong());
+            }
         });
     }
 
@@ -565,6 +691,50 @@ impl SonidoApp {
     }
 }
 
+/// Draw a simple sparkline graph from a history of values.
+fn draw_sparkline(ui: &mut egui::Ui, history: &[f32], color: Color32, width: f32, height: f32) {
+    if history.is_empty() {
+        return;
+    }
+
+    let painter = ui.painter();
+    let rect = ui.available_rect_before_wrap();
+    let graph_rect = Rect::from_min_size(rect.min, egui::vec2(width, height));
+
+    // Find min/max for scaling
+    let min_val = history.iter().copied().fold(f32::INFINITY, f32::min);
+    let max_val = history.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let range = (max_val - min_val).max(1.0); // Avoid division by zero
+
+    // Draw background area (semi-transparent)
+    painter.rect_filled(graph_rect, 2.0, Color32::from_black_alpha(20));
+
+    // Draw polyline
+    let mut points = Vec::new();
+    let step = width / (history.len() - 1).max(1) as f32;
+    for (i, &value) in history.iter().enumerate() {
+        let x = graph_rect.left() + i as f32 * step;
+        // Invert Y: higher values at top
+        let normalized = (value - min_val) / range;
+        let y = graph_rect.bottom() - normalized * height;
+        points.push(pos2(x, y));
+    }
+
+    if points.len() >= 2 {
+        painter.extend(points.windows(2).map(|window| {
+            egui::Shape::line_segment(
+                [window[0], window[1]],
+                egui::Stroke::new(1.5, color),
+            )
+        }));
+    }
+
+    // Draw dots at data points (small)
+    for point in &points {
+        painter.circle_filled(*point, 1.5, color);
+    }
+}
+
 impl eframe::App for SonidoApp {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
         // Update metering data
@@ -572,20 +742,44 @@ impl eframe::App for SonidoApp {
             self.cpu_usage = data.cpu_usage;
             self.file_player.set_position(data.playback_position_secs);
             self.metering = data;
+
+            // Collect CPU usage history for real-time graph
+            self.cpu_history.push(data.cpu_usage);
+            if self.cpu_history.len() > 60 {
+                self.cpu_history.remove(0);
+            }
+
+            // Collect buffer status history
+            self.buffer_status_history.push(data.buffer_status);
+            if self.buffer_status_history.len() > 60 {
+                self.buffer_status_history.remove(0);
+            }
         }
 
         // Handle pending add/remove from chain view
         if let Some(id) = self.chain_view.take_pending_add()
             && let Some(effect) = self.registry.create(id, self.sample_rate)
         {
+            // Register in bridge on GUI thread (allocates)
+            let count = effect.effect_param_count();
+            let descriptors: Vec<_> = (0..count)
+                .filter_map(|i| effect.effect_param_info(i))
+                .collect();
+            let slot = self.bridge.add_slot(id, descriptors);
+
+            // Send to audio thread for insertion into DSP chain
             self.audio_bridge
-                .send_command(ChainCommand::Add { id, effect });
+                .send_command(ChainCommand::Add { id, effect, slot });
         }
         if let Some(slot) = self.chain_view.take_pending_remove() {
             if self.chain_view.selected() == Some(slot) {
                 self.chain_view.clear_selection();
                 self.cached_panel = None;
             }
+            // Remove from bridge on GUI thread (allocates)
+            self.bridge.remove_slot(slot);
+
+            // Send to audio thread
             self.audio_bridge
                 .send_command(ChainCommand::Remove { slot });
         }

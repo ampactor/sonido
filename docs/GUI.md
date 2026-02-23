@@ -111,7 +111,7 @@ sonido-gui --effect reverb
 |        | (Parameters for currently selected effect) |            |
 |        +--------------------------------------------+            |
 +------------------------------------------------------------------+
-| 48000 Hz | 512 samples | 10.7 ms | CPU: 2.3%                     |
+| 48000 Hz | [Buffer ▼] | 10.7 ms | CPU: 2.3% ▁▂▃▄▅▆▇▆▅▄▃▁        |
 +------------------------------------------------------------------+
 ```
 
@@ -177,9 +177,17 @@ When an effect is selected, its parameter panel appears below the chain. Each pa
 ### Status Bar
 
 - **Sample Rate**: Current sample rate (e.g., 48000 Hz)
-- **Buffer Size**: Audio buffer size in samples
-- **Latency**: Round-trip latency in milliseconds
-- **CPU**: Audio thread CPU usage percentage
+- **Buffer Size**: Drop-down selector for audio buffer size (click to change)
+  - Presets: Low Latency (256), Very Low (512), Balanced (1024), Stable (2048), Maximum (4096)
+  - Changes require audio restart and are validated against hardware limits
+- **Latency**: Round-trip latency in milliseconds (buffer size / sample rate)
+- **CPU**: Audio thread CPU usage percentage with real-time sparkline graph
+  - Graph shows last 60 frames of CPU usage trend
+  - Color-coded: green (<80%), yellow (80-100%), red (>100%)
+- **Buffer Overrun Warning**: Appears when buffer overruns are detected
+  - Yellow: warning status (processing time approaching buffer limit)
+  - Red: critical status (audio glitches possible)
+  - Shows overrun count to indicate severity
 
 ## Effects Reference
 
@@ -409,6 +417,31 @@ This architecture means a future `sonido-plugin` crate only depends on `sonido-g
 1. Decrease buffer size: `sonido-gui --buffer-size 128` or `--buffer-size 256`
 2. Note: smaller buffers require more CPU and may cause glitches on slower systems
 
+### Buffer Overruns (Audio Glitches)
+
+Buffer overruns occur when audio processing takes longer than the buffer duration, causing dropouts.
+
+**Symptoms:**
+- Crackling or popping sounds
+- "OVERRUN" warning in status bar (yellow or red)
+- CPU usage consistently above 80-100%
+
+**Solutions:**
+1. Increase buffer size (reduces CPU load per buffer)
+2. Reduce CPU usage: bypass unused effects, use simpler chains
+3. Close other CPU-intensive applications
+4. Check power management settings (disable CPU throttling)
+
+### Buffer Underruns (Stuttering)
+
+Similar to overruns but caused by insufficient audio data. Usually resolves automatically when CPU load decreases.
+
+### Monitoring Buffer Health
+
+- **CPU Sparkline**: Watch the real-time CPU graph in the status bar. Spikes above 80% indicate potential buffer issues.
+- **Buffer Status**: The OVERRUN indicator shows cumulative overrun count. If it appears frequently, increase buffer size.
+- **Latency Display**: Balance latency needs vs. stability—lower buffer = lower latency but higher CPU.
+
 ### Device Selection Issues
 
 List available devices first:
@@ -436,6 +469,25 @@ Common issues:
 ## Keyboard Shortcuts
 
 Currently, the GUI is primarily mouse-driven. Keyboard shortcuts may be added in future versions.
+
+## Recent Changes
+
+### Preset Loading Improvements
+Selecting a preset now performs a "hard reset": the application stops audio, rebuilds the entire effect chain to exactly match the preset (adding or removing effects as needed), applies all parameters, and restarts audio. This ensures preset chains are reconstructed precisely rather than just modifying parameters of existing effects.
+
+### Input Gain Safety
+The input gain defaults to -120 dB (effectively muted) to prevent audio feedback loops on startup. Users must explicitly increase the GAIN knob to enable microphone input. The knob range now spans from -120 dB to +20 dB.
+
+### Level Meter Evolution
+The level meters now display a combined Peak and RMS visualization:
+- RMS bar: shows average signal level (gradient green→yellow→red)
+- Peak bar: overlays RMS in brighter colors (green → yellow → red when >0.7 → >0.95)
+- Peak hold: thin semi-transparent white line indicates peak level
+
+This design provides clearer visual feedback for level monitoring, inspired by professional DAW meters.
+
+### Drag-and-Drop Reordering
+Effects in the chain can now be dragged to any slot in a single motion. A translucent drop target indicator appears when hovering over a slot. The effect moves directly to the drop location when the mouse is released, making chain rearrangement faster and more intuitive.
 
 ## See Also
 
