@@ -65,8 +65,6 @@ pub struct SonidoApp {
 
     /// CPU usage history for real-time graph (last 60 frames)
     cpu_history: Vec<f32>,
-    /// Buffer status history for trend visualization
-    buffer_status_history: Vec<u8>,
 
     /// When set, the app runs in single-effect mode (no chain view).
     single_effect: bool,
@@ -143,7 +141,6 @@ impl SonidoApp {
             cpu_usage: 0.0,
             audio_error: None,
             cpu_history: Vec::with_capacity(60),
-            buffer_status_history: Vec::with_capacity(60),
             single_effect,
             #[cfg(not(target_arch = "wasm32"))]
             show_save_dialog: false,
@@ -677,22 +674,6 @@ impl SonidoApp {
             if !self.cpu_history.is_empty() {
                 draw_sparkline(ui, &self.cpu_history, cpu_color, 100.0, 24.0);
             }
-
-            // Buffer health indicator
-            if self.metering.buffer_overruns > 0 {
-                ui.separator();
-                let buffer_status_text = format!("⚠ OVERRUN: {}", self.metering.buffer_overruns);
-                let buffer_status_color = if self.metering.buffer_status == 2 {
-                    Color32::from_rgb(255, 80, 80) // Critical - red
-                } else {
-                    Color32::from_rgb(255, 200, 80) // Warning - yellow
-                };
-                ui.label(
-                    egui::RichText::new(&buffer_status_text)
-                        .color(buffer_status_color)
-                        .strong(),
-                );
-            }
         });
     }
 
@@ -750,9 +731,8 @@ fn draw_sparkline(ui: &mut egui::Ui, history: &[f32], color: Color32, width: f32
         return;
     }
 
+    let (graph_rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
     let painter = ui.painter();
-    let rect = ui.available_rect_before_wrap();
-    let graph_rect = Rect::from_min_size(rect.min, egui::vec2(width, height));
 
     // Find min/max for scaling
     let min_val = history.iter().copied().fold(f32::INFINITY, f32::min);
@@ -798,38 +778,31 @@ impl eframe::App for SonidoApp {
             if self.cpu_history.len() > 60 {
                 self.cpu_history.remove(0);
             }
-
-            // Collect buffer status history
-            self.buffer_status_history.push(data.buffer_status);
-            if self.buffer_status_history.len() > 60 {
-                self.buffer_status_history.remove(0);
-            }
         }
 
         // Handle pending add/remove from chain view
         if let Some(id) = self.chain_view.take_pending_add()
             && let Some(effect) = self.registry.create(id, self.sample_rate)
         {
-            // Register in bridge on GUI thread (allocates)
             let count = effect.effect_param_count();
             let descriptors: Vec<_> = (0..count)
                 .filter_map(|i| effect.effect_param_info(i))
                 .collect();
-            let slot = self.bridge.add_slot(id, descriptors);
 
-            // Send to audio thread for insertion into DSP chain
-            self.audio_bridge
-                .send_command(ChainCommand::Add { id, effect, slot });
+            // Send to audio thread — bridge registration happens transactionally
+            self.audio_bridge.send_command(ChainCommand::Add {
+                id,
+                effect,
+                descriptors,
+            });
         }
         if let Some(slot) = self.chain_view.take_pending_remove() {
             if self.chain_view.selected() == Some(slot) {
                 self.chain_view.clear_selection();
                 self.cached_panel = None;
             }
-            // Remove from bridge on GUI thread (allocates)
-            self.bridge.remove_slot(slot);
 
-            // Send to audio thread
+            // Send to audio thread — bridge cleanup happens transactionally
             self.audio_bridge
                 .send_command(ChainCommand::Remove { slot });
         }
