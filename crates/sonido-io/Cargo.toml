@@ -11,6 +11,7 @@ sonido-core = { workspace = true, features = ["std"] }
 cpal.workspace = true
 hound = { workspace = true }
 thiserror = { workspace = true }
+tracing.workspace = true
 
 [lints]
 workspace = true

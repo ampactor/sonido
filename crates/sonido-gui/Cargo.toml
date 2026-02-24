@@ -39,13 +39,16 @@ serde_json = { workspace = true }
 # Error handling
 thiserror.workspace = true
 
-# Logging
+# Tracing
+tracing.workspace = true
+# log stays for files not yet migrated (file_player.rs) and wasm WebLogger
 log = "0.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 sonido-io = { workspace = true }
 clap.workspace = true
-env_logger = "0.11"
+tracing-subscriber.workspace = true
+tracing-log.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 cpal = { version = "0.17", features = ["wasm-bindgen"] }

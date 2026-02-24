@@ -47,7 +47,15 @@ enum Commands {
 }
 
 fn main() -> anyhow::Result<()> {
+    use tracing_subscriber::EnvFilter;
+
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()))
+        .init();
+
     let cli = Cli::parse();
+
+    tracing::debug!(command = ?std::mem::discriminant(&cli.command), "dispatching command");
 
     match cli.command {
         Commands::Process(args) => commands::process::run(args),
