@@ -17,6 +17,7 @@ Production-grade DSP library in Rust for audio effects, plugins, and embedded sy
 | sonido-cli | Command-line processor and analyzer | No |
 | sonido-gui-core | Shared GUI widgets, theme, and ParamBridge trait for standalone + plugin UIs | No |
 | sonido-gui | egui-based real-time effects GUI | No |
+| sonido-plugin | CLAP plugin adapter, per-effect plugin entries via clack | No |
 
 ## Documentation Rules (Mandatory)
 
@@ -65,6 +66,7 @@ When you modify a source file, you **must** update every documentation target li
 | `crates/sonido-io/src/backend.rs`, `cpal_backend.rs` | `docs/ARCHITECTURE.md` (sonido-io section), `docs/DESIGN_DECISIONS.md` ADR-023 | AudioBackend trait, CpalBackend, StreamHandle, BackendStreamConfig |
 | `crates/sonido-cli/src/commands/*.rs` | `docs/CLI_GUIDE.md` | Command syntax, flags, examples |
 | `crates/sonido-gui/src/app.rs` | `docs/GUI.md` | GUI features, layout, controls |
+| `crates/sonido-plugin/src/lib.rs`, `audio.rs`, `gui.rs`, `main_thread.rs`, `shared.rs` | This file (Crates table, Key Files table), `docs/ARCHITECTURE.md` (plugin section) | Plugin adapter API, macro interface, GUI bridge, shared state |
 | `crates/sonido-config/src/*.rs` | `docs/GETTING_STARTED.md` (presets section) | Preset format, config paths, validation |
 | Any new crate | This file (Crates table + Key Files table), `docs/ARCHITECTURE.md` (diagram) | Crate purpose, no_std status, dependency position |
 
@@ -338,6 +340,7 @@ cd crates/sonido-gui && trunk serve                        # Dev server at :8080
 | State variable filter | crates/sonido-core/src/svf.rs |
 | Envelope follower | crates/sonido-core/src/envelope.rs |
 | Oversampling | crates/sonido-core/src/oversample.rs |
+| ADAA (anti-derivative anti-aliasing) | crates/sonido-core/src/adaa.rs |
 | Delay line | crates/sonido-core/src/delay.rs |
 | ModulationSource trait | crates/sonido-core/src/modulation.rs |
 | LFO | crates/sonido-core/src/lfo.rs |
