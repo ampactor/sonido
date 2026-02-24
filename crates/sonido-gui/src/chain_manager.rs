@@ -21,8 +21,8 @@ pub enum ChainCommand {
         id: &'static str,
         /// Pre-created effect instance (constructed on the GUI thread).
         effect: Box<dyn EffectWithParams + Send>,
-        /// The slot index already reserved in the bridge for this effect.
-        slot: SlotIndex,
+        /// Parameter descriptors for bridge registration (applied atomically on audio thread).
+        descriptors: Vec<ParamDescriptor>,
     },
     /// Remove an effect slot from the chain.
     Remove {

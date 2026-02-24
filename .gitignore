@@ -2,3 +2,4 @@
 /test_audio/
 /crates/sonido-gui/dist/
 audio-staging
+.claude/worktrees/

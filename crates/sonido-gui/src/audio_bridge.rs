@@ -95,16 +95,6 @@ pub struct MeteringData {
     pub cpu_usage: f32,
     /// File playback position in seconds (0.0 when not playing a file).
     pub playback_position_secs: f32,
-    /// Buffer overrun count (increments on overrun detection).
-    pub buffer_overruns: u32,
-    /// Processing time in milliseconds (for buffer status monitoring).
-    pub processing_time_ms: f32,
-    /// Buffer duration in milliseconds.
-    pub buffer_duration_ms: f32,
-    /// Buffer health status: 0 = good, 1 = warning, 2 = critical.
-    pub buffer_status: u8,
-    /// Buffer alert level (higher = more severe).
-    pub buffer_alert_level: u8,
 }
 
 /// Audio bridge for communication between GUI and audio threads.
@@ -112,8 +102,7 @@ pub struct MeteringData {
 /// Owns the two global gain controls (input gain, master volume) that sit
 /// outside the per-effect parameter system, plus metering transport,
 /// the running flag, and a command channel for dynamic chain mutations.
-/// Also manages buffer size configuration, audio stream health, and
-/// provides comprehensive buffer status monitoring.
+/// Buffer size selection lives in [`SonidoApp`](super::app::SonidoApp).
 #[derive(Debug)]
 pub struct AudioBridge {
     /// Input gain control (-20 to +20 dB)
@@ -138,8 +127,6 @@ pub struct AudioBridge {
     chain_bypass: Arc<AtomicBool>,
     /// Audio stream error counter
     error_count: Arc<AtomicU32>,
-    /// Buffer size parameter (samples)
-    buffer_size: Arc<AtomicParam>,
 }
 
 impl AudioBridge {
@@ -160,7 +147,6 @@ impl AudioBridge {
             transport_rx,
             chain_bypass: Arc::new(AtomicBool::new(false)),
             error_count: Arc::new(AtomicU32::new(0)),
-            buffer_size: Arc::new(AtomicParam::new(2048.0, 64.0, 8192.0)),
         }
     }
 
@@ -177,86 +163,6 @@ impl AudioBridge {
     /// Get the running flag.
     pub fn running(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.running)
-    }
-
-    /// Get the buffer size configuration.
-    pub fn buffer_size(&self) -> Arc<AtomicParam> {
-        Arc::clone(&self.buffer_size)
-    }
-
-    /// Get the current buffer size in samples.
-    pub fn get_buffer_size(&self) -> usize {
-        self.buffer_size.get() as usize
-    }
-
-    /// Set the buffer size with validation.
-    ///
-    /// Valid range: 64 to 8192 samples.
-    pub fn set_buffer_size(&self, size: usize) {
-        let clamped = size as f32;
-        self.buffer_size.set(clamped.clamp(64.0, 8192.0));
-    }
-
-    /// Get the buffer size in milliseconds at current sample rate.
-    pub fn get_buffer_duration_ms(&self, sample_rate: f32) -> f32 {
-        let buffer_size = self.get_buffer_size();
-        (buffer_size as f32 / sample_rate) * 1000.0
-    }
-
-    /// Get the current buffer status based on processing time and CPU usage.
-    ///
-    /// Returns a status code:
-    /// - 0: Good (processing time < 50% of buffer duration, CPU < 80%)
-    /// - 1: Warning (processing time 50-75% of buffer duration, CPU 80-90%)
-    /// - 2: Critical (processing time > 75% of buffer duration, CPU > 90%)
-    pub fn get_buffer_status(
-        &self,
-        cpu_usage: f32,
-        processing_time_ms: f32,
-        sample_rate: f32,
-    ) -> u8 {
-        let buffer_duration_ms = self.get_buffer_duration_ms(sample_rate);
-        let processing_ratio = processing_time_ms / buffer_duration_ms;
-
-        if processing_ratio < 0.5 && cpu_usage < 80.0 {
-            0 // Good
-        } else if processing_ratio < 0.75 && cpu_usage < 90.0 {
-            1 // Warning
-        } else {
-            2 // Critical
-        }
-    }
-
-    /// Get buffer health recommendations based on current status.
-    ///
-    /// Returns a tuple of (recommendation_text, suggested_action).
-    pub fn get_buffer_recommendations(
-        &self,
-        status: u8,
-        _cpu_usage: f32,
-        _processing_time_ms: f32,
-        sample_rate: f32,
-    ) -> (&'static str, &'static str) {
-        let _buffer_duration_ms = self.get_buffer_duration_ms(sample_rate);
-
-        match status {
-            0 => (
-                "Buffer performance is optimal",
-                "No action needed - buffer configuration is working well",
-            ),
-            1 => (
-                "Buffer performance is approaching limits",
-                "Consider increasing buffer size or reducing effect load",
-            ),
-            2 => (
-                "Buffer performance is critical - audio may stutter",
-                "Increase buffer size immediately or reduce effects",
-            ),
-            _ => (
-                "Unknown buffer status",
-                "Check system performance and adjust settings",
-            ),
-        }
     }
 
     /// Send metering data from audio thread (non-blocking).
@@ -280,20 +186,6 @@ impl AudioBridge {
         latest
     }
 
-    /// Get buffer overrun count from latest metering data.
-    pub fn get_buffer_overrun_count(&self) -> u32 {
-        if let Some(data) = self.receive_metering() {
-            data.buffer_overruns
-        } else {
-            0
-        }
-    }
-
-    /// Get current buffer overrun status.
-    pub fn has_buffer_overruns(&self) -> bool {
-        self.get_buffer_overrun_count() > 0
-    }
-
     /// Set the running state.
     pub fn set_running(&self, running: bool) {
         self.running.store(running, Ordering::SeqCst);
@@ -310,16 +202,6 @@ impl AudioBridge {
     /// via the receiver obtained from [`command_receiver`](Self::command_receiver).
     pub fn send_command(&self, cmd: ChainCommand) {
         let _ = self.command_tx.send(cmd);
-    }
-
-    /// Validate and set buffer size with sample rate consideration.
-    ///
-    /// Ensures the buffer size is appropriate for the given sample rate.
-    pub fn validate_and_set_buffer_size(&self, sample_rate: f32, size: usize) {
-        let min_samples = (sample_rate * 0.001) as usize; // 1ms minimum
-        let max_samples = (sample_rate * 0.05) as usize; // 50ms maximum
-        let clamped = size.max(min_samples).min(max_samples);
-        self.set_buffer_size(clamped);
     }
 
     /// Get a clone of the command receiver for the audio thread.
@@ -366,7 +248,6 @@ impl Default for AudioBridge {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sonido_gui_core::SlotIndex;
 
     #[test]
     fn test_atomic_param_clamping() {
@@ -404,7 +285,7 @@ mod tests {
         bridge.send_command(ChainCommand::Add {
             id: "distortion",
             effect,
-            slot: SlotIndex(0), // dummy slot for test
+            descriptors: Vec::new(),
         });
         bridge.send_command(ChainCommand::Remove {
             slot: sonido_gui_core::SlotIndex(0),

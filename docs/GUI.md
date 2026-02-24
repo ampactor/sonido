@@ -476,7 +476,7 @@ Currently, the GUI is primarily mouse-driven. Keyboard shortcuts may be added in
 Selecting a preset now performs a "hard reset": the application stops audio, rebuilds the entire effect chain to exactly match the preset (adding or removing effects as needed), applies all parameters, and restarts audio. This ensures preset chains are reconstructed precisely rather than just modifying parameters of existing effects.
 
 ### Input Gain Safety
-The input gain defaults to -120 dB (effectively muted) to prevent audio feedback loops on startup. Users must explicitly increase the GAIN knob to enable microphone input. The knob range now spans from -120 dB to +20 dB.
+The input gain defaults to 0 dB (unity gain). The knob range spans from -20 dB to +20 dB.
 
 ### Level Meter Evolution
 The level meters now display a combined Peak and RMS visualization:
