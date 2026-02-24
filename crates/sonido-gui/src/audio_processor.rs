@@ -214,7 +214,7 @@ impl AudioProcessor {
         // Buffer overrun detection: if processing time exceeds buffer duration + safety margin
         let safety_margin = 0.1; // 10% safety margin
         let max_processing_time = self.buffer_time_secs * (1.0 + safety_margin);
-        let current_processing_time = (Instant::now() - process_start).as_secs_f64();
+        let current_processing_time = process_start.elapsed().as_secs_f64();
 
         // Update processing time history (keep last 60 entries for trend analysis)
         self.processing_time_history.push(current_processing_time);
