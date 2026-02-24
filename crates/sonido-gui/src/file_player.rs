@@ -140,7 +140,7 @@ impl FilePlayer {
         let info = match read_wav_info(&path) {
             Ok(info) => info,
             Err(e) => {
-                log::error!("Failed to read WAV info: {e}");
+                tracing::error!("Failed to read WAV info: {e}");
                 return;
             }
         };
@@ -149,7 +149,7 @@ impl FilePlayer {
         let (samples, _spec) = match read_wav_stereo(&path) {
             Ok(s) => s,
             Err(e) => {
-                log::error!("Failed to load WAV: {e}");
+                tracing::error!("Failed to load WAV: {e}");
                 return;
             }
         };
@@ -183,7 +183,7 @@ impl FilePlayer {
         let reader = match hound::WavReader::new(Cursor::new(&bytes)) {
             Ok(r) => r,
             Err(e) => {
-                log::error!("Failed to parse WAV: {e}");
+                tracing::error!("Failed to parse WAV: {e}");
                 return;
             }
         };
@@ -197,7 +197,7 @@ impl FilePlayer {
         let total_samples = reader.len();
         if total_samples > MAX_WASM_SAMPLES {
             let secs = total_samples / u32::from(spec.channels) / spec.sample_rate;
-            log::error!(
+            tracing::error!(
                 "WAV too large for wasm: {total_samples} samples ({secs}s). Max is 60s stereo."
             );
             return;

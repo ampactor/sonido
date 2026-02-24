@@ -72,6 +72,11 @@ serde_json = "1.0"
 toml = "0.8"
 indicatif = "0.17"
 
+# Tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-log = "0.2"
+
 # Testing
 proptest = "1"
 tempfile = "3.15"

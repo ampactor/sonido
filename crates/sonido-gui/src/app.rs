@@ -158,6 +158,8 @@ impl SonidoApp {
             app.preset_manager.select(0, &*app.bridge);
         }
 
+        tracing::info!(sample_rate = app.sample_rate, "app initialized");
+
         // Start audio
         if let Err(e) = app.start_audio() {
             app.audio_error = Some(e);
@@ -253,20 +255,20 @@ impl SonidoApp {
         };
 
         if clamped_size != size {
-            log::warn!(
-                "Requested buffer size {} not in valid set, using {}",
-                size,
-                clamped_size
+            tracing::warn!(
+                requested = size,
+                using = clamped_size,
+                "buffer size not in valid set, clamping"
             );
         }
 
         self.buffer_size = clamped_size;
         self.stop_audio();
         if let Err(e) = self.start_audio() {
-            log::error!(
-                "Failed to restart audio with buffer size {}: {}",
-                clamped_size,
-                e
+            tracing::error!(
+                buffer_size = clamped_size,
+                error = %e,
+                "failed to restart audio"
             );
         }
     }
@@ -716,7 +718,7 @@ impl SonidoApp {
                             description,
                             &*self.bridge,
                         ) {
-                            log::error!("Failed to save preset: {}", e);
+                            tracing::error!(error = %e, "failed to save preset");
                         }
                         self.show_save_dialog = false;
                     }
@@ -862,11 +864,11 @@ impl eframe::App for SonidoApp {
         CentralPanel::default().show(ctx, |ui| {
             #[cfg(target_arch = "wasm32")]
             if !self.audio_resumed {
-                log::debug!(
-                    "wasm layout: available={:.0}x{:.0} ppp={:.2}",
-                    ui.available_width(),
-                    ui.available_height(),
-                    ctx.pixels_per_point()
+                tracing::debug!(
+                    width = ui.available_width() as u32,
+                    height = ui.available_height() as u32,
+                    ppp = ctx.pixels_per_point(),
+                    "wasm layout"
                 );
             }
 

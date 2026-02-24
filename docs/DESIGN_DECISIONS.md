@@ -901,3 +901,69 @@ Introduce an `AudioBackend` trait in `sonido-io` that abstracts over platform au
 - **Embedded DMA backend**: Interrupt-driven I/O for Cortex-M targets (Daisy Seed). The no_std DSP core is ready; the backend would bridge DMA buffer completion interrupts to the callback.
 - **Mock backend**: Deterministic, clock-free backend for CI testing. Push a known buffer, assert output.
 - **Feature-gate cpal**: Make `cpal` an optional dependency once an alternative backend exists.
+
+---
+
+## ADR-024: CLAP Plugin Architecture
+
+**Status:** Accepted
+**Source:** `crates/sonido-plugin/src/lib.rs`, `crates/sonido-plugin/src/audio.rs`, `crates/sonido-plugin/src/gui.rs`, `crates/sonido-plugin/src/main_thread.rs`, `crates/sonido-plugin/src/shared.rs`
+
+### Context
+
+Sonido needed DAW integration to be usable in professional music production workflows. The two main Rust-native options were CLAP (via the `clack` crate) and VST3 (via `vst3-sys` or `nih-plug`). Sonido already had a complete parameter system (`ParameterInfo`, `ParamDescriptor`, `ParamId`, `ParamFlags`), a GUI layer (`sonido-gui-core`), and a real-time DSP core. The plugin adapter needed to bridge these to the host protocol without duplicating parameter management logic.
+
+### Decision
+
+**CLAP over VST3, `clack` over `nih-plug`.** One plugin per effect, generated via the `sonido_effect_entry!` macro. A custom egui bridge for the GUI rather than the `egui-baseview` crate.
+
+### Key Choices
+
+**`clack` over `nih-plug`:**
+`nih-plug` is an opinionated framework that owns parameter management. It provides macros like `#[id = "..."]` and `#[range = ...]` that define parameters in Rust structs. Sonido already has `ParameterInfo` and `ParamDescriptor` doing this work — adopting `nih-plug` would require either abandoning the existing system or maintaining a parallel one. `clack` provides direct, low-level access to the CLAP C API with Rust safety guarantees and no opinions about parameter representation. Sonido's `ParameterInfo` system maps directly to CLAP's `clap_param_info` without translation.
+
+**One plugin per effect (not a single multi-effect plugin):**
+The simplest mapping — each plugin is exactly one `Effect` + one `ParameterInfo` implementation. The host sees a single-purpose plugin with a known parameter count and stable IDs. This matches the mental model of guitar pedal plugins (one amp sim, one reverb, one delay). A multi-effect container plugin requires the DAG routing engine and is planned for v0.2.
+
+The `sonido_effect_entry!` macro generates the complete CLAP plugin entry point from a single invocation:
+```rust
+sonido_effect_entry!(Distortion, "sonido.distortion", "Sonido Distortion");
+```
+This expands to the CLAP descriptor, factory, `PluginAudioProcessor` impl, parameter handling (`get_count`, `get_info`, `get_value`, `set_value`, `value_to_text`, `text_to_value`), and GUI bridge — roughly 300 lines of boilerplate per plugin, generated zero-cost at compile time.
+
+**Custom egui bridge over `egui-baseview`:**
+`egui-baseview` is an existing crate that integrates egui with baseview window handles. It was not usable here for two reasons: (1) it was version-locked to an older egui and had not tracked egui 0.31 at the time of implementation; (2) it imposes a specific render loop structure that conflicted with the plugin's need to share `SonidoShared` state between the GUI and audio threads. The custom bridge uses `baseview` + `egui_glow` directly, giving explicit control over the OpenGL context, frame timing, and shared-state access patterns. The `gui.rs` module's `#![allow(unsafe_code)]` is scoped specifically to the `ParentWindow` / `HasRawWindowHandle` implementation required for `baseview`.
+
+**Fixed 480×380 GUI:**
+Initial simplification. Implementing resizable plugin GUIs requires CLAP GUI extension callbacks: `can_resize`, `get_resize_hints`, `adjust_size`, `set_size`. These involve round-trips between the host and plugin and must be handled on the main thread. The fixed size eliminates this complexity for the initial release. Resize support is planned for v0.2.
+
+**`ParamBridge` gesture protocol (`begin_set` / `end_set`):**
+CLAP's automation recording protocol requires explicit gesture delimiters: `ParamGestureBeginEvent` before the first value change, `ParamGestureEndEvent` after the user releases the control. Without these, the DAW cannot distinguish a user drag (record this gesture) from a programmatic update (do not record). The `ParamBridge` trait exposes `begin_set(param_id)` and `end_set(param_id)` that map directly to these events. The GUI wraps every knob interaction in begin/end pairs. The same `ParamBridge` trait is used in the standalone GUI (`AtomicParamBridge`) with no-op begin/end implementations — the protocol is shared infrastructure.
+
+**`SonidoShared` as `Arc<_>` (Clone):**
+Three threads need access to shared state: audio processor (real-time), GUI (render thread), main thread (parameter state, host communication). `Arc<SonidoShared>` is cloned into each. Fields inside `SonidoShared` use `parking_lot::RwLock` for effect state and `Arc<AtomicParamBridge>` for lock-free parameter reads in the audio thread. No `Mutex` in the audio path.
+
+**Plugin crate excluded from workspace `default-members`:**
+Building plugins requires the `clack`, `baseview`, and `egui_glow` dependencies, which add non-trivial compile time and introduce system OpenGL requirements. `cargo build --workspace` does not build plugins by default. `make plugins` (or `cargo build -p sonido-plugin`) builds all 19 explicitly.
+
+### Consequences
+
+- 19 separate `.clap` shared library files are produced from one cargo build command
+- GUI code (widgets, effect panels, theme) lives in `sonido-gui-core` and is shared between standalone and plugin, with no duplication
+- `SonidoShared` is the coupling point between plugin threads; adding shared state means adding a field here
+- Plugin-host parameter negotiation bypasses `ParameterInfo` defaults — plugin host sets initial values via `set_value`, not via `ParamDescriptor::default`
+- `#![allow(unsafe_code)]` is scoped to `gui.rs` only — all other plugin code is safe Rust
+
+### Alternatives Considered
+
+- **`nih-plug` framework**: Rejected because it would require abandoning or duplicating Sonido's `ParameterInfo` system. `nih-plug` is excellent for greenfield plugins but expensive to retrofit onto an existing parameter abstraction.
+- **VST3 (via `vst3-sys`)**: VST3's C++ COM interface is significantly more complex than CLAP's C API. `clack` provides better safety guarantees for CLAP than `vst3-sys` does for VST3. CLAP's growing DAW adoption (Bitwig, REAPER, Ableton 12, Logic) makes it the better investment.
+- **LV2**: Strong Linux ecosystem, poor DAW support on macOS/Windows. Ruled out for cross-platform targets.
+- **`egui-baseview` crate**: Version pinning and render loop conflicts (see above). May become viable in a future egui version.
+
+### Future Directions
+
+- **Resizable GUI** (v0.2): Implement `CLAP_EXT_GUI` resize callbacks.
+- **Multi-effect container plugin** (v0.2): Full chain in a single plugin instance. Requires DAG routing engine.
+- **VST3 adapter**: Could be added alongside CLAP via a separate `sonido-plugin-vst3` crate sharing `sonido-gui-core` and the same macro pattern.
+- **CLAP note expression** (v0.4): Per-note modulation via `CLAP_EXT_NOTE_EXPRESSION`.

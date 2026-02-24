@@ -379,7 +379,7 @@ pub(crate) fn build_audio_streams(
                     let ec = Arc::clone(&error_count);
                     move |err| {
                         ec.fetch_add(1, Ordering::Relaxed);
-                        log::error!("Input stream error: {}", err);
+                        tracing::error!(error = %err, "input stream error");
                     }
                 },
                 None,
@@ -399,9 +399,7 @@ pub(crate) fn build_audio_streams(
                 input_channels as usize
             }
             Err(e) => {
-                log::warn!(
-                    "Input stream unavailable ({e}) -- mic input disabled, output continues"
-                );
+                tracing::warn!(error = %e, "input stream unavailable, mic disabled");
                 for _ in 0..2048 {
                     let _ = tx_fallback.try_send(0.0);
                 }
@@ -409,7 +407,7 @@ pub(crate) fn build_audio_streams(
             }
         }
     } else {
-        log::warn!("No input device available -- mic input disabled");
+        tracing::warn!("no input device available, mic disabled");
         // Pre-fill silence so output callback doesn't block
         for _ in 0..2048 {
             let _ = tx.try_send(0.0);
@@ -454,7 +452,7 @@ pub(crate) fn build_audio_streams(
                 let ec = Arc::clone(&error_count);
                 move |err| {
                     ec.fetch_add(1, Ordering::Relaxed);
-                    log::error!("Output stream error: {}", err);
+                    tracing::error!(error = %err, "output stream error");
                 }
             },
             None,
@@ -465,6 +463,13 @@ pub(crate) fn build_audio_streams(
         .play()
         .map_err(|e| format!("Failed to play output stream: {}", e))?;
     streams.push(output_stream);
+
+    tracing::info!(
+        sample_rate = sample_rate as u32,
+        buffer_size,
+        channels = out_ch,
+        "audio streams started"
+    );
 
     Ok(streams)
 }

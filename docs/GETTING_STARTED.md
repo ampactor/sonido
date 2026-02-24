@@ -428,6 +428,91 @@ All runnable examples with their `cargo run` commands:
 | Presets and config (factory presets, chains) | sonido-config | `cargo run -p sonido-config --example preset_demo` |
 | Analysis (FFT, dynamics, filter banks) | sonido-analysis | `cargo run -p sonido-analysis --example analysis_demo` |
 
+## WebAssembly Build
+
+Sonido's GUI compiles to `wasm32-unknown-unknown` for browser deployment. The same crate produces both native and wasm binaries without feature flags — cfg gates handle the differences at the source level.
+
+### Prerequisites
+
+```bash
+# Install trunk (wasm build tool)
+cargo install trunk
+
+# Add the wasm target
+rustup target add wasm32-unknown-unknown
+```
+
+### Development Server
+
+```bash
+cd crates/sonido-gui && trunk serve
+```
+
+Opens at `http://localhost:8080`. Hot-reloads on source changes.
+
+### Production Build
+
+```bash
+cd crates/sonido-gui && trunk build --release
+```
+
+Output in `crates/sonido-gui/dist/`. The `dist/` directory is self-contained and can be served from any static host.
+
+### Compile Check (without full trunk build)
+
+```bash
+cargo check --target wasm32-unknown-unknown -p sonido-gui
+```
+
+This is faster than `trunk build` and sufficient to verify the wasm target compiles.
+
+### What Works on Wasm
+
+- Full effect chain with all 19 effects
+- Real-time audio via cpal's wasm backend (WebAudio API)
+- WAV file loading via browser file picker (`rfd::AsyncFileDialog`)
+- Parameter automation and preset management
+- All effect parameter panels, knobs, and meters
+- Effect chain add/remove/reorder
+
+### What Doesn't Work on Wasm
+
+- **File system access**: Presets cannot be saved to the local filesystem from the browser. Preset management operates in memory only.
+- **Audio device selection**: The browser manages the audio output device. Device selection UI is hidden on wasm.
+- **CLAP plugin loading**: Plugins are native-only shared libraries. The wasm target has no plugin host.
+- **Synchronous file dialogs**: `rfd::FileDialog` (blocking) is replaced by `rfd::AsyncFileDialog` on wasm.
+
+### Architecture Notes
+
+The same source file compiles to both targets using cfg gates:
+
+```rust
+// Native-only code (threads, filesystem, blocking I/O):
+#[cfg(not(target_arch = "wasm32"))]
+fn spawn_audio_thread() { ... }
+
+// Wasm alternative:
+#[cfg(target_arch = "wasm32")]
+fn start_audio_worklet() { ... }
+```
+
+Key per-target differences:
+
+| Concern | Native | Wasm |
+|---------|--------|------|
+| Time | `std::time::Instant` | `web_time::Instant` |
+| File dialogs | `rfd::FileDialog` (sync) | `rfd::AsyncFileDialog` |
+| WAV parsing | `hound` from filesystem | `hound` from byte slice |
+| Audio | cpal with OS backend | cpal wasm backend (WebAudio) |
+| Threads | `std::thread::spawn` | Not used (wasm is single-threaded) |
+| Logging | `tracing-subscriber` fmt | `tracing-wasm` → browser console |
+
+### CI Deployment
+
+CI automatically deploys the wasm build to GitHub Pages on successful main-branch builds. The workflow is in `.github/workflows/pages.yml`.
+
+---
+
 ## Next Steps
 
 - See [GUI.md](GUI.md) for graphical interface documentation

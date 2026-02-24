@@ -249,7 +249,7 @@ impl PresetManager {
                     self.presets.push(PresetEntry::user(preset, path));
                 }
                 Err(e) => {
-                    log::warn!("Failed to load preset {:?}: {}", path, e);
+                    tracing::warn!(path = ?path, error = %e, "failed to load preset");
                 }
             }
         }
@@ -316,6 +316,7 @@ impl PresetManager {
             .save(&path)
             .map_err(|e| format!("Failed to save preset: {}", e))?;
 
+        tracing::info!(name, "preset saved");
         self.presets.push(PresetEntry::user(preset, path));
         self.current_preset = self.presets.len() - 1;
         self.modified = false;

@@ -51,6 +51,10 @@ impl CpalBackend {
     ///
     /// On Linux this is ALSA, on macOS CoreAudio, on Windows WASAPI.
     pub fn new() -> Self {
+        tracing::info!(
+            host = cpal::default_host().id().name(),
+            "cpal backend initialized"
+        );
         Self {
             host: cpal::default_host(),
         }
@@ -164,6 +168,11 @@ impl AudioBackend for CpalBackend {
             .map_err(|e| Error::Stream(e.to_string()))?;
 
         stream.play().map_err(|e| Error::Stream(e.to_string()))?;
+        tracing::info!(
+            channels = config.channels,
+            sample_rate = config.sample_rate,
+            "output stream started"
+        );
 
         Ok(StreamHandle::new(stream))
     }
@@ -196,6 +205,11 @@ impl AudioBackend for CpalBackend {
             .map_err(|e| Error::Stream(e.to_string()))?;
 
         stream.play().map_err(|e| Error::Stream(e.to_string()))?;
+        tracing::info!(
+            channels = config.channels,
+            sample_rate = config.sample_rate,
+            "input stream started"
+        );
 
         Ok(StreamHandle::new(stream))
     }

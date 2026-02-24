@@ -162,6 +162,38 @@ jobs:
       - name: Check wasm compilation
         run: cargo check --target wasm32-unknown-unknown -p sonido-gui
 
+  coverage:
+    name: Coverage
+    runs-on: self-hosted
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: false
+
+      - name: Install system dependencies
+        run: |
+          pkgs=""
+          dpkg -s libasound2-dev >/dev/null 2>&1 || pkgs="$pkgs libasound2-dev"
+          dpkg -s libudev-dev >/dev/null 2>&1 || pkgs="$pkgs libudev-dev"
+          [ -z "$pkgs" ] || (sudo apt-get update && sudo apt-get install -y $pkgs)
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Generate coverage
+        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: lcov.info
+
   bench:
     name: Benchmarks
     runs-on: self-hosted
