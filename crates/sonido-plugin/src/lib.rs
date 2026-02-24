@@ -113,6 +113,8 @@ macro_rules! sonido_effect_entry {
                 let host: ::clack_plugin::prelude::HostSharedHandle<'static> =
                     unsafe { ::core::mem::transmute(host) };
 
+                ::tracing::info!(effect_id = $effect_id, "plugin instance created");
+
                 let notify: Box<dyn Fn() + Send + Sync> =
                     Box::new(move || { host.request_process(); });
                 Ok($crate::SonidoShared::new($effect_id, Some(notify)))

@@ -90,7 +90,7 @@ impl ChainManager {
                     bypass_fade: SmoothedParam::fast(fade_val, sample_rate),
                 });
             } else {
-                log::warn!("Unknown effect id \"{id}\", skipping");
+                tracing::warn!(id, "unknown effect id, skipping");
             }
         }
         let order: Vec<usize> = (0..slots.len()).collect();
@@ -276,6 +276,7 @@ impl ChainManager {
     ) -> usize {
         let slot = self.add_effect(id, effect);
         bridge.add_slot(id, descriptors);
+        tracing::info!(effect_id = id, slot, "effect added to chain");
         slot
     }
 
@@ -294,6 +295,11 @@ impl ChainManager {
     ) -> Option<&'static str> {
         let removed_id = self.remove_effect(slot.0)?;
         bridge.remove_slot(slot);
+        tracing::info!(
+            effect_id = removed_id,
+            slot = slot.0,
+            "effect removed from chain"
+        );
         Some(removed_id)
     }
 }

@@ -44,20 +44,25 @@ struct Args {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {
-    // Initialize logging
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    use tracing_subscriber::EnvFilter;
+
+    // Initialize tracing subscriber; bridge legacy log:: calls from eframe/egui
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .init();
+    tracing_log::LogTracer::init().ok();
 
     let args = Args::parse();
 
-    log::info!("Starting Sonido GUI");
-    log::info!("Sample rate: {} Hz", args.sample_rate);
-    log::info!("Buffer size: {} samples", args.buffer_size);
+    tracing::info!("Starting Sonido GUI");
+    tracing::info!(sample_rate = args.sample_rate, "audio config");
+    tracing::info!(buffer_size = args.buffer_size, "audio config");
 
     if let Some(ref input) = args.input {
-        log::info!("Input device: {}", input);
+        tracing::info!(device = %input, "input device");
     }
     if let Some(ref output) = args.output {
-        log::info!("Output device: {}", output);
+        tracing::info!(device = %output, "output device");
     }
 
     let options = eframe::NativeOptions {
@@ -83,6 +88,7 @@ fn main() {
     use wasm_bindgen::JsCast;
 
     eframe::WebLogger::init(log::LevelFilter::Debug).ok();
+    tracing::info!("Sonido GUI starting (wasm)");
 
     wasm_bindgen_futures::spawn_local(async {
         let document = web_sys::window()

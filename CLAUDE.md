@@ -66,7 +66,7 @@ When you modify a source file, you **must** update every documentation target li
 | `crates/sonido-io/src/backend.rs`, `cpal_backend.rs` | `docs/ARCHITECTURE.md` (sonido-io section), `docs/DESIGN_DECISIONS.md` ADR-023 | AudioBackend trait, CpalBackend, StreamHandle, BackendStreamConfig |
 | `crates/sonido-cli/src/commands/*.rs` | `docs/CLI_GUIDE.md` | Command syntax, flags, examples |
 | `crates/sonido-gui/src/app.rs` | `docs/GUI.md` | GUI features, layout, controls |
-| `crates/sonido-plugin/src/lib.rs`, `audio.rs`, `gui.rs`, `main_thread.rs`, `shared.rs` | This file (Crates table, Key Files table), `docs/ARCHITECTURE.md` (plugin section) | Plugin adapter API, macro interface, GUI bridge, shared state |
+| `crates/sonido-plugin/src/lib.rs`, `audio.rs`, `gui.rs`, `main_thread.rs`, `shared.rs` | This file (Crates table, Key Files table), `docs/ARCHITECTURE.md` (plugin section), `docs/DESIGN_DECISIONS.md` ADR-024 | Plugin adapter API, macro interface, GUI bridge, shared state, gesture protocol |
 | `crates/sonido-config/src/*.rs` | `docs/GETTING_STARTED.md` (presets section) | Preset format, config paths, validation |
 | Any new crate | This file (Crates table + Key Files table), `docs/ARCHITECTURE.md` (diagram) | Crate purpose, no_std status, dependency position |
 
@@ -412,6 +412,7 @@ cd crates/sonido-gui && trunk serve                        # Dev server at :8080
 | Audio engine | crates/sonido-io/src/engine.rs |
 | Audio stream (legacy) | crates/sonido-io/src/stream.rs |
 | Regression tests | crates/sonido-effects/tests/regression.rs |
+| Project Roadmap | docs/ROADMAP.md |
 | DSP Theory Reference | docs/DSP_FUNDAMENTALS.md |
 | Architecture Decisions | docs/DESIGN_DECISIONS.md |
 | DSP Quality Standard | docs/DSP_QUALITY_STANDARD.md |
