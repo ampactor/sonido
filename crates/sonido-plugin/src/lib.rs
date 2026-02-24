@@ -108,13 +108,10 @@ macro_rules! sonido_effect_entry {
                 host: ::clack_plugin::prelude::HostSharedHandle<'_>,
             ) -> Result<$crate::SonidoShared, ::clack_plugin::prelude::PluginError> {
                 // CLAP specification §plugin-instance guarantees the host outlives the
-                // plugin; this is the canonical Rust CLAP pattern for storing host
-                // callbacks in Arc-wrapped shared state.
+                // plugin. HostSharedHandle is Copy + repr(transparent) over
+                // NonNull<clap_host>; the lifetime is purely phantom.
                 let host: ::clack_plugin::prelude::HostSharedHandle<'static> =
-                    // Safe because HostSharedHandle is Copy and contains only NonNull<clap_host>
-                    // and PhantomData. The lifetime is purely phantom and CLAP guarantees
-                    // the host outlives the plugin.
-                    ::clack_plugin::prelude::HostSharedHandle::from_raw(host.as_raw())
+                    unsafe { ::core::mem::transmute(host) };
 
                 let notify: Box<dyn Fn() + Send + Sync> =
                     Box::new(move || { host.request_process(); });
