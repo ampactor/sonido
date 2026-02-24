@@ -243,7 +243,7 @@ impl SonidoApp {
     /// the new buffer size.
     pub fn set_buffer_size(&mut self, size: usize) {
         // Validate buffer size - most audio hardware supports 64-4096
-        let valid_sizes = vec![64, 128, 256, 512, 1024, 2048, 4096];
+        let valid_sizes = [64, 128, 256, 512, 1024, 2048, 4096];
         let clamped_size = if valid_sizes.contains(&size) {
             size
         } else {
@@ -251,7 +251,7 @@ impl SonidoApp {
             valid_sizes
                 .iter()
                 .min_by_key(|&s| {
-                    if *s > size { *s - size } else { size - *s }
+                    (*s).abs_diff(size)
                 })
                 .copied()
                 .unwrap_or(2048)
@@ -601,10 +601,8 @@ impl SonidoApp {
                     }
                 });
 
-            if let Some(idx) = selected_preset {
-                if let Some((size, _, _)) = presets.get(idx) {
-                    self.set_buffer_size(*size);
-                }
+            if let Some((size, _, _)) = selected_preset.and_then(|i| presets.get(i)) {
+                self.set_buffer_size(*size);
             }
 
             ui.separator();
