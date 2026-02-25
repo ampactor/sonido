@@ -128,9 +128,9 @@ A single CLAP plugin exposing the full effect chain. Requires the DAG routing en
 
 ### Benchmark Baseline Tracking in CI
 
-**Status:** Planned
+**Status:** In progress
 
-Run `cargo bench` in CI and store criterion JSON results as artifacts. Compare successive runs to detect regressions. Baseline captures: per-effect block processing at 64/128/256/512/1024 samples, chain processing at 4 effects, oversampled distortion.
+Run `cargo bench` in CI and store criterion JSON results as artifacts. Bencher-format text output and criterion JSON are uploaded as CI artifacts with 90-day retention. Baseline captures: per-effect block processing at 64/128/256/512/1024 samples, chain processing at 4 effects, oversampled distortion. Next step: regression comparison across successive runs.
 
 ---
 

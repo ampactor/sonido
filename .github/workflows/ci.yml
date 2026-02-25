@@ -191,7 +191,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Run core benchmarks
-        run: cargo bench -p sonido-core
+        run: cargo bench -p sonido-core -- --output-format bencher 2>&1 | tee target/bench-core.txt
 
       - name: Run effects benchmarks
-        run: cargo bench -p sonido-effects
+        run: cargo bench -p sonido-effects -- --output-format bencher 2>&1 | tee target/bench-effects.txt
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results-${{ github.sha }}
+          path: |
+            target/bench-core.txt
+            target/bench-effects.txt
+            target/criterion/
+          retention-days: 90
