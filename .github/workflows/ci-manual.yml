@@ -57,17 +57,20 @@ jobs:
           find target/criterion -type d -name "current" -exec sh -c \
             'mv "$1" "$(dirname "$1")/prev"' _ {} \;
 
+      - name: Ensure target dir exists for tee
+        run: mkdir -p target
+
       - name: Run core benchmarks
-        run: cargo bench -p sonido-core -- --save-baseline current --output-format bencher 2>&1 | tee target/bench-core.txt
+        run: cargo bench -p sonido-core --benches -- --save-baseline current --output-format bencher 2>&1 | tee target/bench-core.txt
 
       - name: Run effects benchmarks
-        run: cargo bench -p sonido-effects -- --save-baseline current --output-format bencher 2>&1 | tee target/bench-effects.txt
+        run: cargo bench -p sonido-effects --benches -- --save-baseline current --output-format bencher 2>&1 | tee target/bench-effects.txt
 
       - name: Run synth benchmarks
-        run: cargo bench -p sonido-synth -- --save-baseline current --output-format bencher 2>&1 | tee target/bench-synth.txt
+        run: cargo bench -p sonido-synth --benches -- --save-baseline current --output-format bencher 2>&1 | tee target/bench-synth.txt
 
       - name: Run analysis benchmarks
-        run: cargo bench -p sonido-analysis -- --save-baseline current --output-format bencher 2>&1 | tee target/bench-analysis.txt
+        run: cargo bench -p sonido-analysis --benches -- --save-baseline current --output-format bencher 2>&1 | tee target/bench-analysis.txt
 
       - name: Install critcmp
         run: cargo install critcmp --locked
