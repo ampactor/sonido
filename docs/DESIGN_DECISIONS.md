@@ -27,6 +27,8 @@ Architecture Decision Records (ADRs) for the Sonido DSP framework. Each record c
 - [ADR-021: Block Processing Overrides](#adr-021-block-processing-overrides)
 - [ADR-022: Parameter System Hardening for Plugin Integration](#adr-022-parameter-system-hardening-for-plugin-integration)
 - [ADR-023: Pluggable Audio Backend Abstraction](#adr-023-pluggable-audio-backend-abstraction)
+- [ADR-024: CLAP Plugin Architecture](#adr-024-clap-plugin-architecture)
+- [ADR-025: DAG Routing Engine](#adr-025-dag-routing-engine) *(planned)*
 
 ---
 
@@ -964,6 +966,38 @@ Building plugins requires the `clack`, `baseview`, and `egui_glow` dependencies,
 ### Future Directions
 
 - **Resizable GUI** (v0.2): Implement `CLAP_EXT_GUI` resize callbacks.
-- **Multi-effect container plugin** (v0.2): Full chain in a single plugin instance. Requires DAG routing engine.
+- **Multi-effect container plugin** (v0.3): Full chain in a single plugin instance. Requires DAG routing engine.
 - **VST3 adapter**: Could be added alongside CLAP via a separate `sonido-plugin-vst3` crate sharing `sonido-gui-core` and the same macro pattern.
 - **CLAP note expression** (v0.4): Per-note modulation via `CLAP_EXT_NOTE_EXPRESSION`.
+
+---
+
+## ADR-025: DAG Routing Engine
+
+**Status:** Planned
+**Supersedes:** ADR-005 (for DAG routing path; ADR-005 remains authoritative for linear chain semantics)
+
+### Context
+
+The current audio routing model is a linear effect chain: `Vec<usize>` ordering in `ChainManager`, sequential processing in `ProcessingEngine`, indexed parameter access in `AtomicParamBridge`. This model cannot express:
+
+- Parallel signal paths (e.g., dry/wet branches with independent effect chains)
+- Sidechain routing (e.g., compressor keyed by a separate signal)
+- Multiband processing (e.g., split → per-band effects → recombine)
+- Synth-effects hybrid routing (e.g., guitar DI → pitch detector → synth → effects, mixed with dry)
+
+All four patterns are blocked on the linear chain assumption. The multi-effect CLAP plugin, the synth-effects hybrid (Space Station 2.0), and spectral parallel processing all require graph-based routing.
+
+### Planned Decisions
+
+1. **Directed acyclic graph (DAG)** — nodes are effects, edges are audio connections. The `Effect` trait is already node-agnostic and requires no changes.
+2. **Topological sort at graph mutation time** — O(V+E) cost paid once when the graph is edited, not per audio block. The sorted order is a flat `Vec<NodeId>` consumed by the audio thread.
+3. **Pre-allocated buffer pool** — f32 buffers assigned to edges, sized at graph mutation time. No allocations in the audio path.
+4. **Cycle detection at insertion time** — reject cyclic edges immediately, not at audio processing time. Graph mutations are validated before committing.
+5. **Hand-rolled implementation** — no `dasp_graph` dependency. The `Effect` trait semantics (stereo pairs, `ParameterInfo`, `TempoContext`) are specific enough that adapting a generic graph library would cost more than building purpose-fit.
+
+### References
+
+- `docs/ROADMAP.md` — DAG Routing Engine section (v0.3+)
+- `docs/ARCHITECTURE.md` — to be updated at implementation time with DAG data flow diagrams
+- ADR-005 — original linear chain decision (remains the record for v0.1 architecture)
