@@ -95,7 +95,7 @@ Near-term work to harden the operational foundation before expanding capability 
 
 ### Structured Observability (tracing)
 
-**Status:** In progress
+**Status:** Complete
 
 Replace `log` facade with `tracing` throughout std crates. `tracing-log` bridge captures eframe/egui internal log output. Light instrumentation at lifecycle boundaries: stream start/stop, effect chain mutations, preset load/save, errors.
 
@@ -106,7 +106,7 @@ Replace `log` facade with `tracing` throughout std crates. `tracing-log` bridge 
 
 ### Coverage Reporting in CI
 
-**Status:** In progress
+**Status:** Complete
 
 Add `cargo-llvm-cov` job to CI. Generates `lcov.info` artifact per main-branch build. No threshold gate in v0.2 — establishes the baseline before enforcing floors.
 
