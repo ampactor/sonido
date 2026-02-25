@@ -31,7 +31,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
 
       - name: Build wasm
-        run: trunk build --release crates/sonido-gui/index.html
+        working-directory: crates/sonido-gui
+        run: trunk build --release
 
       - name: Upload pages artifact
         uses: actions/upload-pages-artifact@v3
