@@ -24,6 +24,7 @@ use raw_window_handle::HasRawWindowHandle;
 use std::sync::Arc;
 
 use super::translate;
+use crate::gui::PendingResize;
 
 /// Open an egui-rendered child window inside a host-provided parent.
 ///
@@ -56,6 +57,7 @@ pub fn open_parented<P, S>(
     width: u32,
     height: u32,
     scale: f64,
+    pending_resize: Arc<PendingResize>,
     state: S,
     build: impl FnOnce(&Context, &mut S) + Send + 'static,
     update: impl FnMut(&Context, &mut S) + Send + 'static,
@@ -108,6 +110,8 @@ where
             physical_height,
             scale,
             mouse_pos: Pos2::ZERO,
+            pending_resize,
+            last_applied_logical: (width, height),
             state,
             update_fn: Box::new(update),
         };
@@ -140,6 +144,10 @@ struct EguiBridgeHandler<S> {
     scale: f64,
     /// Last known mouse position in logical coordinates.
     mouse_pos: Pos2,
+    /// Atomic resize channel from the CLAP host.
+    pending_resize: Arc<PendingResize>,
+    /// Last logical size applied via `window.resize()`, used to detect changes.
+    last_applied_logical: (u32, u32),
     /// User state passed to the update closure.
     state: S,
     /// Per-frame UI callback.
@@ -149,6 +157,13 @@ struct EguiBridgeHandler<S> {
 
 impl<S: Send + 'static> WindowHandler for EguiBridgeHandler<S> {
     fn on_frame(&mut self, window: &mut Window<'_>) {
+        // Apply any pending resize from the CLAP host before rendering.
+        let pending = self.pending_resize.get();
+        if pending != self.last_applied_logical {
+            window.resize(Size::new(f64::from(pending.0), f64::from(pending.1)));
+            self.last_applied_logical = pending;
+        }
+
         let gl_context = window.gl_context().unwrap();
         #[allow(unsafe_code)]
         // SAFETY: make_current binds the OpenGL context to the current thread.

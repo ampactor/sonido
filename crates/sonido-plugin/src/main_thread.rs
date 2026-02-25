@@ -4,12 +4,16 @@
 //! configuration. All methods run on the host's main thread — never on the
 //! audio thread.
 
-use crate::gui::{PLUGIN_HEIGHT, PLUGIN_WIDTH, SonidoEditor};
-use crate::shared::SonidoShared;
+use std::io::{Read, Write};
+use std::sync::Arc;
+
 use clack_extensions::audio_ports::{
     AudioPortFlags, AudioPortInfo, AudioPortInfoWriter, AudioPortType, PluginAudioPortsImpl,
 };
-use clack_extensions::gui::{GuiApiType, GuiConfiguration, GuiSize, PluginGuiImpl, Window};
+use clack_extensions::gui::{
+    AspectRatioStrategy, GuiApiType, GuiConfiguration, GuiResizeHints, GuiSize, PluginGuiImpl,
+    Window,
+};
 use clack_extensions::latency::PluginLatencyImpl;
 use clack_extensions::params::{
     ParamDisplayWriter, ParamInfo, ParamInfoFlags, ParamInfoWriter, PluginMainThreadParams,
@@ -19,7 +23,12 @@ use clack_plugin::prelude::*;
 use clack_plugin::stream::{InputStream, OutputStream};
 use clack_plugin::utils::Cookie;
 use raw_window_handle::HasRawWindowHandle;
-use std::io::{Read, Write};
+
+use crate::gui::{
+    MAX_HEIGHT, MAX_WIDTH, MIN_HEIGHT, MIN_WIDTH, PLUGIN_HEIGHT, PLUGIN_WIDTH, PendingResize,
+    SonidoEditor,
+};
+use crate::shared::SonidoShared;
 
 /// Main-thread state for a sonido CLAP plugin.
 ///
@@ -33,6 +42,10 @@ pub struct SonidoMainThread<'a> {
     scale: f64,
     /// Active editor window (dropped to close).
     editor: Option<SonidoEditor>,
+    /// Atomic resize channel shared with the baseview window handler.
+    ///
+    /// The host writes sizes here; the handler applies them in `on_frame()`.
+    pending_resize: Arc<PendingResize>,
 }
 
 impl<'a> SonidoMainThread<'a> {
@@ -43,6 +56,7 @@ impl<'a> SonidoMainThread<'a> {
             parent_rwh: None,
             scale: 1.0,
             editor: None,
+            pending_resize: Arc::new(PendingResize::new(PLUGIN_WIDTH, PLUGIN_HEIGHT)),
         }
     }
 }
@@ -236,14 +250,34 @@ impl PluginGuiImpl for SonidoMainThread<'_> {
     }
 
     fn get_size(&mut self) -> Option<GuiSize> {
-        Some(GuiSize {
-            width: PLUGIN_WIDTH,
-            height: PLUGIN_HEIGHT,
-        })
+        let (width, height) = self.pending_resize.get();
+        Some(GuiSize { width, height })
     }
 
     fn can_resize(&mut self) -> bool {
-        false
+        true
+    }
+
+    fn get_resize_hints(&mut self) -> Option<GuiResizeHints> {
+        Some(GuiResizeHints {
+            can_resize_horizontally: true,
+            can_resize_vertically: true,
+            strategy: AspectRatioStrategy::Disregard,
+        })
+    }
+
+    fn adjust_size(&mut self, size: GuiSize) -> Option<GuiSize> {
+        Some(GuiSize {
+            width: size.width.clamp(MIN_WIDTH, MAX_WIDTH),
+            height: size.height.clamp(MIN_HEIGHT, MAX_HEIGHT),
+        })
+    }
+
+    fn set_size(&mut self, size: GuiSize) -> Result<(), PluginError> {
+        let width = size.width.clamp(MIN_WIDTH, MAX_WIDTH);
+        let height = size.height.clamp(MIN_HEIGHT, MAX_HEIGHT);
+        self.pending_resize.set(width, height);
+        Ok(())
     }
 
     fn set_parent(&mut self, window: Window) -> Result<(), PluginError> {
@@ -252,7 +286,12 @@ impl PluginGuiImpl for SonidoMainThread<'_> {
 
         // Bitwig expects the child window to exist after set_parent.
         // Create the editor immediately rather than deferring to show().
-        self.editor = SonidoEditor::open(rwh, self.shared.clone(), self.scale);
+        self.editor = SonidoEditor::open(
+            rwh,
+            self.shared.clone(),
+            self.scale,
+            Arc::clone(&self.pending_resize),
+        );
 
         if self.editor.is_none() {
             return Err(PluginError::Message("Failed to open editor window"));
@@ -268,10 +307,6 @@ impl PluginGuiImpl for SonidoMainThread<'_> {
     fn hide(&mut self) -> Result<(), PluginError> {
         self.editor = None;
         Ok(())
-    }
-
-    fn set_size(&mut self, _size: GuiSize) -> Result<(), PluginError> {
-        Ok(()) // fixed size, reject host resize commands
     }
 
     fn set_transient(&mut self, _window: Window) -> Result<(), PluginError> {

@@ -114,11 +114,9 @@ Current known coverage state: DSP core ~100% (unit tested per module), CLI 43 un
 
 ### Plugin GUI Resize
 
-**Status:** Planned
+**Status:** Complete
 
-CLAP GUI extension supports host-negotiated resize via `clap_plugin_gui` callbacks. Current fixed 480×380 will be replaced with resizable panels, minimum size constraints, and host-driven resize events.
-
-Requires: understanding `CLAP_EXT_GUI` `can_resize`, `get_resize_hints`, `adjust_size`, `set_size` callbacks. All 19 plugins share the GUI bridge — one implementation, 19 beneficiaries.
+All 19 CLAP plugins support host-negotiated window resize via atomic `PendingResize` channel (packed `AtomicU64`). The host calls `set_size()`, the baseview handler applies it in `on_frame()` via `window.resize()`. Size constraints: 320×240 minimum, 1920×1080 maximum, 480×380 default. `can_resize()` returns true, `get_resize_hints()` reports free resize (no aspect ratio), `adjust_size()` clamps to bounds.
 
 ### Multi-Effect CLAP Plugin
 

@@ -9,6 +9,7 @@
 //! over its plugin rendering pipeline.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use baseview::WindowHandle;
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
@@ -22,13 +23,69 @@ use sonido_gui_core::{
 use crate::egui_bridge;
 use crate::shared::SonidoShared;
 
-// ── Fixed window size ──────────────────────────────────────────────────────────
+// ── Window size constants ────────────────────────────────────────────────────
 
-/// Plugin window width in logical pixels.
+/// Default plugin window width in logical pixels.
 pub const PLUGIN_WIDTH: u32 = 480;
 
-/// Plugin window height in logical pixels.
+/// Default plugin window height in logical pixels.
 pub const PLUGIN_HEIGHT: u32 = 380;
+
+/// Minimum plugin window width in logical pixels.
+pub const MIN_WIDTH: u32 = 320;
+
+/// Minimum plugin window height in logical pixels.
+pub const MIN_HEIGHT: u32 = 240;
+
+/// Maximum plugin window width in logical pixels.
+pub const MAX_WIDTH: u32 = 1920;
+
+/// Maximum plugin window height in logical pixels.
+pub const MAX_HEIGHT: u32 = 1080;
+
+// ── Atomic resize channel ────────────────────────────────────────────────────
+
+/// Lock-free resize channel between the CLAP host's main thread and baseview.
+///
+/// The host writes a new logical size via [`set`](Self::set) in response to
+/// `set_size()` calls. The baseview `WindowHandler::on_frame` reads the
+/// pending size and calls `window.resize()` if it differs from the last applied
+/// dimensions.
+///
+/// Width and height are packed into a single `AtomicU64` (width in high 32 bits,
+/// height in low 32 bits) for a single-word atomic update — no torn reads.
+pub struct PendingResize {
+    /// Packed `(width << 32) | height`.
+    packed: AtomicU64,
+}
+
+impl PendingResize {
+    /// Create a new resize channel with the given initial logical size.
+    pub fn new(width: u32, height: u32) -> Self {
+        Self {
+            packed: AtomicU64::new(Self::pack(width, height)),
+        }
+    }
+
+    /// Write a new pending logical size (host main thread → baseview handler).
+    pub fn set(&self, width: u32, height: u32) {
+        self.packed
+            .store(Self::pack(width, height), Ordering::Release);
+    }
+
+    /// Read the current logical size.
+    pub fn get(&self) -> (u32, u32) {
+        Self::unpack(self.packed.load(Ordering::Acquire))
+    }
+
+    fn pack(width: u32, height: u32) -> u64 {
+        (u64::from(width) << 32) | u64::from(height)
+    }
+
+    fn unpack(packed: u64) -> (u32, u32) {
+        ((packed >> 32) as u32, packed as u32)
+    }
+}
 
 // ── Parameter bridge ──────────────────────────────────────────────────────────
 
@@ -132,12 +189,23 @@ pub struct SonidoEditor {
 impl SonidoEditor {
     /// Opens an egui child window inside the host's parent window.
     ///
+    /// The `pending_resize` channel allows the CLAP host to resize the window
+    /// asynchronously — the host writes a new size via `set_size()`, and the
+    /// baseview handler applies it on the next `on_frame()`.
+    ///
     /// Returns `None` if no UI panel is registered for the effect's ID
     /// (should not happen for the 19 built-in effects).
-    pub fn open(parent_rwh: RawWindowHandle, shared: SonidoShared, scale: f64) -> Option<Self> {
+    pub fn open(
+        parent_rwh: RawWindowHandle,
+        shared: SonidoShared,
+        scale: f64,
+        pending_resize: Arc<PendingResize>,
+    ) -> Option<Self> {
         let effect_id = shared.effect_id().to_owned();
         let panel: Box<dyn EffectPanel + Send + Sync> = create_panel(&effect_id)?;
         let bridge = Arc::new(PluginParamBridge::new(shared));
+
+        let (width, height) = pending_resize.get();
 
         struct GuiState {
             bridge: Arc<PluginParamBridge>,
@@ -149,9 +217,10 @@ impl SonidoEditor {
         let window = egui_bridge::open_parented(
             &ParentWindow(parent_rwh),
             effect_id,
-            PLUGIN_WIDTH,
-            PLUGIN_HEIGHT,
+            width,
+            height,
             scale,
+            pending_resize,
             state,
             // build: one-time setup (fonts, theme — none needed, gui-core theme applies)
             |_ctx, _state| {},
