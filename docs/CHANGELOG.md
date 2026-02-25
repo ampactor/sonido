@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — In Progress
+
+### Added
+
+#### Structured Observability (tracing)
+- Migrated std crates (`sonido-gui`, `sonido-cli`, `sonido-io`, `sonido-plugin`) from `log` facade to `tracing` 0.1
+- Added `tracing-subscriber` with `EnvFilter` for runtime log-level control via `RUST_LOG`
+- Added `tracing-log` bridge to capture eframe/egui internal `log::` output
+- ~32 trace points at lifecycle and error boundaries (stream start/stop, chain mutations, preset load/save, errors)
+- Native: `tracing-subscriber` fmt subscriber; Wasm: `eframe::WebLogger`
+- No per-sample tracing — lifecycle/error boundaries only
+
+#### Coverage Reporting in CI
+- Added `cargo-llvm-cov` CI job generating `lcov.info` artifact per main-branch build
+- Coverage artifact uploaded for download; no threshold gate (baseline establishment only)
+- Known baseline: DSP core ~100% unit tested, CLI 43 tests, GUI-core 22 tests
+
 ## [Unreleased]
 
 ### Added — GUI Usability Improvements
