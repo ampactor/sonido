@@ -72,4 +72,4 @@ pub use buffer::{BufferPool, CompensationDelay, StereoBuffer};
 pub use edge::EdgeId;
 pub use node::{NodeId, NodeKind};
 pub use processing::{GraphError, ProcessingGraph};
-pub use schedule::{CompiledSchedule, ProcessStep};
+pub use schedule::{CompiledSchedule, MAX_SPLIT_TARGETS, ProcessStep};

@@ -3,8 +3,7 @@
 //! A [`CompiledSchedule`] is an immutable snapshot produced by
 //! [`ProcessingGraph::compile()`](super::ProcessingGraph::compile). It contains a
 //! flat list of [`ProcessStep`] instructions that the audio thread executes
-//! sequentially, plus the [`BufferPool`] and
-//! compensation delay lines needed for execution.
+//! sequentially, plus metadata about buffer requirements and latency compensation.
 //!
 //! The schedule is shared with the audio thread via `Arc` — the audio thread
 //! never sees partial state.
@@ -12,13 +11,19 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use super::buffer::{BufferPool, CompensationDelay};
+/// Maximum number of fan-out targets for a single Split node.
+///
+/// Fixed-size array eliminates the `Vec<usize>` heap allocation from `SplitCopy`,
+/// making the `ProcessStep` enum entirely stack-allocated.
+pub const MAX_SPLIT_TARGETS: usize = 8;
 
 /// A single instruction in the compiled processing schedule.
 ///
 /// Steps are executed sequentially by the audio thread. The instruction set
 /// is minimal: write external input, process an effect, copy/accumulate buffers,
 /// apply latency compensation, and read final output.
+///
+/// All variants are stack-allocated (no heap pointers) for RT-safety.
 #[derive(Debug)]
 pub enum ProcessStep {
     /// Write external audio input into a buffer slot.
@@ -41,11 +46,16 @@ pub enum ProcessStep {
     },
 
     /// Copy a source buffer to one or more destination buffers (fan-out from Split node).
+    ///
+    /// Uses a fixed-size array to avoid heap allocation. `dest_count` indicates
+    /// how many entries in `dest_bufs` are valid.
     SplitCopy {
         /// Buffer slot to copy from.
         source_buf: usize,
-        /// Buffer slots to copy into.
-        dest_bufs: Vec<usize>,
+        /// Buffer slots to copy into (first `dest_count` entries are valid).
+        dest_bufs: [usize; MAX_SPLIT_TARGETS],
+        /// Number of valid entries in `dest_bufs`.
+        dest_count: usize,
     },
 
     /// Clear a buffer to silence (used before accumulation at Merge nodes).
@@ -71,7 +81,7 @@ pub enum ProcessStep {
     DelayCompensate {
         /// Buffer slot to delay in-place.
         buffer_idx: usize,
-        /// Index into the `CompiledSchedule.delay_lines` array.
+        /// Index into the persistent `ProcessingGraph.audio_delay_lines` array.
         delay_line_idx: usize,
     },
 
@@ -86,13 +96,18 @@ pub enum ProcessStep {
 ///
 /// Shared with the audio thread via `Arc`. Never mutated after creation.
 /// The audio thread sees complete state or nothing — no partial updates.
+///
+/// Buffer pool and compensation delay lines are owned by [`ProcessingGraph`](super::ProcessingGraph)
+/// as persistent fields for RT-safe execution (zero per-block allocations).
+/// This schedule stores only the counts/sizes needed to validate or rebuild them.
 pub struct CompiledSchedule {
     /// Flat list of processing instructions, in execution order.
     pub(crate) steps: Vec<ProcessStep>,
-    /// Audio buffer pool sized by liveness analysis.
-    pub(crate) pool: BufferPool,
-    /// Compensation delay lines for latency-mismatched parallel paths.
-    pub(crate) delay_lines: Vec<CompensationDelay>,
+    /// Number of buffer slots required (determined by liveness analysis).
+    pub(crate) buffer_count: usize,
+    /// Delay sample counts for latency compensation on parallel paths.
+    /// Each entry corresponds to a `DelayCompensate` step's `delay_line_idx`.
+    pub(crate) delay_sample_counts: Vec<usize>,
     /// Total graph latency in samples (longest path from input to output).
     pub(crate) total_latency: usize,
 }
@@ -105,11 +120,16 @@ impl CompiledSchedule {
 
     /// Returns the number of buffer slots allocated.
     pub fn buffer_count(&self) -> usize {
-        self.pool.count()
+        self.buffer_count
     }
 
     /// Returns the total graph latency in samples.
     pub fn total_latency(&self) -> usize {
         self.total_latency
+    }
+
+    /// Returns the number of compensation delay lines.
+    pub fn delay_line_count(&self) -> usize {
+        self.delay_sample_counts.len()
     }
 }

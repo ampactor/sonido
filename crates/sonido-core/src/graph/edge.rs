@@ -1,9 +1,9 @@
 //! Graph edge types for the DAG routing engine.
 //!
 //! An `Edge` connects two nodes, representing audio signal flow from a source
-//! node to a destination node. During schedule compilation, each edge is assigned
-//! a buffer index from the [`BufferPool`](super::buffer::BufferPool) via liveness
-//! analysis.
+//! node to a destination node. During schedule compilation, edges are mapped to
+//! virtual buffer IDs via liveness analysis; the edge itself does not store
+//! buffer assignments.
 
 /// Unique identifier for an edge in the processing graph.
 ///
@@ -25,10 +25,4 @@ pub(crate) struct Edge {
     pub from: super::node::NodeId,
     /// Destination node.
     pub to: super::node::NodeId,
-    /// Buffer slot assigned during schedule compilation.
-    /// `None` until `compile()` is called.
-    /// Currently unused — buffer assignment uses virtual buffer IDs during compilation
-    /// rather than annotating edges directly. Reserved for future direct edge→buffer mapping.
-    #[allow(dead_code)]
-    pub buffer_idx: Option<usize>,
 }
