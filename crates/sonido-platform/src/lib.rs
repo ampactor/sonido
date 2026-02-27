@@ -55,13 +55,17 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+pub mod control_context;
 pub mod control_mapper;
+pub mod graph_mapper;
 
 // Re-export sonido-core types for convenience
 pub use sonido_core::{ParamDescriptor, ParamUnit, ParameterInfo};
 
 // Re-export main types at crate root
+pub use control_context::ControlContext;
 pub use control_mapper::ControlMapper;
+pub use graph_mapper::GraphMapper;
 
 /// Namespace identifiers for control sources.
 pub mod namespace {
