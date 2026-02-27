@@ -13,6 +13,8 @@ use alloc::vec::Vec;
 use crate::effect_with_params::EffectWithParams;
 use crate::param::SmoothedParam;
 
+use super::buffer::StereoBuffer;
+
 /// Unique identifier for a node in the processing graph.
 ///
 /// Node IDs are assigned sequentially and never reused within a graph instance.
@@ -61,7 +63,12 @@ pub(crate) struct NodeData {
     /// Per-node bypass state (only meaningful for Effect nodes).
     pub bypassed: bool,
     /// Crossfade envelope for click-free bypass toggling.
+    /// 1.0 = wet (active), 0.0 = dry (bypassed).
     pub bypass_fade: SmoothedParam,
+    /// Pre-allocated buffer to save the dry (input) signal before effect processing.
+    /// Used during bypass crossfade so the dry signal is available even when
+    /// `input_buf == output_buf` (in-place processing).
+    pub bypass_buf: StereoBuffer,
 }
 
 impl NodeData {
@@ -76,6 +83,7 @@ impl NodeData {
             outgoing: Vec::new(),
             bypassed: false,
             bypass_fade,
+            bypass_buf: StereoBuffer::new(0),
         }
     }
 }

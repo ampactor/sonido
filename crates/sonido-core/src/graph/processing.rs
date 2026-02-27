@@ -6,8 +6,8 @@
 //! executes that schedule per audio block.
 //!
 //! The graph is mutated on the main/GUI thread and compiled into an immutable
-//! snapshot that the audio thread executes. Schedule swaps use a 5ms crossfade
-//! for click-free transitions.
+//! snapshot that the audio thread executes. Schedule swaps use a ~5ms crossfade
+//! of cached output for click-free transitions — no double-execution of effects.
 
 #[cfg(not(feature = "std"))]
 use alloc::{boxed::Box, format, string::String, sync::Arc, vec, vec::Vec};
@@ -16,13 +16,14 @@ use std::sync::Arc;
 
 use crate::effect::Effect;
 use crate::effect_with_params::EffectWithParams;
+use crate::math::wet_dry_mix;
 use crate::param::SmoothedParam;
 use crate::tempo::TempoContext;
 
 use super::buffer::{BufferPool, CompensationDelay};
 use super::edge::{Edge, EdgeId};
 use super::node::{NodeData, NodeId, NodeKind};
-use super::schedule::{CompiledSchedule, ProcessStep};
+use super::schedule::{CompiledSchedule, MAX_SPLIT_TARGETS, ProcessStep};
 
 /// Errors that can occur during graph operations.
 #[derive(Debug)]
@@ -103,20 +104,14 @@ pub struct ProcessingGraph {
     swap_fade: SmoothedParam,
     /// Previous schedule, kept alive during crossfade.
     prev_compiled: Option<Arc<CompiledSchedule>>,
-    /// Snapshot of node data for the previous schedule's crossfade execution.
-    prev_nodes_snapshot: Vec<Option<BypassState>>,
     /// Pre-allocated crossfade buffers for RT-safe schedule transitions.
-    /// Sized to `block_size` at compile time; avoids heap allocation on the audio thread.
+    /// Cache the last output before a schedule swap; blended toward new output.
     crossfade_left: Vec<f32>,
     crossfade_right: Vec<f32>,
-}
-
-/// Minimal snapshot of bypass state for crossfade execution against the previous schedule.
-/// Fields are reserved for future per-node bypass handling during schedule crossfade.
-#[allow(dead_code)]
-struct BypassState {
-    bypassed: bool,
-    fade_value: f32,
+    /// Pre-allocated audio buffer pool. Sized at compile(), reused every block.
+    audio_pool: BufferPool,
+    /// Persistent compensation delay lines. Rebuilt at compile(), state persists across blocks.
+    audio_delay_lines: Vec<CompensationDelay>,
 }
 
 impl ProcessingGraph {
@@ -139,9 +134,10 @@ impl ProcessingGraph {
             next_edge_slot: 0,
             swap_fade,
             prev_compiled: None,
-            prev_nodes_snapshot: Vec::new(),
             crossfade_left: vec![0.0; block_size],
             crossfade_right: vec![0.0; block_size],
+            audio_pool: BufferPool::new(0, block_size),
+            audio_delay_lines: Vec::new(),
         }
     }
 
@@ -166,7 +162,12 @@ impl ProcessingGraph {
     /// The effect's sample rate is set to the graph's sample rate.
     pub fn add_effect(&mut self, mut effect: Box<dyn EffectWithParams + Send>) -> NodeId {
         effect.set_sample_rate(self.sample_rate);
-        self.add_node(NodeKind::Effect(effect))
+        let id = self.add_node(NodeKind::Effect(effect));
+        // Pre-allocate bypass buffer for this node.
+        if let Some(Some(node)) = self.nodes.get_mut(id.0 as usize) {
+            node.bypass_buf.resize(self.block_size);
+        }
+        id
     }
 
     /// Adds a split (fan-out) node. Returns the new node's ID.
@@ -239,11 +240,7 @@ impl ProcessingGraph {
         let edge_id = EdgeId(self.next_edge_slot);
         self.next_edge_slot += 1;
 
-        let edge = Edge {
-            from,
-            to,
-            buffer_idx: None,
-        };
+        let edge = Edge { from, to };
 
         let edge_idx = edge_id.0 as usize;
         if edge_idx >= self.edges.len() {
@@ -407,6 +404,9 @@ impl ProcessingGraph {
     /// and latency compensation. The resulting schedule is an immutable snapshot
     /// that can be executed by the audio thread.
     ///
+    /// Also sizes the persistent [`BufferPool`] and [`CompensationDelay`] lines
+    /// for zero-allocation audio processing.
+    ///
     /// If a previous schedule exists, sets up a crossfade for click-free
     /// transition (~5ms via [`SmoothedParam`]).
     ///
@@ -442,36 +442,36 @@ impl ProcessingGraph {
             Self::assign_buffers(raw_steps, &edge_first_write, &edge_last_read);
 
         // Latency compensation.
-        let (final_steps, delay_lines, total_latency) =
+        let (final_steps, delay_sample_counts, total_latency) =
             self.compute_latency_compensation(steps, &sorted);
 
-        // Build the compiled schedule.
-        let pool = BufferPool::new(buffer_count, self.block_size);
+        // Build the compiled schedule (lightweight — no pool or delay lines).
         let schedule = Arc::new(CompiledSchedule {
             steps: final_steps,
-            pool,
-            delay_lines,
+            buffer_count,
+            delay_sample_counts: delay_sample_counts.clone(),
             total_latency,
         });
 
-        // Ensure crossfade buffers match current block size (RT-safe: allocated here,
-        // not on the audio thread).
+        // Pre-allocate audio pool for RT-safe execution.
+        if self.audio_pool.count() < buffer_count {
+            self.audio_pool = BufferPool::new(buffer_count, self.block_size);
+        } else {
+            self.audio_pool.resize_all(self.block_size);
+        }
+
+        // Build persistent delay lines (state persists across blocks).
+        self.audio_delay_lines = delay_sample_counts
+            .into_iter()
+            .map(CompensationDelay::new)
+            .collect();
+
+        // Ensure crossfade buffers match current block size.
         self.crossfade_left.resize(self.block_size, 0.0);
         self.crossfade_right.resize(self.block_size, 0.0);
 
         // Click-free swap: keep old schedule for crossfade.
         if self.compiled.is_some() {
-            // Snapshot bypass state for crossfade execution against old schedule.
-            self.prev_nodes_snapshot = self
-                .nodes
-                .iter()
-                .map(|n| {
-                    n.as_ref().map(|nd| BypassState {
-                        bypassed: nd.bypassed,
-                        fade_value: nd.bypass_fade.get(),
-                    })
-                })
-                .collect();
             self.prev_compiled = self.compiled.take();
             self.swap_fade = SmoothedParam::fast(0.0, self.sample_rate);
             self.swap_fade.set_target(1.0);
@@ -635,6 +635,12 @@ impl ProcessingGraph {
                     if let Some(iv) = in_vbuf
                         && !out_vbufs.is_empty()
                     {
+                        debug_assert!(
+                            out_vbufs.len() <= MAX_SPLIT_TARGETS,
+                            "split fan-out {} exceeds MAX_SPLIT_TARGETS {}",
+                            out_vbufs.len(),
+                            MAX_SPLIT_TARGETS
+                        );
                         steps.push(RawStep::SplitCopy {
                             source_vbuf: iv,
                             dest_vbufs: out_vbufs.clone(),
@@ -773,13 +779,18 @@ impl ProcessingGraph {
                 RawStep::SplitCopy {
                     source_vbuf,
                     dest_vbufs,
-                } => ProcessStep::SplitCopy {
-                    source_buf: vbuf_to_phys[source_vbuf].unwrap_or(0),
-                    dest_bufs: dest_vbufs
-                        .into_iter()
-                        .map(|v| vbuf_to_phys[v].unwrap_or(0))
-                        .collect(),
-                },
+                } => {
+                    let mut dest_arr = [0usize; MAX_SPLIT_TARGETS];
+                    let count = dest_vbufs.len().min(MAX_SPLIT_TARGETS);
+                    for (i, v) in dest_vbufs.into_iter().enumerate().take(count) {
+                        dest_arr[i] = vbuf_to_phys[v].unwrap_or(0);
+                    }
+                    ProcessStep::SplitCopy {
+                        source_buf: vbuf_to_phys[source_vbuf].unwrap_or(0),
+                        dest_bufs: dest_arr,
+                        dest_count: count,
+                    }
+                }
                 RawStep::ClearBuffer { vbuf } => ProcessStep::ClearBuffer {
                     buffer_idx: vbuf_to_phys[vbuf].unwrap_or(0),
                 },
@@ -805,11 +816,14 @@ impl ProcessingGraph {
     ///
     /// For each Merge node, finds the longest-latency incoming path and inserts
     /// `DelayCompensate` steps for shorter paths to align timing.
+    ///
+    /// Returns the final steps, delay sample counts (for building persistent
+    /// `CompensationDelay` lines), and total graph latency.
     fn compute_latency_compensation(
         &self,
         mut steps: Vec<ProcessStep>,
         sorted: &[usize],
-    ) -> (Vec<ProcessStep>, Vec<CompensationDelay>, usize) {
+    ) -> (Vec<ProcessStep>, Vec<usize>, usize) {
         // Compute cumulative latency to each node (longest path from Input).
         let n = self.nodes.len();
         let mut node_latency = vec![0usize; n];
@@ -839,7 +853,7 @@ impl ProcessingGraph {
         }
 
         // Find Merge nodes and check if their incoming paths have different latencies.
-        let mut delay_lines: Vec<CompensationDelay> = Vec::new();
+        let mut delay_sample_counts: Vec<usize> = Vec::new();
         let mut insert_ops: Vec<(usize, ProcessStep)> = Vec::new();
 
         for &node_idx in sorted {
@@ -887,14 +901,8 @@ impl ProcessingGraph {
                                 dest_buf: _,
                             } = step
                             {
-                                // We need to match this to the right incoming edge.
-                                // This is a simplification — in a full impl we'd track
-                                // edge→buffer mapping more precisely. For now, we check
-                                // if this accumulate corresponds to our from_idx.
-                                // The buffer index for each edge is determined by the
-                                // process step that writes to it.
-                                let delay_line_idx = delay_lines.len();
-                                delay_lines.push(CompensationDelay::new(delay));
+                                let delay_line_idx = delay_sample_counts.len();
+                                delay_sample_counts.push(delay);
                                 insert_ops.push((
                                     step_i,
                                     ProcessStep::DelayCompensate {
@@ -928,15 +936,16 @@ impl ProcessingGraph {
             .max()
             .unwrap_or(0);
 
-        (steps, delay_lines, total_latency)
+        (steps, delay_sample_counts, total_latency)
     }
 
     // --- Audio execution (Phase 3) ---
 
     /// Processes one block of stereo audio through the compiled graph.
     ///
-    /// If the graph was recently recompiled, crossfades between old and new
-    /// schedules over ~5ms for a click-free transition.
+    /// If the graph was recently recompiled, crossfades from cached previous
+    /// output toward the new schedule's output over ~5ms. Only the new schedule
+    /// executes — no double-processing of effects.
     ///
     /// # Panics
     ///
@@ -962,56 +971,38 @@ impl ProcessingGraph {
 
         let is_crossfading = !self.swap_fade.is_settled();
 
-        if is_crossfading && let Some(prev) = &self.prev_compiled {
-            let prev = prev.clone();
-            // Execute old schedule into pre-allocated crossfade buffers (RT-safe).
-            // Uses disjoint field borrows: nodes + crossfade buffers are separate fields.
-            self.crossfade_left[..len].fill(0.0);
-            self.crossfade_right[..len].fill(0.0);
-            Self::run_schedule(
-                &mut self.nodes,
-                &prev,
-                left_in,
-                right_in,
-                &mut self.crossfade_left[..len],
-                &mut self.crossfade_right[..len],
-            );
-
-            // Execute new schedule.
-            Self::run_schedule(
-                &mut self.nodes,
-                &schedule,
-                left_in,
-                right_in,
-                left_out,
-                right_out,
-            );
-
-            // Crossfade sample-by-sample.
-            for i in 0..len {
-                let fade = self.swap_fade.advance();
-                left_out[i] = self.crossfade_left[i] * (1.0 - fade) + left_out[i] * fade;
-                right_out[i] = self.crossfade_right[i] * (1.0 - fade) + right_out[i] * fade;
-            }
-
-            // If crossfade is done, drop the old schedule.
-            if self.swap_fade.is_settled() {
-                self.prev_compiled = None;
-                self.prev_nodes_snapshot.clear();
-            }
-
-            return;
-        }
-
-        // Normal (non-crossfading) execution.
+        // Execute the current schedule (always — even during crossfade, only the new one runs).
         Self::run_schedule(
             &mut self.nodes,
             &schedule,
+            &mut self.audio_pool,
+            &mut self.audio_delay_lines,
             left_in,
             right_in,
             left_out,
             right_out,
         );
+
+        if is_crossfading {
+            // Blend from cached previous output toward new output.
+            for i in 0..len {
+                let fade = self.swap_fade.advance();
+                left_out[i] = self.crossfade_left.get(i).copied().unwrap_or(0.0) * (1.0 - fade)
+                    + left_out[i] * fade;
+                right_out[i] = self.crossfade_right.get(i).copied().unwrap_or(0.0) * (1.0 - fade)
+                    + right_out[i] * fade;
+            }
+
+            // If crossfade is done, drop the old schedule reference.
+            if self.swap_fade.is_settled() {
+                self.prev_compiled = None;
+            }
+        }
+
+        // Cache output for potential future crossfade.
+        let cache_len = len.min(self.crossfade_left.len());
+        self.crossfade_left[..cache_len].copy_from_slice(&left_out[..cache_len]);
+        self.crossfade_right[..cache_len].copy_from_slice(&right_out[..cache_len]);
     }
 
     /// Executes a compiled schedule against the given node state.
@@ -1020,34 +1011,21 @@ impl ProcessingGraph {
     /// `&mut self.nodes` alongside other `self` fields (e.g., crossfade buffers)
     /// without conflicting with the borrow checker.
     ///
-    /// **RT-safety**: No heap allocations in the step execution loop. The local
-    /// `BufferPool` and `delay_lines` are still allocated per call (future work:
-    /// pre-allocate these in `ProcessingGraph` as well). All split-borrow
-    /// workarounds use `BufferPool::get_ref_and_mut` instead of temporary `Vec`s.
+    /// **RT-safety**: Zero heap allocations. Pool and delay lines are persistent
+    /// fields passed in by reference. All split-borrow workarounds use
+    /// `BufferPool::get_ref_and_mut` instead of temporary `Vec`s.
+    #[allow(clippy::too_many_arguments)]
     fn run_schedule(
         nodes: &mut [Option<NodeData>],
         schedule: &CompiledSchedule,
+        pool: &mut BufferPool,
+        delay_lines: &mut [CompensationDelay],
         left_in: &[f32],
         right_in: &[f32],
         left_out: &mut [f32],
         right_out: &mut [f32],
     ) {
         let len = left_in.len();
-
-        // We need mutable access to the pool inside the Arc<CompiledSchedule>.
-        // Since we only process on one thread at a time, we use a local pool copy.
-        // TODO: pre-allocate pool in ProcessingGraph to eliminate this per-block allocation.
-        let buf_count = schedule.pool.count();
-        let mut pool = BufferPool::new(buf_count, len);
-
-        // Similarly for delay lines.
-        // TODO: pre-allocate delay lines in ProcessingGraph for full RT-safety.
-        let mut delay_lines: Vec<CompensationDelay> = schedule
-            .delay_lines
-            .iter()
-            .map(|dl| CompensationDelay::new(dl.delay_samples()))
-            .collect();
-
         pool.clear_all();
 
         for step in &schedule.steps {
@@ -1063,50 +1041,45 @@ impl ProcessingGraph {
                     input_buf,
                     output_buf,
                 } => {
-                    if let Some(Some(node)) = nodes.get_mut(*node_idx)
-                        && let NodeKind::Effect(ref mut effect) = node.kind
-                    {
-                        if *input_buf == *output_buf {
-                            // In-place processing.
-                            let buf = pool.get_mut(*input_buf);
-                            effect.process_block_stereo_inplace(
-                                &mut buf.left[..len],
-                                &mut buf.right[..len],
-                            );
-                        } else {
-                            // Separate input/output: split borrow via get_ref_and_mut (RT-safe).
-                            let (inp, out) = pool.get_ref_and_mut(*input_buf, *output_buf);
-                            effect.process_block_stereo(
-                                &inp.left[..len],
-                                &inp.right[..len],
-                                &mut out.left[..len],
-                                &mut out.right[..len],
-                            );
+                    if let Some(Some(node)) = nodes.get_mut(*node_idx) {
+                        let bypass_active = node.bypassed || !node.bypass_fade.is_settled();
+
+                        // Phase 1: Save dry signal before effect processing.
+                        if bypass_active {
+                            let src = pool.get(*input_buf);
+                            node.bypass_buf.left[..len].copy_from_slice(&src.left[..len]);
+                            node.bypass_buf.right[..len].copy_from_slice(&src.right[..len]);
                         }
 
-                        // Apply bypass crossfade if needed.
-                        if node.bypassed || !node.bypass_fade.is_settled() {
-                            let in_buf_idx = *input_buf;
-                            let out_buf_idx = *output_buf;
-
-                            // We need the dry signal. If input==output, we lost it.
-                            // For bypass to work correctly with separate bufs,
-                            // we fade between input (dry) and output (wet).
-                            if in_buf_idx != out_buf_idx {
-                                let out = pool.get_mut(out_buf_idx);
-                                for i in 0..len {
-                                    let fade = node.bypass_fade.advance();
-                                    // fade=1.0 → wet (processed), fade=0.0 → dry (input)
-                                    // We'd need the dry signal here; for now,
-                                    // simple bypass just uses the fade.
-                                    out.left[i] *= fade;
-                                    out.right[i] *= fade;
-                                }
+                        // Phase 2: Process through effect (always — keeps state warm).
+                        if let NodeKind::Effect(ref mut effect) = node.kind {
+                            if *input_buf == *output_buf {
+                                let buf = pool.get_mut(*input_buf);
+                                effect.process_block_stereo_inplace(
+                                    &mut buf.left[..len],
+                                    &mut buf.right[..len],
+                                );
                             } else {
-                                // Advance the bypass fade even if we can't apply it.
-                                for _ in 0..len {
-                                    node.bypass_fade.advance();
-                                }
+                                let (inp, out) = pool.get_ref_and_mut(*input_buf, *output_buf);
+                                effect.process_block_stereo(
+                                    &inp.left[..len],
+                                    &inp.right[..len],
+                                    &mut out.left[..len],
+                                    &mut out.right[..len],
+                                );
+                            }
+                        }
+
+                        // Phase 3: Crossfade between dry (bypass_buf) and wet (output).
+                        if bypass_active {
+                            let out = pool.get_mut(*output_buf);
+                            for i in 0..len {
+                                let fade = node.bypass_fade.advance();
+                                // fade=1.0 → wet (active), fade=0.0 → dry (bypassed)
+                                out.left[i] =
+                                    wet_dry_mix(node.bypass_buf.left[i], out.left[i], fade);
+                                out.right[i] =
+                                    wet_dry_mix(node.bypass_buf.right[i], out.right[i], fade);
                             }
                         }
                     }
@@ -1115,9 +1088,9 @@ impl ProcessingGraph {
                 ProcessStep::SplitCopy {
                     source_buf,
                     dest_bufs,
+                    dest_count,
                 } => {
-                    // Copy source to each destination via split borrow (RT-safe).
-                    for &dest in dest_bufs {
+                    for &dest in &dest_bufs[..*dest_count] {
                         if dest != *source_buf {
                             let (src, dst) = pool.get_ref_and_mut(*source_buf, dest);
                             dst.left[..len].copy_from_slice(&src.left[..len]);
@@ -1135,7 +1108,6 @@ impl ProcessingGraph {
                     dest_buf,
                 } => {
                     if source_buf != dest_buf {
-                        // Split borrow via get_ref_and_mut (RT-safe).
                         let (src, dst) = pool.get_ref_and_mut(*source_buf, *dest_buf);
                         for i in 0..len {
                             dst.left[i] += src.left[i];
@@ -1179,11 +1151,15 @@ impl ProcessingGraph {
 
     /// Sets the block size. Requires recompilation.
     ///
-    /// Also resizes pre-allocated crossfade buffers to match the new block size.
+    /// Also resizes pre-allocated buffers to match the new block size.
     pub fn set_block_size(&mut self, block_size: usize) {
         self.block_size = block_size;
         self.crossfade_left.resize(block_size, 0.0);
         self.crossfade_right.resize(block_size, 0.0);
+        self.audio_pool.resize_all(block_size);
+        for node in self.nodes.iter_mut().flatten() {
+            node.bypass_buf.resize(block_size);
+        }
     }
 
     /// Resets all effect nodes and clears delay lines.
@@ -1196,7 +1172,9 @@ impl ProcessingGraph {
         }
         self.swap_fade.snap_to_target();
         self.prev_compiled = None;
-        self.prev_nodes_snapshot.clear();
+        for dl in &mut self.audio_delay_lines {
+            dl.clear();
+        }
     }
 
     /// Broadcasts a tempo context to all effect nodes.
@@ -1339,9 +1317,6 @@ impl ProcessingGraph {
             )));
         }
 
-        // Input node: allow multiple outgoing only via Split.
-        // (In practice, Input usually connects to one node or a Split.)
-
         // Split: exactly 1 incoming.
         if matches!(to_node.kind, NodeKind::Split) && !to_node.incoming.is_empty() {
             return Err(GraphError::InvalidConnection(format!(
@@ -1442,6 +1417,7 @@ enum RawStep {
 mod tests {
     use super::*;
     use crate::param_info::{ParamDescriptor, ParameterInfo};
+    use core::sync::atomic::{AtomicUsize, Ordering};
 
     // Simple test effect that multiplies by a factor.
     struct Gain {
@@ -1497,6 +1473,43 @@ mod tests {
             0.0
         }
         fn set_param(&mut self, _index: usize, _value: f32) {}
+    }
+
+    /// Effect that counts how many blocks it has processed (via stereo path).
+    struct CountingEffect {
+        counter: &'static AtomicUsize,
+    }
+
+    impl Effect for CountingEffect {
+        fn process(&mut self, input: f32) -> f32 {
+            input
+        }
+        fn process_block_stereo(
+            &mut self,
+            left_in: &[f32],
+            right_in: &[f32],
+            left_out: &mut [f32],
+            right_out: &mut [f32],
+        ) {
+            self.counter.fetch_add(1, Ordering::SeqCst);
+            left_out[..left_in.len()].copy_from_slice(left_in);
+            right_out[..right_in.len()].copy_from_slice(right_in);
+        }
+        fn set_sample_rate(&mut self, _: f32) {}
+        fn reset(&mut self) {}
+    }
+
+    impl ParameterInfo for CountingEffect {
+        fn param_count(&self) -> usize {
+            0
+        }
+        fn param_info(&self, _: usize) -> Option<ParamDescriptor> {
+            None
+        }
+        fn get_param(&self, _: usize) -> f32 {
+            0.0
+        }
+        fn set_param(&mut self, _: usize, _: f32) {}
     }
 
     // --- Phase 1: Mutation tests ---
@@ -1663,22 +1676,6 @@ mod tests {
 
     #[test]
     fn test_effect_node_rejects_second_incoming() {
-        let mut graph = ProcessingGraph::new(48000.0, 256);
-        let a = graph.add_input();
-        let b = graph.add_split();
-        let c = graph.add_effect(Box::new(Gain { factor: 1.0 }));
-
-        graph.connect(a, b).unwrap();
-        graph.connect(b, c).unwrap();
-
-        // Second incoming to Effect should fail.
-        let d = graph.add_split();
-        graph.connect(a, d).ok(); // may fail due to Input constraint, that's fine
-        // Create a merge that feeds into c — should fail because c already has incoming.
-        // Instead test directly:
-        let _e = graph.add_effect(Box::new(Gain { factor: 1.0 }));
-        // _e already has no incoming, connect b→_e should work... but b already has outgoing to c.
-        // Let's test more directly:
         let mut graph2 = ProcessingGraph::new(48000.0, 256);
         let s1 = graph2.add_split();
         let s2 = graph2.add_split();
@@ -1729,7 +1726,6 @@ mod tests {
         graph.connect(effect, output).unwrap();
 
         let schedule = graph.compile().unwrap();
-        // 2 edges → need at least 2 vbufs, but liveness may reuse → at least 2.
         assert!(schedule.buffer_count() >= 1);
     }
 
@@ -1763,7 +1759,6 @@ mod tests {
         graph.connect(merge, output).unwrap();
 
         let schedule = graph.compile().unwrap();
-        // Diamond: 6 edges, but liveness analysis should yield ~3-4 buffers.
         assert!(schedule.buffer_count() <= 5);
     }
 
@@ -1819,7 +1814,6 @@ mod tests {
 
         graph.process_block(&left_in, &right_in, &mut left_out, &mut right_out);
 
-        // 1.0 * 2.0 * 3.0 = 6.0
         assert_eq!(left_out, [6.0, 3.0, 1.5, 0.75]);
     }
 
@@ -1848,10 +1842,6 @@ mod tests {
 
         graph.process_block(&left_in, &right_in, &mut left_out, &mut right_out);
 
-        // Split sends 1.0 to both paths.
-        // Path A: 1.0 * 2.0 = 2.0
-        // Path B: 1.0 * 3.0 = 3.0
-        // Merge sums: 2.0 + 3.0 = 5.0
         for &s in &left_out {
             assert!((s - 5.0).abs() < 1e-6, "expected 5.0, got {s}");
         }
@@ -1871,7 +1861,6 @@ mod tests {
 
         graph.process_block(&left_in, &right_in, &mut left_out, &mut right_out);
 
-        // 20 gain-1.0 effects = passthrough.
         for &s in &left_out {
             assert!((s - 0.5).abs() < 1e-6);
         }
@@ -1952,8 +1941,194 @@ mod tests {
         let effect_id = graph.add_effect(Box::new(Gain { factor: 2.0 }));
 
         let effect = graph.effect_mut(effect_id).unwrap();
-        // Can call Effect methods on it.
         let output = effect.process(1.0);
         assert_eq!(output, 2.0);
+    }
+
+    // --- New correctness tests ---
+
+    #[test]
+    fn test_bypass_outputs_dry_signal() {
+        // Gain(2.0) with bypass should output dry (input), not silence.
+        let effects: Vec<Box<dyn EffectWithParams + Send>> = vec![Box::new(Gain { factor: 2.0 })];
+        let mut graph = ProcessingGraph::linear(effects, 48000.0, 64).unwrap();
+
+        // Get the effect node ID (it's the second node: input=0, effect=1, output=2).
+        let effect_id = NodeId(1);
+
+        // Bypass the effect and snap the fade to 0.0 immediately.
+        graph.set_bypass(effect_id, true);
+        if let Some(Some(node)) = graph.nodes.get_mut(1) {
+            node.bypass_fade.snap_to_target();
+        }
+
+        let left_in = vec![0.5; 64];
+        let right_in = vec![0.25; 64];
+        let mut left_out = vec![0.0; 64];
+        let mut right_out = vec![0.0; 64];
+
+        graph.process_block(&left_in, &right_in, &mut left_out, &mut right_out);
+
+        // Should output dry signal (0.5), NOT silence (0.0) or wet (1.0).
+        for (i, &s) in left_out.iter().enumerate() {
+            assert!(
+                (s - 0.5).abs() < 1e-6,
+                "bypass left[{i}]: expected 0.5 (dry), got {s}"
+            );
+        }
+        for (i, &s) in right_out.iter().enumerate() {
+            assert!(
+                (s - 0.25).abs() < 1e-6,
+                "bypass right[{i}]: expected 0.25 (dry), got {s}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_bypass_crossfade_smooth() {
+        // Toggle bypass mid-stream. Verify no discontinuities (all values bounded).
+        let effects: Vec<Box<dyn EffectWithParams + Send>> = vec![Box::new(Gain { factor: 2.0 })];
+        let mut graph = ProcessingGraph::linear(effects, 48000.0, 64).unwrap();
+
+        let effect_id = NodeId(1);
+        let left_in = vec![1.0; 64];
+        let right_in = vec![1.0; 64];
+        let mut left_out = vec![0.0; 64];
+        let mut right_out = vec![0.0; 64];
+
+        // Process a block normally (output = 2.0).
+        graph.process_block(&left_in, &right_in, &mut left_out, &mut right_out);
+
+        // Toggle bypass — fade starts.
+        graph.set_bypass(effect_id, true);
+
+        // Process multiple blocks during crossfade.
+        for _ in 0..20 {
+            graph.process_block(&left_in, &right_in, &mut left_out, &mut right_out);
+
+            // All values should be between dry (1.0) and wet (2.0).
+            for &s in &left_out {
+                assert!(
+                    (0.99..=2.01).contains(&s),
+                    "bypass crossfade out of range: {s}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_schedule_swap_single_execution() {
+        // Verify that during crossfade, effects are executed only once per block.
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+        let effects: Vec<Box<dyn EffectWithParams + Send>> =
+            vec![Box::new(CountingEffect { counter: &COUNTER })];
+        let mut graph = ProcessingGraph::linear(effects, 48000.0, 64).unwrap();
+
+        let left_in = vec![1.0; 64];
+        let right_in = vec![1.0; 64];
+        let mut left_out = vec![0.0; 64];
+        let mut right_out = vec![0.0; 64];
+
+        // Baseline block.
+        COUNTER.store(0, Ordering::SeqCst);
+        graph.process_block(&left_in, &right_in, &mut left_out, &mut right_out);
+        let baseline = COUNTER.load(Ordering::SeqCst);
+        assert!(baseline > 0, "effect should have processed");
+
+        // Recompile to trigger crossfade.
+        graph.compile().unwrap();
+
+        // Process during crossfade — should still only call effect once.
+        COUNTER.store(0, Ordering::SeqCst);
+        graph.process_block(&left_in, &right_in, &mut left_out, &mut right_out);
+        let during_crossfade = COUNTER.load(Ordering::SeqCst);
+        assert_eq!(
+            during_crossfade, baseline,
+            "effect should be called exactly once during crossfade, \
+             got {during_crossfade} (baseline {baseline})"
+        );
+    }
+
+    #[test]
+    fn test_delay_compensation_persists() {
+        // Build diamond with latency mismatch. Process multiple blocks.
+        // Delay compensation should work across blocks (state persists).
+        let mut graph = ProcessingGraph::new(48000.0, 4);
+        let input = graph.add_input();
+        let split = graph.add_split();
+        let a = graph.add_effect(Box::new(LatentGain {
+            factor: 1.0,
+            latency: 4,
+        }));
+        let b = graph.add_effect(Box::new(Gain { factor: 1.0 })); // 0 latency
+        let merge = graph.add_merge();
+        let output = graph.add_output();
+
+        graph.connect(input, split).unwrap();
+        graph.connect(split, a).unwrap();
+        graph.connect(split, b).unwrap();
+        graph.connect(a, merge).unwrap();
+        graph.connect(b, merge).unwrap();
+        graph.connect(merge, output).unwrap();
+        graph.compile().unwrap();
+
+        assert_eq!(graph.latency_samples(), 4);
+
+        // Process multiple blocks — delay line should accumulate state.
+        let mut left_out = [0.0; 4];
+        let mut right_out = [0.0; 4];
+
+        // Block 1: impulse
+        let left_in = [1.0, 0.0, 0.0, 0.0];
+        graph.process_block(&left_in, &left_in, &mut left_out, &mut right_out);
+
+        // Block 2: silence — but delay should produce the delayed impulse.
+        let silence = [0.0; 4];
+        graph.process_block(&silence, &silence, &mut left_out, &mut right_out);
+
+        // The delayed path (b) should have output the impulse shifted by 4 samples.
+        // At least some samples in block 2 should be non-zero from the delayed signal.
+        let block2_sum: f32 = left_out.iter().sum();
+        assert!(
+            block2_sum.abs() > 0.01,
+            "delay compensation should produce delayed signal in block 2, got sum={block2_sum}"
+        );
+    }
+
+    #[test]
+    fn test_split_max_fanout() {
+        // Split to MAX_SPLIT_TARGETS destinations, verify all receive signal.
+        let mut graph = ProcessingGraph::new(48000.0, 4);
+        let input = graph.add_input();
+        let split = graph.add_split();
+        graph.connect(input, split).unwrap();
+
+        let merge = graph.add_merge();
+        let output = graph.add_output();
+
+        for _ in 0..MAX_SPLIT_TARGETS {
+            let effect = graph.add_effect(Box::new(Gain { factor: 1.0 }));
+            graph.connect(split, effect).unwrap();
+            graph.connect(effect, merge).unwrap();
+        }
+        graph.connect(merge, output).unwrap();
+        graph.compile().unwrap();
+
+        let left_in = [1.0; 4];
+        let right_in = [1.0; 4];
+        let mut left_out = [0.0; 4];
+        let mut right_out = [0.0; 4];
+
+        graph.process_block(&left_in, &right_in, &mut left_out, &mut right_out);
+
+        // All 8 paths sum: 1.0 * 8 = 8.0
+        for &s in &left_out {
+            assert!(
+                (s - MAX_SPLIT_TARGETS as f32).abs() < 1e-6,
+                "expected {}, got {s}",
+                MAX_SPLIT_TARGETS
+            );
+        }
     }
 }

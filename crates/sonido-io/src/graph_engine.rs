@@ -41,6 +41,10 @@ pub struct GraphEngine {
     input_node: NodeId,
     /// The Output node (always present).
     output_node: NodeId,
+    /// Pre-allocated scratch buffer (left channel) for in-place processing.
+    scratch_left: Vec<f32>,
+    /// Pre-allocated scratch buffer (right channel) for in-place processing.
+    scratch_right: Vec<f32>,
 }
 
 impl GraphEngine {
@@ -59,6 +63,8 @@ impl GraphEngine {
             chain_order: Vec::new(),
             input_node,
             output_node,
+            scratch_left: vec![0.0; block_size],
+            scratch_right: vec![0.0; block_size],
         }
     }
 
@@ -70,11 +76,14 @@ impl GraphEngine {
     /// are properly set. Prefer [`new_linear()`](Self::new_linear) or
     /// [`from_chain()`](Self::from_chain) for linear chains.
     pub fn new(graph: ProcessingGraph) -> Self {
+        let block_size = graph.block_size();
         Self {
             graph,
             chain_order: Vec::new(),
             input_node: NodeId::sentinel(),
             output_node: NodeId::sentinel(),
+            scratch_left: vec![0.0; block_size],
+            scratch_right: vec![0.0; block_size],
         }
     }
 
@@ -109,6 +118,8 @@ impl GraphEngine {
             chain_order,
             input_node,
             output_node,
+            scratch_left: vec![0.0; block_size],
+            scratch_right: vec![0.0; block_size],
         })
     }
 
@@ -309,27 +320,42 @@ impl GraphEngine {
     pub fn process_block(&mut self, input: &[f32], output: &mut [f32]) {
         let len = input.len();
         debug_assert!(output.len() >= len);
-        let mut right_out = vec![0.0; len];
-        self.graph
-            .process_block(input, input, &mut output[..len], &mut right_out);
+        self.scratch_right.resize(len, 0.0);
+        self.graph.process_block(
+            input,
+            input,
+            &mut output[..len],
+            &mut self.scratch_right[..len],
+        );
     }
 
     /// Processes a block of mono audio in-place.
     pub fn process_block_inplace(&mut self, buffer: &mut [f32]) {
         let len = buffer.len();
-        let input_copy: Vec<f32> = buffer.to_vec();
-        let mut right_out = vec![0.0; len];
-        self.graph
-            .process_block(&input_copy, &input_copy, buffer, &mut right_out);
+        self.scratch_left.resize(len, 0.0);
+        self.scratch_right.resize(len, 0.0);
+        self.scratch_left[..len].copy_from_slice(&buffer[..len]);
+        self.graph.process_block(
+            &self.scratch_left[..len],
+            &self.scratch_left[..len],
+            buffer,
+            &mut self.scratch_right[..len],
+        );
     }
 
     /// Processes a block of stereo audio in-place.
     pub fn process_block_stereo_inplace(&mut self, left: &mut [f32], right: &mut [f32]) {
         let len = left.len();
-        let left_in: Vec<f32> = left.to_vec();
-        let right_in: Vec<f32> = right.to_vec();
-        self.graph
-            .process_block(&left_in, &right_in, &mut left[..len], &mut right[..len]);
+        self.scratch_left.resize(len, 0.0);
+        self.scratch_right.resize(len, 0.0);
+        self.scratch_left[..len].copy_from_slice(&left[..len]);
+        self.scratch_right[..len].copy_from_slice(&right[..len]);
+        self.graph.process_block(
+            &self.scratch_left[..len],
+            &self.scratch_right[..len],
+            &mut left[..len],
+            &mut right[..len],
+        );
     }
 
     /// Processes an entire mono file through the graph.
@@ -428,10 +454,11 @@ mod tests {
     }
 
     /// Process enough blocks to let the crossfade settle.
-    /// SmoothedParam::fast = 5ms time constant. Need ~5τ = 25ms = 1200 samples.
+    /// `SmoothedParam::fast` = 5ms time constant. `is_settled()` requires < 1e-5 error,
+    /// which needs ~12τ. At 48kHz: τ = 240 samples, 12τ = 2880 samples.
     fn settle_crossfade(engine: &mut GraphEngine) {
         let bs = engine.graph().block_size();
-        let blocks_needed = (1200 / bs) + 1;
+        let blocks_needed = (2880 / bs) + 1;
         let mut left = vec![0.0; bs];
         let mut right = vec![0.0; bs];
         let input = vec![0.0; bs];
