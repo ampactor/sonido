@@ -445,6 +445,15 @@ impl AudioStream {
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
     }
+
+    /// Get a shared handle to the running flag.
+    ///
+    /// Store `false` to stop the stream's blocking loop from outside
+    /// (e.g., from a signal handler). This is the same flag checked by
+    /// `run_output()` / `run()` / `run_stereo()`.
+    pub fn running_handle(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.running)
+    }
 }
 
 /// Deinterleave input samples into separate left and right channels.

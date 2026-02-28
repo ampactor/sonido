@@ -7,7 +7,7 @@ use sonido_io::{AudioStream, GraphEngine, StreamConfig, read_wav_stereo};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Args)]
 pub struct PlayArgs {
@@ -103,14 +103,6 @@ pub fn run(args: PlayArgs) -> anyhow::Result<()> {
         if looping { " (looping)" } else { "" }
     );
 
-    // Set up Ctrl+C handler
-    let running = Arc::new(AtomicBool::new(true));
-    let r = Arc::clone(&running);
-    ctrlc::set_handler(move || {
-        println!("\nStopping...");
-        r.store(false, Ordering::SeqCst);
-    })?;
-
     // Playback position (in frames)
     let position = Arc::new(AtomicUsize::new(0));
 
@@ -129,6 +121,14 @@ pub fn run(args: PlayArgs) -> anyhow::Result<()> {
     let out_channels = stream.output_channels() as usize;
     // If mono requested, force 1-channel logic; otherwise use device channels
     let channels = if args.mono { 1 } else { out_channels };
+
+    // Use the stream's own running flag so Ctrl+C stops the blocking loop.
+    let running = stream.running_handle();
+    let r = Arc::clone(&running);
+    ctrlc::set_handler(move || {
+        println!("\nStopping...");
+        r.store(false, Ordering::SeqCst);
+    })?;
 
     let cb_running = Arc::clone(&running);
     let cb_position = Arc::clone(&position);
