@@ -139,6 +139,17 @@ Spectral analysis tools for reverse engineering hardware and signal analysis. Re
 - `PacResult`: PAC analysis results (modulation index, preferred phase, phase histogram)
 - `Comodulogram`: Multi-frequency PAC analysis for visualizing coupling patterns
 
+**DSP Primitives:**
+- `LmsFilter` / `NlmsFilter`: Adaptive filters for noise/echo cancellation and system identification
+- `xcorr_direct` / `xcorr_fft` / `xcorr_normalized`: Cross-correlation with `peak_lag` for delay estimation
+- `Ddc`: Digital down-conversion (NCO + FIR lowpass + decimation) for baseband shifting
+- `unwrap_phase` / `unwrap_phase_tol` / `unwrap_phase_quality` / `PhaseTracker`: Phase unwrapping (batch, quality-guided, streaming)
+- `decimate` / `interpolate` / `resample` / `design_lowpass`: Rational resampling via polyphase filter decomposition
+
+**Export Formats:**
+- `export_frd` / `import_frd`: FRD format (frequency response data, compatible with REW)
+- `export_spectrogram_csv`: CSV and PGM export for spectrograms and analysis results
+
 ### sonido-io
 
 Audio I/O layer with pluggable backend abstraction, WAV file I/O, and full stereo support.

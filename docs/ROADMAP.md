@@ -69,6 +69,16 @@ Full polyphonic synthesis pipeline:
 - Voice manager with configurable stealing policy
 - Modulation matrix with source/destination routing
 
+### Analysis Toolkit
+
+`sonido-analysis` provides offline signal analysis tools (requires `std` for FFT):
+- **Spectral**: FFT, STFT spectrogram, CQT, Welch PSD, coherence, spectral centroid
+- **Distortion**: THD/THD+N, IMD, harmonic analysis
+- **Transfer functions**: Frequency response measurement, impulse response capture, resonance detection
+- **Biosignal**: Hilbert transform, filter banks (EEG bands), Phase-Amplitude Coupling (PAC/CFC)
+- **DSP primitives**: LMS/NLMS adaptive filters, cross-correlation (direct + FFT), digital down-conversion, phase unwrapping (batch/quality-guided/streaming), rational resampling (polyphase)
+- **Export**: FRD (REW-compatible), CSV, PGM
+
 ### Quality Infrastructure
 
 - 48 golden regression baselines (WAV files, MSE < 1e-6, SNR > 60 dB, spectral correlation > 0.9999)
@@ -120,9 +130,9 @@ All 19 CLAP plugins support host-negotiated window resize via atomic `PendingRes
 
 ### Multi-Effect CLAP Plugin
 
-**Status:** Planned
+**Status:** Complete
 
-A single CLAP plugin exposing the full effect chain. Uses the DAG routing engine (`ProcessingGraph`) for signal routing. Unblocked by DAG completion (`a367fb7`).
+`ChainPlugin` — single CLAP plugin exposing a full effect chain with runtime add/remove/reorder. Pre-allocated parameter space (16 slots × 32 params = 512 CLAP IDs), JSON state save/restore, egui chain editor GUI. Built on `GraphEngine` for signal routing.
 
 ### Benchmark Baseline Tracking in CI
 

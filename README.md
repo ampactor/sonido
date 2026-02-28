@@ -86,7 +86,7 @@ chain.process_block(&input, &mut output);
 | `sonido-registry` | Effect factory and discovery by name/category | Yes |
 | `sonido-config` | Configuration, preset, and chain management | Partial |
 | `sonido-platform` | Hardware abstraction: PlatformController trait, ControlMapper, ControlId | Yes |
-| `sonido-analysis` | Spectral analysis, PAC/CFC analysis, Hilbert transform, filter banks | No |
+| `sonido-analysis` | Spectral analysis, PAC/CFC, adaptive filters (LMS/NLMS), cross-correlation, DDC, phase unwrapping, resampling | No |
 | `sonido-io` | Audio I/O: WAV files (mono/stereo), real-time streaming via cpal | No |
 | `sonido-cli` | Command-line interface for processing and analysis | No |
 | `sonido-gui-core` | Shared GUI widgets, theme, and ParamBridge trait for standalone + plugin UIs | No |
