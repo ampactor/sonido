@@ -23,11 +23,8 @@ YELLOW='\033[0;33m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
-# Build if needed
-if [ ! -f "$SONIDO" ]; then
-    echo "Building sonido-cli (release)..."
-    cargo build -p sonido-cli --release --manifest-path "$PROJECT_DIR/Cargo.toml"
-fi
+echo "Building sonido-cli (release)..."
+cargo build -p sonido-cli --release --manifest-path "$PROJECT_DIR/Cargo.toml"
 
 mkdir -p "$OUT"
 

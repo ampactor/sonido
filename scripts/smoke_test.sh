@@ -52,10 +52,8 @@ fi
 
 # ── Setup ─────────────────────────────────────────────────────────────
 
-if [[ ! -f "$SONIDO" ]]; then
-    echo "Building sonido-cli (release)..."
-    cargo build -p sonido-cli --release --manifest-path "$PROJECT_DIR/Cargo.toml"
-fi
+echo "Building sonido-cli (release)..."
+cargo build -p sonido-cli --release --manifest-path "$PROJECT_DIR/Cargo.toml"
 
 if [[ ! -f "$INPUT" ]]; then
     echo -e "${RED}Error: demos/piano.wav not found${RESET}"

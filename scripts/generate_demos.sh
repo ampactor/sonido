@@ -12,11 +12,8 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SONIDO="${SONIDO:-$PROJECT_DIR/target/release/sonido}"
 DEMOS="$PROJECT_DIR/demos"
 
-# Build if needed
-if [ ! -f "$SONIDO" ]; then
-    echo "Building sonido-cli (release)..."
-    cargo build -p sonido-cli --release --manifest-path "$PROJECT_DIR/Cargo.toml"
-fi
+echo "Building sonido-cli (release)..."
+cargo build -p sonido-cli --release --manifest-path "$PROJECT_DIR/Cargo.toml"
 
 mkdir -p "$DEMOS"
 

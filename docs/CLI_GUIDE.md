@@ -8,18 +8,11 @@ Complete reference for the `sonido` command-line tool.
 cargo install --path crates/sonido-cli
 ```
 
-Or build from source:
-
-```bash
-cargo build --release -p sonido-cli
-# Binary at target/release/sonido
-```
-
-For development (debug build, symlinked to `~/.local/bin`):
-
-```bash
-make dev-install
-```
+> **During development**, use `cargo run -p sonido-cli -- <args>` instead of a bare `sonido` command.
+> This builds from source every time, avoiding stale binary issues. Add `--release` for
+> real-time audio or batch processing where DSP speed matters.
+>
+> Examples in this guide show `sonido <cmd>` for brevity — substitute `cargo run -p sonido-cli --` in practice.
 
 ## Commands Overview
 
