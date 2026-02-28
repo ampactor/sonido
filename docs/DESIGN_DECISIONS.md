@@ -406,7 +406,7 @@ A centralized `EffectRegistry` that maps string names to factory functions, retu
 
 - **Decoupling**: Application code does not need to import every effect type
 - **Categorization**: Effects are organized by `EffectCategory` (Dynamics, Distortion, Modulation, etc.) for UI grouping
-- **Metadata**: Each registry entry includes name, description, category, and parameter count — currently 15 effects with param counts ranging from 2 to 9
+- **Metadata**: Each registry entry includes name, description, category, and parameter count — currently 19 effects with param counts ranging from 2 to 11
 - **Parameter discovery**: `param_index_by_name()` enables CLI and config systems to resolve parameter names to indices at runtime
 - **`no_std` compatible**: The registry uses `alloc` (for `Box` and `Vec`) but not `std`
 

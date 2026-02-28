@@ -54,7 +54,7 @@ See [GUI.md](GUI.md) for detailed GUI documentation.
 
 ### Walkthrough (recommended)
 
-Run the full guided tour -- builds, generates signals, processes all 15 effects,
+Run the full guided tour -- builds, generates signals, processes all 19 effects,
 runs analysis, and prints listening guidance:
 
 ```bash

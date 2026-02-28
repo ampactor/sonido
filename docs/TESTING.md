@@ -226,10 +226,15 @@ All tests run automatically on pull requests via GitHub Actions.
 
 ```bash
 # Run the same checks as CI
-cargo test --workspace
-cargo test --no-default-features -p sonido-core -p sonido-effects
-cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
+cargo clippy --workspace --lib --bins --tests --benches -- -D warnings
+cargo test --workspace
+cargo test --no-default-features -p sonido-core
+cargo test --no-default-features -p sonido-effects
+cargo test --no-default-features -p sonido-synth
+cargo test --no-default-features -p sonido-registry
+cargo test --no-default-features -p sonido-platform
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 ```
 
 ## Common Test Patterns

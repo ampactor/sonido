@@ -20,22 +20,23 @@ CI runs on GitHub Actions with ubuntu-latest runners under the ampactor-labs org
 
 ### Jobs
 
-| Job | Timeout | Trigger |
-|-----|---------|---------|
-| Lint | 15 min | push + PR |
-| Test | 20 min | push + PR |
-| no_std | 15 min | push + PR |
-| Plugin | 20 min | push + PR |
-| Wasm | 15 min | push + PR |
-| Coverage | (no limit) | push + PR, after Test |
-| Benchmarks | 45 min | push to main only |
+| Job | Timeout | Trigger | Notes |
+|-----|---------|---------|-------|
+| Lint | 15 min | push + PR | fmt + clippy |
+| Test | 20 min | push + PR | Full workspace including plugin unit tests |
+| no_std | 15 min | push + PR | 5 no_std crates |
+| Wasm | 15 min | push + PR | sonido-gui wasm32 check |
+| Benchmarks | 45 min | manual dispatch | criterion + critcmp |
+| Coverage | (no limit) | manual dispatch | cargo-llvm-cov |
+| Plugin | 20 min | manual dispatch | Build + clap-validator for all 19 plugins |
 
 ### Infrastructure
 
-- **Caching**: sccache via `mozilla-actions/sccache-action` + GitHub Actions cache backend
-- **System deps**: libasound2-dev, libudev-dev, mold linker, full x11-rs/GL stack
-- **Plugin validation**: clap-validator 0.3.2 validates all 19 CLAP plugin binaries
-- **Coverage**: cargo-llvm-cov, artifact upload (no threshold gate)
+- **Composite action**: `.github/actions/setup-rust/action.yml` — DRY toolchain, sccache, system deps, and cargo registry cache
+- **Caching**: sccache via `mozilla-actions/sccache-action` + cargo registry/git cache via `actions/cache`
+- **System deps**: libasound2-dev, libudev-dev, mold linker, full x11-rs/GL stack (installed by composite action)
+- **Plugin validation**: clap-validator 0.3.2 validates all 19 CLAP plugin binaries (manual dispatch)
+- **Coverage**: cargo-llvm-cov, artifact upload (no threshold gate, manual dispatch)
 
 ### Running CI Checks Locally
 
