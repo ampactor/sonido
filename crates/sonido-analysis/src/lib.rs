@@ -14,6 +14,7 @@
 //! - [`filterbank`] - Bandpass filter bank for frequency band extraction
 //! - [`hilbert`] - Hilbert transform for analytic signals
 //! - [`cfc`] - Cross-Frequency Coupling (Phase-Amplitude Coupling) analysis
+//! - [`export`] - Export formats (FRD, CSV, PGM) for analysis results
 //! - [`lms`] - LMS/NLMS adaptive filters for noise/echo cancellation
 //! - [`xcorr`] - Cross-correlation (direct + FFT) with lag estimation
 //! - [`ddc`] - Digital down-conversion (NCO + FIR + decimation)
@@ -108,5 +109,5 @@ pub use transfer_fn::{Resonance, TransferFunction};
 pub use ddc::Ddc;
 pub use lms::{LmsFilter, NlmsFilter};
 pub use phase::{PhaseTracker, unwrap_phase, unwrap_phase_quality, unwrap_phase_tol};
-pub use resample::{decimate, design_lowpass, interpolate};
+pub use resample::{decimate, design_lowpass, interpolate, resample};
 pub use xcorr::{peak_lag, xcorr_direct, xcorr_fft, xcorr_normalized};
