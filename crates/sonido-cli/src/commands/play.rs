@@ -42,6 +42,10 @@ pub struct PlayArgs {
     /// Force mono output
     #[arg(long)]
     mono: bool,
+
+    /// Buffer size in frames (larger = fewer underruns, more latency)
+    #[arg(long, default_value = "1024")]
+    buffer_size: u32,
 }
 
 pub fn run(args: PlayArgs) -> anyhow::Result<()> {
@@ -59,7 +63,8 @@ pub fn run(args: PlayArgs) -> anyhow::Result<()> {
     );
 
     // Build optional effect chain
-    let mut engine = GraphEngine::new_linear(sample_rate, 256);
+    let buf_size = args.buffer_size as usize;
+    let mut engine = GraphEngine::new_linear(sample_rate, buf_size);
     let has_effects;
 
     if let Some(preset_name) = &args.preset {
@@ -112,7 +117,7 @@ pub fn run(args: PlayArgs) -> anyhow::Result<()> {
 
     let stream_config = StreamConfig {
         sample_rate: spec.sample_rate,
-        buffer_size: 256,
+        buffer_size: args.buffer_size,
         input_device: None,
         output_device: args.output,
     };
@@ -134,10 +139,10 @@ pub fn run(args: PlayArgs) -> anyhow::Result<()> {
     let cb_position = Arc::clone(&position);
 
     // Scratch buffers for block-based processing (allocated once, grown if needed).
-    let mut left_buf = vec![0.0f32; 256];
-    let mut right_buf = vec![0.0f32; 256];
-    let mut left_out = vec![0.0f32; 256];
-    let mut right_out = vec![0.0f32; 256];
+    let mut left_buf = vec![0.0f32; buf_size];
+    let mut right_buf = vec![0.0f32; buf_size];
+    let mut left_out = vec![0.0f32; buf_size];
+    let mut right_out = vec![0.0f32; buf_size];
 
     stream.run_output(move |data: &mut [f32]| {
         if !cb_running.load(Ordering::Relaxed) {
