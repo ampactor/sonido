@@ -131,8 +131,8 @@ pub use fast_math::{
     fast_db_to_linear, fast_exp2, fast_linear_to_db, fast_log2, fast_sin_turns, fast_tan,
 };
 pub use graph::{
-    BufferPool, CompensationDelay, CompiledSchedule, EdgeId, GraphError, NodeId, NodeKind,
-    ProcessStep, ProcessingGraph, StereoBuffer,
+    BufferPool, CompensationDelay, CompiledSchedule, EdgeId, GraphEngine, GraphError, NodeId,
+    NodeKind, ProcessStep, ProcessingGraph, StereoBuffer, StereoSamples,
 };
 pub use lfo::{Lfo, LfoWaveform};
 pub use math::{

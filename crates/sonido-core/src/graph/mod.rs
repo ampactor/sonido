@@ -64,12 +64,16 @@
 
 pub mod buffer;
 pub mod edge;
+pub mod engine;
 pub mod node;
 mod processing;
 pub mod schedule;
+pub mod stereo_samples;
 
 pub use buffer::{BufferPool, CompensationDelay, StereoBuffer};
 pub use edge::EdgeId;
+pub use engine::GraphEngine;
 pub use node::{NodeId, NodeKind};
 pub use processing::{GraphError, ProcessingGraph};
 pub use schedule::{CompiledSchedule, MAX_SPLIT_TARGETS, ProcessStep};
+pub use stereo_samples::StereoSamples;

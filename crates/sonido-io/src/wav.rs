@@ -172,75 +172,8 @@ pub fn write_wav<P: AsRef<Path>>(path: P, samples: &[f32], spec: WavSpec) -> Res
     Ok(())
 }
 
-/// Stereo audio data with separate left and right channels.
-#[derive(Debug, Clone)]
-pub struct StereoSamples {
-    /// Left channel samples.
-    pub left: Vec<f32>,
-    /// Right channel samples.
-    pub right: Vec<f32>,
-}
-
-impl StereoSamples {
-    /// Create new stereo samples from left and right channels.
-    pub fn new(left: Vec<f32>, right: Vec<f32>) -> Self {
-        debug_assert_eq!(left.len(), right.len(), "Channels must have same length");
-        Self { left, right }
-    }
-
-    /// Create stereo samples from mono by duplicating to both channels.
-    pub fn from_mono(mono: Vec<f32>) -> Self {
-        Self {
-            left: mono.clone(),
-            right: mono,
-        }
-    }
-
-    /// Get the number of samples per channel.
-    pub fn len(&self) -> usize {
-        self.left.len()
-    }
-
-    /// Check if the buffers are empty.
-    pub fn is_empty(&self) -> bool {
-        self.left.is_empty()
-    }
-
-    /// Mix down to mono by averaging channels.
-    pub fn to_mono(&self) -> Vec<f32> {
-        self.left
-            .iter()
-            .zip(self.right.iter())
-            .map(|(l, r)| (l + r) * 0.5)
-            .collect()
-    }
-
-    /// Convert to interleaved format (L, R, L, R, ...).
-    pub fn to_interleaved(&self) -> Vec<f32> {
-        let mut interleaved = Vec::with_capacity(self.left.len() * 2);
-        for (l, r) in self.left.iter().zip(self.right.iter()) {
-            interleaved.push(*l);
-            interleaved.push(*r);
-        }
-        interleaved
-    }
-
-    /// Create from interleaved format (L, R, L, R, ...).
-    pub fn from_interleaved(interleaved: &[f32]) -> Self {
-        let len = interleaved.len() / 2;
-        let mut left = Vec::with_capacity(len);
-        let mut right = Vec::with_capacity(len);
-
-        for chunk in interleaved.chunks(2) {
-            if chunk.len() == 2 {
-                left.push(chunk[0]);
-                right.push(chunk[1]);
-            }
-        }
-
-        Self { left, right }
-    }
-}
+// StereoSamples is defined in sonido-core and re-exported here for backwards compatibility.
+pub use sonido_core::graph::StereoSamples;
 
 /// Read a WAV file and return stereo samples along with the spec.
 ///
