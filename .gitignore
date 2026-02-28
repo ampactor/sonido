@@ -5,3 +5,4 @@ external-audio
 .claude/worktrees/
 demos/*.wav
 demos/smoke/
+CLAUDE.md
