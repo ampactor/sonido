@@ -496,23 +496,35 @@ impl ProcessingGraph {
         let input_node_idx = self.find_node_by_kind_is_input();
         let output_node_idx = self.find_node_by_kind_is_output();
 
-        // Emit raw schedule steps.
-        let (raw_steps, edge_first_write, edge_last_read) =
-            self.emit_raw_schedule(&sorted, input_node_idx, output_node_idx);
+        // Compute per-node cumulative latency (longest path from input).
+        let node_latency = self.compute_node_latencies(&sorted);
+
+        // Emit raw schedule steps (with inline delay compensation).
+        let (raw_steps, edge_first_write, edge_last_read, delay_sample_counts) =
+            self.emit_raw_schedule(&sorted, input_node_idx, output_node_idx, &node_latency);
 
         // Buffer liveness analysis: assign buffer slots.
-        let (steps, buffer_count) =
+        let (final_steps, buffer_count) =
             Self::assign_buffers(raw_steps, &edge_first_write, &edge_last_read);
+
+        // Total latency is the max latency at the Output node.
+        let total_latency = sorted
+            .iter()
+            .filter(|&&idx| {
+                self.nodes[idx]
+                    .as_ref()
+                    .is_some_and(|n| matches!(n.kind, NodeKind::Output))
+            })
+            .map(|&idx| node_latency[idx])
+            .max()
+            .unwrap_or(0);
+
         #[cfg(feature = "tracing")]
         tracing::debug!(
             "graph_buffers: {} steps, {} physical buffers",
-            steps.len(),
+            final_steps.len(),
             buffer_count
         );
-
-        // Latency compensation.
-        let (final_steps, delay_sample_counts, total_latency) =
-            self.compute_latency_compensation(steps, &sorted);
         #[cfg(feature = "tracing")]
         tracing::debug!(
             "graph_latency: {} samples, {} compensation delays",
@@ -622,19 +634,28 @@ impl ProcessingGraph {
 
     /// Emits raw `ProcessStep`s from the topological order.
     ///
-    /// Returns the steps plus per-edge first-write and last-read step indices
-    /// for liveness analysis.
+    /// Returns the steps, per-edge first-write/last-read step indices for liveness
+    /// analysis, and delay sample counts for latency compensation. Delay insertion
+    /// happens here (in virtual-buffer space) to avoid aliasing bugs that would
+    /// occur if inserted after physical buffer assignment.
     #[allow(clippy::type_complexity)]
     fn emit_raw_schedule(
         &self,
         sorted: &[usize],
         _input_node_idx: usize,
         _output_node_idx: usize,
-    ) -> (Vec<RawStep>, Vec<(usize, usize)>, Vec<(usize, usize)>) {
+        node_latency: &[usize],
+    ) -> (
+        Vec<RawStep>,
+        Vec<(usize, usize)>,
+        Vec<(usize, usize)>,
+        Vec<usize>,
+    ) {
         // Map each edge to a temporary "virtual buffer" ID (1:1 with edge index for now).
         // Liveness analysis will collapse these into physical buffer slots.
 
         let mut steps = Vec::new();
+        let mut delay_sample_counts: Vec<usize> = Vec::new();
 
         // Build edge → virtual buffer mapping.
         let mut edge_to_vbuf: Vec<Option<usize>> = vec![None; self.edges.len()];
@@ -739,31 +760,56 @@ impl ProcessingGraph {
                 }
 
                 NodeKind::Merge => {
-                    // Sum all incoming into the single output.
+                    // Sum all incoming into the single output with latency compensation.
                     let out_vbuf = node
                         .outgoing
                         .first()
                         .and_then(|eid| edge_to_vbuf[eid.0 as usize]);
-                    let in_vbufs: Vec<usize> = node
+                    // Collect (from_node_idx, vbuf) pairs for latency lookup.
+                    let incoming_with_nodes: Vec<(usize, usize)> = node
                         .incoming
                         .iter()
-                        .filter_map(|eid| edge_to_vbuf[eid.0 as usize])
+                        .filter_map(|eid| {
+                            let edge = self.edges[eid.0 as usize].as_ref()?;
+                            let vbuf = edge_to_vbuf[eid.0 as usize]?;
+                            Some((edge.from.0 as usize, vbuf))
+                        })
                         .collect();
 
                     if let Some(ov) = out_vbuf {
-                        // Clear output buffer first.
                         steps.push(RawStep::ClearBuffer { vbuf: ov });
                         let s = steps.len() - 1;
                         if vbuf_first_write[ov] == usize::MAX {
                             vbuf_first_write[ov] = s;
                         }
 
-                        // Accumulate each input, scaled by 1/N for unity-sum gain.
-                        let path_count = in_vbufs.len();
+                        let max_lat = incoming_with_nodes
+                            .iter()
+                            .map(|&(from_idx, _)| node_latency[from_idx])
+                            .max()
+                            .unwrap_or(0);
+
+                        let path_count = incoming_with_nodes.len();
                         let gain = 1.0 / path_count as f32;
                         #[cfg(feature = "tracing")]
                         tracing::debug!("  merge_gain: {path_count} paths, gain={gain:.3}");
-                        for &iv in &in_vbufs {
+
+                        for &(from_idx, iv) in &incoming_with_nodes {
+                            let delay = max_lat.saturating_sub(node_latency[from_idx]);
+                            if delay > 0 {
+                                let delay_line_idx = delay_sample_counts.len();
+                                delay_sample_counts.push(delay);
+                                steps.push(RawStep::DelayCompensate {
+                                    vbuf: iv,
+                                    delay_line_idx,
+                                });
+                                let s = steps.len() - 1;
+                                vbuf_last_read[iv] = vbuf_last_read[iv].max(s);
+                                #[cfg(feature = "tracing")]
+                                tracing::debug!(
+                                    "  merge_delay: node {from_idx} needs {delay} sample delay on vbuf[{iv}]"
+                                );
+                            }
                             steps.push(RawStep::AccumulateBuffer {
                                 source_vbuf: iv,
                                 dest_vbuf: ov,
@@ -782,7 +828,7 @@ impl ProcessingGraph {
             vbuf_first_write.into_iter().enumerate().collect();
         let edge_last_read: Vec<(usize, usize)> = vbuf_last_read.into_iter().enumerate().collect();
 
-        (steps, edge_first_write, edge_last_read)
+        (steps, edge_first_write, edge_last_read, delay_sample_counts)
     }
 
     // --- Buffer liveness analysis ---
@@ -894,40 +940,35 @@ impl ProcessingGraph {
                 RawStep::ReadOutput { vbuf } => ProcessStep::ReadOutput {
                     buffer_idx: vbuf_to_phys[vbuf].unwrap_or(0),
                 },
+                RawStep::DelayCompensate {
+                    vbuf,
+                    delay_line_idx,
+                } => ProcessStep::DelayCompensate {
+                    buffer_idx: vbuf_to_phys[vbuf].unwrap_or(0),
+                    delay_line_idx,
+                },
             })
             .collect();
 
         (steps, buffer_count)
     }
 
-    // --- Latency compensation ---
-
-    /// Computes latency compensation for parallel paths.
+    /// Computes cumulative latency to each node (longest path from Input).
     ///
-    /// For each Merge node, finds the longest-latency incoming path and inserts
-    /// `DelayCompensate` steps for shorter paths to align timing.
-    ///
-    /// Returns the final steps, delay sample counts (for building persistent
-    /// `CompensationDelay` lines), and total graph latency.
-    fn compute_latency_compensation(
-        &self,
-        mut steps: Vec<ProcessStep>,
-        sorted: &[usize],
-    ) -> (Vec<ProcessStep>, Vec<usize>, usize) {
-        // Compute cumulative latency to each node (longest path from Input).
+    /// For each node in topological order, its latency is the maximum incoming
+    /// latency plus its own latency contribution.
+    fn compute_node_latencies(&self, sorted: &[usize]) -> Vec<usize> {
         let n = self.nodes.len();
         let mut node_latency = vec![0usize; n];
 
         for &node_idx in sorted {
             let node = self.nodes[node_idx].as_ref().unwrap();
 
-            // This node's own latency.
             let own_latency = match &node.kind {
                 NodeKind::Effect(effect) => effect.latency_samples(),
                 _ => 0,
             };
 
-            // Max incoming latency + own latency.
             let max_incoming = node
                 .incoming
                 .iter()
@@ -942,123 +983,7 @@ impl ProcessingGraph {
             node_latency[node_idx] = max_incoming + own_latency;
         }
 
-        // Find Merge nodes and check if their incoming paths have different latencies.
-        let mut delay_sample_counts: Vec<usize> = Vec::new();
-        let mut insert_ops: Vec<(usize, ProcessStep)> = Vec::new();
-
-        for &node_idx in sorted {
-            let node = self.nodes[node_idx].as_ref().unwrap();
-            if !matches!(node.kind, NodeKind::Merge) {
-                continue;
-            }
-
-            // Compute latency at each incoming node.
-            let incoming_latencies: Vec<(usize, usize)> = node
-                .incoming
-                .iter()
-                .filter_map(|eid| {
-                    let edge = self.edges[eid.0 as usize].as_ref()?;
-                    Some((edge.from.0 as usize, node_latency[edge.from.0 as usize]))
-                })
-                .collect();
-
-            let max_lat = incoming_latencies
-                .iter()
-                .map(|(_, lat)| *lat)
-                .max()
-                .unwrap_or(0);
-
-            // For each incoming path that is shorter, insert a delay.
-            for &(from_idx, lat) in &incoming_latencies {
-                let delay = max_lat - lat;
-                if delay > 0 {
-                    // Find the output buffer of the source node by scanning
-                    // ProcessEffect steps. For non-effect nodes (Split/Input),
-                    // find the SplitCopy dest or WriteInput buffer that feeds
-                    // this merge's AccumulateBuffer.
-                    let source_output_buf = steps.iter().find_map(|step| match step {
-                        ProcessStep::ProcessEffect {
-                            node_idx,
-                            output_buf,
-                            ..
-                        } if *node_idx == from_idx => Some(*output_buf),
-                        _ => None,
-                    });
-
-                    // Find the AccumulateBuffer step for this specific merge input
-                    // by matching source_buf against the source node's output buffer.
-                    // Falls back to matching by merge dest_buf if source is a
-                    // passthrough node (Split/Input with no ProcessEffect step).
-                    let merge_dest = steps.iter().find_map(|step| {
-                        if let ProcessStep::ClearBuffer { buffer_idx } = step {
-                            // The ClearBuffer immediately preceding this merge's
-                            // accumulations tells us the merge's dest buffer.
-                            // We check if any AccumulateBuffer has this dest.
-                            Some(*buffer_idx)
-                        } else {
-                            None
-                        }
-                    });
-
-                    for (step_i, step) in steps.iter().enumerate() {
-                        if let ProcessStep::AccumulateBuffer {
-                            source_buf,
-                            dest_buf,
-                            ..
-                        } = step
-                        {
-                            let matches = if let Some(expected_src) = source_output_buf {
-                                // Match by source node's output buffer.
-                                *source_buf == expected_src
-                            } else {
-                                // Passthrough node: match by merge dest buffer
-                                // (less precise, but passthrough nodes don't have
-                                // ProcessEffect steps).
-                                merge_dest.is_some_and(|d| *dest_buf == d)
-                            };
-
-                            if matches {
-                                let delay_line_idx = delay_sample_counts.len();
-                                delay_sample_counts.push(delay);
-                                #[cfg(feature = "tracing")]
-                                tracing::debug!(
-                                    "  merge_delay: node {from_idx} needs {delay} sample delay on buf[{}]",
-                                    *source_buf
-                                );
-                                insert_ops.push((
-                                    step_i,
-                                    ProcessStep::DelayCompensate {
-                                        buffer_idx: *source_buf,
-                                        delay_line_idx,
-                                    },
-                                ));
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Insert delay compensation steps (in reverse order to preserve indices).
-        insert_ops.sort_by(|a, b| b.0.cmp(&a.0));
-        for (idx, step) in insert_ops {
-            steps.insert(idx, step);
-        }
-
-        // Total latency is the max latency at the Output node.
-        let total_latency = sorted
-            .iter()
-            .filter(|&&idx| {
-                self.nodes[idx]
-                    .as_ref()
-                    .is_some_and(|n| matches!(n.kind, NodeKind::Output))
-            })
-            .map(|&idx| node_latency[idx])
-            .max()
-            .unwrap_or(0);
-
-        (steps, delay_sample_counts, total_latency)
+        node_latency
     }
 
     // --- Audio execution (Phase 3) ---
@@ -1534,6 +1459,10 @@ enum RawStep {
     },
     ReadOutput {
         vbuf: usize,
+    },
+    DelayCompensate {
+        vbuf: usize,
+        delay_line_idx: usize,
     },
 }
 
@@ -2254,5 +2183,154 @@ mod tests {
                 "expected 1.0 (unity after normalization), got {s}",
             );
         }
+    }
+
+    // --- Latency compensation regression tests ---
+
+    /// Two sequential merges: Input→Split→[A(lat=10), B(lat=0)]→Merge→Split→[C(lat=5), D(lat=0)]→Merge→Output.
+    /// Each merge must get independent compensation — the old code matched the
+    /// wrong ClearBuffer for the second merge.
+    #[test]
+    fn test_latency_comp_multi_merge() {
+        let mut graph = ProcessingGraph::new(48000.0, 64);
+        let input = graph.add_input();
+        let split1 = graph.add_split();
+        let a = graph.add_effect(Box::new(LatentGain {
+            factor: 1.0,
+            latency: 10,
+        }));
+        let b = graph.add_effect(Box::new(Gain { factor: 1.0 }));
+        let merge1 = graph.add_merge();
+        let split2 = graph.add_split();
+        let c = graph.add_effect(Box::new(LatentGain {
+            factor: 1.0,
+            latency: 5,
+        }));
+        let d = graph.add_effect(Box::new(Gain { factor: 1.0 }));
+        let merge2 = graph.add_merge();
+        let output = graph.add_output();
+
+        graph.connect(input, split1).unwrap();
+        graph.connect(split1, a).unwrap();
+        graph.connect(split1, b).unwrap();
+        graph.connect(a, merge1).unwrap();
+        graph.connect(b, merge1).unwrap();
+        graph.connect(merge1, split2).unwrap();
+        graph.connect(split2, c).unwrap();
+        graph.connect(split2, d).unwrap();
+        graph.connect(c, merge2).unwrap();
+        graph.connect(d, merge2).unwrap();
+        graph.connect(merge2, output).unwrap();
+
+        let schedule = graph.compile().unwrap();
+
+        // Total latency: longest path is Input→A(10)→Merge→C(5) = 15
+        assert_eq!(schedule.total_latency(), 15);
+
+        // Two delay lines: one for B at merge1 (10 samples), one for D at merge2 (5 samples).
+        assert_eq!(schedule.delay_line_count(), 2);
+
+        let delays = &schedule.delay_sample_counts;
+        assert!(
+            delays.contains(&10) && delays.contains(&5),
+            "expected delays [10, 5], got {delays:?}"
+        );
+    }
+
+    /// 3 paths with different latencies into one merge.
+    /// Verifies all shorter paths get correct delays.
+    #[test]
+    fn test_latency_comp_many_paths() {
+        let mut graph = ProcessingGraph::new(48000.0, 64);
+        let input = graph.add_input();
+        let split = graph.add_split();
+        let a = graph.add_effect(Box::new(LatentGain {
+            factor: 1.0,
+            latency: 20,
+        }));
+        let b = graph.add_effect(Box::new(LatentGain {
+            factor: 1.0,
+            latency: 8,
+        }));
+        let c = graph.add_effect(Box::new(Gain { factor: 1.0 })); // 0 latency
+        let merge = graph.add_merge();
+        let output = graph.add_output();
+
+        graph.connect(input, split).unwrap();
+        graph.connect(split, a).unwrap();
+        graph.connect(split, b).unwrap();
+        graph.connect(split, c).unwrap();
+        graph.connect(a, merge).unwrap();
+        graph.connect(b, merge).unwrap();
+        graph.connect(c, merge).unwrap();
+        graph.connect(merge, output).unwrap();
+
+        let schedule = graph.compile().unwrap();
+
+        assert_eq!(schedule.total_latency(), 20);
+
+        // Two delay lines: B needs 20-8=12, C needs 20-0=20. A needs 0.
+        assert_eq!(schedule.delay_line_count(), 2);
+
+        let delays = &schedule.delay_sample_counts;
+        assert!(
+            delays.contains(&12) && delays.contains(&20),
+            "expected delays [12, 20], got {delays:?}"
+        );
+    }
+
+    /// Topology large enough that liveness analysis reuses physical buffer slots.
+    /// Verifies delays target the correct buffer after aliasing.
+    #[test]
+    fn test_latency_comp_buffer_reuse() {
+        // Linear chain of 10 effects, then split→[A(lat=16), B(lat=0)]→merge→output.
+        // The 10-effect chain forces extensive buffer reuse (ping-pong),
+        // exercising the aliasing path.
+        let mut graph = ProcessingGraph::new(48000.0, 64);
+        let input = graph.add_input();
+
+        let mut prev = input;
+        for _ in 0..10 {
+            let e = graph.add_effect(Box::new(Gain { factor: 1.0 }));
+            graph.connect(prev, e).unwrap();
+            prev = e;
+        }
+
+        let split = graph.add_split();
+        graph.connect(prev, split).unwrap();
+        let a = graph.add_effect(Box::new(LatentGain {
+            factor: 1.0,
+            latency: 16,
+        }));
+        let b = graph.add_effect(Box::new(Gain { factor: 1.0 }));
+        let merge = graph.add_merge();
+        let output = graph.add_output();
+
+        graph.connect(split, a).unwrap();
+        graph.connect(split, b).unwrap();
+        graph.connect(a, merge).unwrap();
+        graph.connect(b, merge).unwrap();
+        graph.connect(merge, output).unwrap();
+
+        let schedule = graph.compile().unwrap();
+
+        assert_eq!(schedule.total_latency(), 16);
+        assert_eq!(schedule.delay_line_count(), 1);
+        assert_eq!(schedule.delay_sample_counts[0], 16);
+
+        // Verify the schedule executes correctly by processing audio.
+        let left_in = vec![1.0; 64];
+        let right_in = vec![1.0; 64];
+        let mut left_out = vec![0.0; 64];
+        let mut right_out = vec![0.0; 64];
+
+        graph.process_block(&left_in, &right_in, &mut left_out, &mut right_out);
+
+        // Should produce non-zero output (both paths contribute).
+        let sum: f32 = left_out.iter().sum();
+        assert!(
+            sum.abs() > 0.01,
+            "expected non-zero output after buffer-reuse topology, got sum={sum}"
+        );
     }
 }
