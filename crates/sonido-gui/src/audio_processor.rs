@@ -12,7 +12,6 @@ use crate::chain_manager::ChainCommand;
 use crate::file_player::TransportCommand;
 use crossbeam_channel::{Receiver, Sender};
 use sonido_core::graph::GraphEngine;
-use sonido_core::graph::NodeId;
 use sonido_gui_core::{ChainMutator, ParamBridge, SlotIndex};
 use sonido_registry::EffectRegistry;
 use std::sync::Arc;
@@ -87,15 +86,9 @@ impl FilePlayback {
 /// sync, gain staging, metering, and buffer overrun detection.
 ///
 /// The effect chain is backed by [`GraphEngine`], which manages a DAG of
-/// effects. A `node_map` (`Vec<NodeId>`) maps bridge slot indices to graph
-/// node IDs so the bridge's slot-indexed API aligns with the graph.
+/// effects via slot-indexed methods that keep bridge and graph in sync.
 pub(crate) struct AudioProcessor {
     graph: GraphEngine,
-    /// Maps bridge slot index → graph [`NodeId`].
-    ///
-    /// `node_map[slot_index]` returns the `NodeId` for that slot.
-    /// Kept in sync with `ChainCommand::Add` / `Remove` operations.
-    node_map: Vec<NodeId>,
     bridge: Arc<AtomicParamBridge>,
     /// Cached copy of the effect order; only refreshed when `bridge.order_is_dirty()`.
     cached_order: Vec<usize>,
@@ -124,29 +117,23 @@ impl AudioProcessor {
     /// Params are pushed unconditionally; bridge atomic reads are wait-free and
     /// cheaper than tracking per-slot dirty flags across the borrow boundary.
     fn sync_bridge_to_graph(&mut self) {
-        let slot_count = self.bridge.slot_count();
+        let slot_count = self.bridge.slot_count().min(self.graph.slot_count());
         for slot_raw in 0..slot_count {
             let slot = SlotIndex(slot_raw);
-            let Some(&node_id) = self.node_map.get(slot_raw) else {
-                continue;
-            };
 
             // Sync bypass state
             let bridge_bypassed = self.bridge.is_bypassed(slot);
-            let graph_bypassed = self.graph.graph().is_bypassed(node_id);
-            if graph_bypassed != bridge_bypassed {
-                self.graph.graph_mut().set_bypass(node_id, bridge_bypassed);
+            if self.graph.is_bypassed_at(slot_raw) != bridge_bypassed {
+                self.graph.set_bypass_at(slot_raw, bridge_bypassed);
             }
 
             // Sync all parameters for this slot
             let param_count = self.bridge.param_count(slot);
-            if let Some(effect) = self.graph.effect_with_params_mut(node_id) {
-                for param_raw in 0..param_count {
-                    let val = self
-                        .bridge
-                        .get(slot, sonido_gui_core::ParamIndex(param_raw));
-                    effect.effect_set_param(param_raw, val);
-                }
+            for param_raw in 0..param_count {
+                let val = self
+                    .bridge
+                    .get(slot, sonido_gui_core::ParamIndex(param_raw));
+                self.graph.set_param_at(slot_raw, param_raw, val);
             }
         }
     }
@@ -201,17 +188,14 @@ impl AudioProcessor {
                     effect,
                     descriptors,
                 } => {
-                    let node_id = self.graph.add_effect(effect);
-                    self.node_map.push(node_id);
+                    let slot = self.graph.add_effect_named(effect, id);
                     self.bridge.add_slot(id, descriptors);
-                    tracing::info!(effect_id = id, ?node_id, "effect added to graph");
+                    tracing::info!(effect_id = id, slot, "effect added to graph");
                 }
                 ChainCommand::Remove { slot } => {
-                    if let Some(node_id) = self.node_map.get(slot.0).copied() {
-                        self.graph.remove_effect(node_id);
-                        self.node_map.swap_remove(slot.0);
+                    if self.graph.remove_at(slot.0).is_some() {
                         self.bridge.remove_slot(slot);
-                        tracing::info!(slot = slot.0, ?node_id, "effect removed from graph");
+                        tracing::info!(slot = slot.0, "effect removed from graph");
                     }
                 }
             }
@@ -227,14 +211,8 @@ impl AudioProcessor {
         // Sync effect order from GUI (only when changed)
         if self.bridge.order_is_dirty() {
             self.cached_order = self.bridge.get_order();
-            // Map slot indices to NodeIds for the graph reorder call
-            let node_order: Vec<NodeId> = self
-                .cached_order
-                .iter()
-                .filter_map(|&slot| self.node_map.get(slot).copied())
-                .collect();
-            if node_order.len() == self.graph.effect_count() {
-                self.graph.reorder(&node_order);
+            if self.cached_order.len() == self.graph.slot_count() {
+                self.graph.reorder_slots(&self.cached_order);
             }
             self.bridge.clear_order_dirty();
         }
@@ -417,15 +395,12 @@ pub(crate) fn build_audio_streams(
     let bypass_states = bridge.ordered_bypass_states();
 
     let mut graph = GraphEngine::new_linear(sample_rate, buffer_size);
-    let mut node_map: Vec<NodeId> = Vec::with_capacity(effect_ids.len());
 
     for (i, &id) in effect_ids.iter().enumerate() {
         if let Some(effect) = registry.create(id, sample_rate) {
-            let node_id = graph.add_effect(effect);
-            node_map.push(node_id);
-            // Apply initial bypass state
+            let slot = graph.add_effect_named(effect, id);
             if bypass_states.get(i).copied().unwrap_or(false) {
-                graph.graph_mut().set_bypass(node_id, true);
+                graph.set_bypass_at(slot, true);
             }
         } else {
             tracing::warn!(id, "unknown effect id during graph init, skipping");
@@ -514,7 +489,6 @@ pub(crate) fn build_audio_streams(
 
     let mut processor = AudioProcessor {
         graph,
-        node_map,
         bridge,
         cached_order: Vec::new(),
         input_gain,

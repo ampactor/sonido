@@ -46,7 +46,7 @@ mod graph_engine;
 pub(crate) mod stream;
 mod wav;
 
-pub use graph_engine::GraphEngine;
+pub use graph_engine::{GraphEngine, GraphSnapshot, SnapshotEntry};
 pub use stream::{
     AudioDevice, AudioStream, StreamConfig, default_device, find_device_by_index,
     find_device_fuzzy, list_devices,

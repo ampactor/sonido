@@ -81,6 +81,17 @@ pub enum ChainCommand {
         /// New processing order as slot indices.
         new_order: Vec<usize>,
     },
+    /// Restore parameter values and bypass state for a slot.
+    ///
+    /// Sent after `Add` during state load to apply saved values.
+    Restore {
+        /// Plugin slot index.
+        slot: usize,
+        /// Parameter values in index order.
+        params: Vec<f32>,
+        /// Whether the effect should be bypassed.
+        bypassed: bool,
+    },
 }
 
 /// Inner storage behind `Arc` so `ChainShared` can be cheaply cloned.

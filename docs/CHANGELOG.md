@@ -29,8 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Latency compensation: auto-inserts `CompensationDelay` on shorter parallel paths
 - Click-free schedule swap via `SmoothedParam` crossfade (~5ms) when graph topology changes
 - `no_std` compatible (with `alloc`) — embeddable on Daisy Seed / Hothouse
-- `GraphEngine` in sonido-io wraps `ProcessingGraph` with chain management (add/remove/reorder) and `from_chain()` for linear chains
-- All consumers (CLI, GUI, plugin) migrated to `GraphEngine` / `ProcessingGraph` — `ProcessingEngine` and `ChainManager` removed
+- `GraphEngine` in sonido-core wraps `ProcessingGraph` with chain management (add/remove/reorder) and `from_chain()` for linear chains; sonido-io re-exports for backwards compatibility
+- Slot-indexed API: `add_effect_named`, `remove_at`, `reorder_slots`, `set_param_at`, `set_bypass_at`, `snapshot()` → `GraphSnapshot` (ADR-027)
+- All consumers (CLI, GUI, plugin) unified onto `GraphEngine` — GUI `node_map` and plugin `slot_node_ids`/`slot_ids` parallel arrays removed
+- `ChainCommand::Restore` — deferred param/bypass restoration during plugin state load
 - `EffectWithParams` trait moved from sonido-registry to sonido-core; `ProcessingGraph` now stores `Box<dyn EffectWithParams + Send>` for runtime parameter access
 - 46 graph-related tests (30 core + 16 engine unit + integration)
 - ADR-025 accepted (docs/DESIGN_DECISIONS.md)

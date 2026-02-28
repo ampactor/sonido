@@ -434,10 +434,15 @@ Fan-out:    Input → Split → [E1] → Merge → Output  (4 buffers)
                           → [E3] →
 ```
 
-`GraphEngine` in `sonido-io/src/graph_engine.rs` wraps `ProcessingGraph` with
-high-level chain management (`add_effect`, `remove_effect`, `reorder`) and
-`from_chain()` for linear chain construction. All consumers (CLI, GUI, plugin)
-use `GraphEngine` or `ProcessingGraph` directly.
+`GraphEngine` in `sonido-core/src/graph/engine.rs` wraps `ProcessingGraph` with
+high-level chain management and exposes a dual API (ADR-027):
+
+- **NodeId-based** (`add_effect`, `remove_effect`, `reorder`) — for arbitrary DAG topologies.
+- **Slot-indexed** (`add_effect_named`, `remove_at`, `reorder_slots`, `set_param_at`, `set_bypass_at`, `snapshot`) — for linear chains with registry IDs.
+
+All consumers use `GraphEngine` as the single topology owner. The GUI and CLAP plugin
+use the slot-indexed API; the CLI uses `from_chain()` for one-shot processing.
+`sonido-io` re-exports `GraphEngine` for backwards compatibility.
 
 ### CLI Stereo Output
 

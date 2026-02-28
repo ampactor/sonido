@@ -138,7 +138,7 @@ impl SonidoApp {
             preset_manager: PresetManager::new(),
             cached_panel: None,
             sample_rate: 48000.0,
-            buffer_size: 2048, // Default buffer size
+            buffer_size: 1024, // Default buffer size
             cpu_usage: 0.0,
             audio_error: None,
             cpu_history: Vec::with_capacity(60),

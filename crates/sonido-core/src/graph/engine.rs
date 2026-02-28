@@ -23,9 +23,10 @@
 //! ```
 
 #[cfg(not(feature = "std"))]
-use alloc::{boxed::Box, vec, vec::Vec};
+use alloc::{boxed::Box, string::String, vec, vec::Vec};
 
 use crate::EffectWithParams;
+use crate::param_info::ParamDescriptor;
 use crate::tempo::TempoContext;
 
 use super::stereo_samples::StereoSamples;
@@ -40,6 +41,8 @@ pub struct GraphEngine {
     graph: ProcessingGraph,
     /// Ordered list of effect `NodeId`s in the linear chain.
     chain_order: Vec<NodeId>,
+    /// Registry effect IDs, parallel to `chain_order`.
+    effect_ids: Vec<&'static str>,
     /// The Input node (always present).
     input_node: NodeId,
     /// The Output node (always present).
@@ -64,6 +67,7 @@ impl GraphEngine {
         Self {
             graph,
             chain_order: Vec::new(),
+            effect_ids: Vec::new(),
             input_node,
             output_node,
             scratch_left: vec![0.0; block_size],
@@ -83,6 +87,7 @@ impl GraphEngine {
         Self {
             graph,
             chain_order: Vec::new(),
+            effect_ids: Vec::new(),
             input_node: NodeId::sentinel(),
             output_node: NodeId::sentinel(),
             scratch_left: vec![0.0; block_size],
@@ -103,7 +108,8 @@ impl GraphEngine {
         let mut graph = ProcessingGraph::new(sample_rate, block_size);
         let input_node = graph.add_input();
 
-        let mut chain_order = Vec::with_capacity(effects.len());
+        let count = effects.len();
+        let mut chain_order = Vec::with_capacity(count);
         let mut prev = input_node;
         for effect in effects {
             let node = graph.add_effect(effect);
@@ -119,6 +125,7 @@ impl GraphEngine {
         Ok(Self {
             graph,
             chain_order,
+            effect_ids: vec![""; count],
             input_node,
             output_node,
             scratch_left: vec![0.0; block_size],
@@ -144,9 +151,33 @@ impl GraphEngine {
         self.graph.connect(prev, node).unwrap();
         self.graph.connect(node, self.output_node).unwrap();
         self.chain_order.push(node);
+        self.effect_ids.push("");
 
         self.graph.compile().unwrap();
         node
+    }
+
+    /// Appends a named effect to the end of the linear chain.
+    ///
+    /// Returns the slot index (0-based position). The `id` is a registry effect ID
+    /// (e.g., `"distortion"`, `"reverb"`) stored for snapshot/restore workflows.
+    pub fn add_effect_named(
+        &mut self,
+        effect: Box<dyn EffectWithParams + Send>,
+        id: &'static str,
+    ) -> usize {
+        let node = self.graph.add_effect(effect);
+
+        let prev = self.chain_order.last().copied().unwrap_or(self.input_node);
+        self.disconnect_between(prev, self.output_node);
+
+        self.graph.connect(prev, node).unwrap();
+        self.graph.connect(node, self.output_node).unwrap();
+        self.chain_order.push(node);
+        self.effect_ids.push(id);
+
+        self.graph.compile().unwrap();
+        self.chain_order.len() - 1
     }
 
     /// Removes an effect from the chain and returns it.
@@ -174,12 +205,25 @@ impl GraphEngine {
         // Remove the node (cleans up its edges).
         self.graph.remove_node(id).ok()?;
         self.chain_order.remove(pos);
+        self.effect_ids.remove(pos);
 
         // Reconnect pred → succ.
         self.graph.connect(pred, succ).unwrap();
         self.graph.compile().unwrap();
 
         Some(effect)
+    }
+
+    /// Removes an effect by slot index and returns it.
+    ///
+    /// Elements after the removed slot shift left (preserves ordering).
+    /// Returns `None` if `slot` is out of bounds.
+    pub fn remove_at(&mut self, slot: usize) -> Option<Box<dyn EffectWithParams + Send>> {
+        if slot >= self.chain_order.len() {
+            return None;
+        }
+        let node_id = self.chain_order[slot];
+        self.remove_effect(node_id)
     }
 
     /// Reorders effects in the linear chain.
@@ -196,6 +240,14 @@ impl GraphEngine {
             self.chain_order.len(),
             "reorder: length mismatch"
         );
+
+        // Build NodeId → old effect_id mapping before mutation.
+        let id_map: Vec<(NodeId, &'static str)> = self
+            .chain_order
+            .iter()
+            .zip(self.effect_ids.iter())
+            .map(|(&n, &id)| (n, id))
+            .collect();
 
         // Disconnect all effect-to-effect and input/output-to-effect edges.
         // First: input → first effect.
@@ -225,8 +277,41 @@ impl GraphEngine {
         }
         self.graph.connect(prev, self.output_node).unwrap();
 
+        // Rebuild effect_ids in new order.
+        self.effect_ids = order
+            .iter()
+            .map(|node| {
+                id_map
+                    .iter()
+                    .find(|(n, _)| n == node)
+                    .map_or("", |(_, id)| id)
+            })
+            .collect();
+
         self.chain_order = order.to_vec();
         self.graph.compile().unwrap();
+    }
+
+    /// Reorders effects by slot indices.
+    ///
+    /// `order` must contain exactly `slot_count()` indices, each in `0..slot_count()`.
+    /// Translates slot indices to `NodeId`s and delegates to [`reorder()`](Self::reorder).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `order` length doesn't match slot count or indices are out of bounds.
+    pub fn reorder_slots(&mut self, order: &[usize]) {
+        let node_ids: Vec<NodeId> = order.iter().map(|&slot| self.chain_order[slot]).collect();
+        self.reorder(&node_ids);
+    }
+
+    /// Removes all effects, leaving an empty Input → Output passthrough.
+    ///
+    /// Preserves the current sample rate and block size.
+    pub fn clear(&mut self) {
+        let sr = self.graph.sample_rate();
+        let bs = self.graph.block_size();
+        *self = Self::new_linear(sr, bs);
     }
 
     /// Returns the number of effects in the chain.
@@ -244,7 +329,126 @@ impl GraphEngine {
         &self.chain_order
     }
 
-    // --- Parameter / effect access ---
+    /// Returns the number of effect slots (alias for [`effect_count()`](Self::effect_count)).
+    pub fn slot_count(&self) -> usize {
+        self.chain_order.len()
+    }
+
+    /// Returns the registry effect IDs for all slots.
+    pub fn effect_ids(&self) -> &[&'static str] {
+        &self.effect_ids
+    }
+
+    /// Returns the registry effect ID at a slot, or `None` if out of bounds.
+    pub fn effect_id_at(&self, slot: usize) -> Option<&'static str> {
+        self.effect_ids.get(slot).copied()
+    }
+
+    // --- Slot-indexed parameter access ---
+
+    /// Sets a parameter value on an effect by slot and parameter index.
+    ///
+    /// Returns `true` if the parameter was set, `false` if slot or param is out of bounds.
+    pub fn set_param_at(&mut self, slot: usize, param: usize, value: f32) -> bool {
+        if let Some(&node_id) = self.chain_order.get(slot) {
+            if let Some(ewp) = self.graph.effect_with_params_mut(node_id) {
+                if param < ewp.effect_param_count() {
+                    ewp.effect_set_param(param, value);
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Gets a parameter value from an effect by slot and parameter index.
+    pub fn get_param_at(&self, slot: usize, param: usize) -> Option<f32> {
+        let &node_id = self.chain_order.get(slot)?;
+        let ewp = self.graph.effect_with_params_ref(node_id)?;
+        if param < ewp.effect_param_count() {
+            Some(ewp.effect_get_param(param))
+        } else {
+            None
+        }
+    }
+
+    /// Returns the number of parameters for the effect at a slot.
+    ///
+    /// Returns 0 if the slot is out of bounds.
+    pub fn param_count_at(&self, slot: usize) -> usize {
+        self.chain_order
+            .get(slot)
+            .and_then(|&id| self.graph.effect_with_params_ref(id))
+            .map_or(0, |ewp| ewp.effect_param_count())
+    }
+
+    /// Returns a parameter descriptor by slot and parameter index.
+    pub fn param_descriptor_at(&self, slot: usize, param: usize) -> Option<ParamDescriptor> {
+        let &node_id = self.chain_order.get(slot)?;
+        let ewp = self.graph.effect_with_params_ref(node_id)?;
+        ewp.effect_param_info(param)
+    }
+
+    /// Returns a reference to the effect at a slot.
+    pub fn effect_at(&self, slot: usize) -> Option<&(dyn EffectWithParams + Send)> {
+        let &node_id = self.chain_order.get(slot)?;
+        self.graph.effect_with_params_ref(node_id)
+    }
+
+    /// Returns a mutable reference to the effect at a slot.
+    pub fn effect_at_mut(&mut self, slot: usize) -> Option<&mut (dyn EffectWithParams + Send)> {
+        let &node_id = self.chain_order.get(slot)?;
+        self.graph.effect_with_params_mut(node_id)
+    }
+
+    /// Sets the bypass state for an effect at a slot.
+    pub fn set_bypass_at(&mut self, slot: usize, bypassed: bool) {
+        if let Some(&node_id) = self.chain_order.get(slot) {
+            self.graph.set_bypass(node_id, bypassed);
+        }
+    }
+
+    /// Returns whether the effect at a slot is bypassed.
+    ///
+    /// Returns `false` if the slot is out of bounds.
+    pub fn is_bypassed_at(&self, slot: usize) -> bool {
+        self.chain_order
+            .get(slot)
+            .map_or(false, |&id| self.graph.is_bypassed(id))
+    }
+
+    /// Captures the current chain state as a [`GraphSnapshot`].
+    ///
+    /// Each entry contains the effect ID, all parameter values, and bypass state.
+    pub fn snapshot(&self) -> GraphSnapshot {
+        let entries = self
+            .chain_order
+            .iter()
+            .zip(self.effect_ids.iter())
+            .map(|(&node_id, &eid)| {
+                let (params, bypassed) = self
+                    .graph
+                    .effect_with_params_ref(node_id)
+                    .map(|ewp| {
+                        let count = ewp.effect_param_count();
+                        let params: Vec<f32> =
+                            (0..count).map(|i| ewp.effect_get_param(i)).collect();
+                        (params, self.graph.is_bypassed(node_id))
+                    })
+                    .unwrap_or_default();
+
+                SnapshotEntry {
+                    effect_id: String::from(eid),
+                    params,
+                    bypassed,
+                }
+            })
+            .collect();
+
+        GraphSnapshot { entries }
+    }
+
+    // --- Parameter / effect access (NodeId-based) ---
 
     /// Returns a mutable reference to an effect's [`EffectWithParams`] interface.
     pub fn effect_with_params_mut(
@@ -418,6 +622,27 @@ impl GraphEngine {
     }
 }
 
+/// Snapshot of the entire chain state for save/restore workflows.
+///
+/// Captures effect IDs, parameter values, and bypass states.
+/// Owned strings allow deserialization from external sources.
+#[derive(Debug, Clone)]
+pub struct GraphSnapshot {
+    /// One entry per effect slot, in chain order.
+    pub entries: Vec<SnapshotEntry>,
+}
+
+/// State of a single effect slot in a [`GraphSnapshot`].
+#[derive(Debug, Clone)]
+pub struct SnapshotEntry {
+    /// Registry effect ID (e.g., `"distortion"`, `"reverb"`).
+    pub effect_id: String,
+    /// All parameter values in index order.
+    pub params: Vec<f32>,
+    /// Whether the effect is bypassed.
+    pub bypassed: bool,
+}
+
 #[cfg(test)]
 mod tests {
     extern crate alloc;
@@ -444,15 +669,25 @@ mod tests {
 
     impl ParameterInfo for Gain {
         fn param_count(&self) -> usize {
-            0
+            1
         }
-        fn param_info(&self, _index: usize) -> Option<ParamDescriptor> {
-            None
+        fn param_info(&self, index: usize) -> Option<ParamDescriptor> {
+            match index {
+                0 => Some(ParamDescriptor::custom("Factor", "Factor", 0.0, 10.0, 1.0)),
+                _ => None,
+            }
         }
-        fn get_param(&self, _index: usize) -> f32 {
-            0.0
+        fn get_param(&self, index: usize) -> f32 {
+            match index {
+                0 => self.factor,
+                _ => 0.0,
+            }
         }
-        fn set_param(&mut self, _index: usize, _value: f32) {}
+        fn set_param(&mut self, index: usize, value: f32) {
+            if index == 0 {
+                self.factor = value;
+            }
+        }
     }
 
     fn gain(factor: f32) -> Box<dyn EffectWithParams + Send> {
@@ -735,8 +970,187 @@ mod tests {
         let id = engine.add_effect(gain(2.0));
 
         let ewp = engine.effect_with_params_ref(id).unwrap();
-        assert_eq!(ewp.effect_param_count(), 0);
+        assert_eq!(ewp.effect_param_count(), 1);
 
         assert!(engine.effect_with_params_mut(id).is_some());
+    }
+
+    // --- Slot-indexed API tests ---
+
+    #[test]
+    fn test_add_effect_named() {
+        let mut engine = GraphEngine::new_linear(48000.0, 256);
+        let slot = engine.add_effect_named(gain(2.0), "distortion");
+        assert_eq!(slot, 0);
+        assert_eq!(engine.effect_ids(), &["distortion"]);
+        assert_eq!(engine.slot_count(), 1);
+
+        let slot2 = engine.add_effect_named(gain(0.5), "reverb");
+        assert_eq!(slot2, 1);
+        assert_eq!(engine.effect_ids(), &["distortion", "reverb"]);
+    }
+
+    #[test]
+    fn test_add_effect_anonymous_empty_id() {
+        let mut engine = GraphEngine::new_linear(48000.0, 256);
+        engine.add_effect(gain(2.0));
+        assert_eq!(engine.effect_ids(), &[""]);
+    }
+
+    #[test]
+    fn test_remove_at() {
+        let mut engine = GraphEngine::new_linear(48000.0, 256);
+        engine.add_effect_named(gain(2.0), "a");
+        engine.add_effect_named(gain(3.0), "b");
+
+        let removed = engine.remove_at(0);
+        assert!(removed.is_some());
+        assert_eq!(engine.slot_count(), 1);
+        assert_eq!(engine.effect_ids(), &["b"]);
+    }
+
+    #[test]
+    fn test_remove_at_out_of_bounds() {
+        let mut engine = GraphEngine::new_linear(48000.0, 256);
+        engine.add_effect_named(gain(2.0), "a");
+        assert!(engine.remove_at(5).is_none());
+        assert_eq!(engine.slot_count(), 1);
+    }
+
+    #[test]
+    fn test_reorder_slots() {
+        let mut engine = GraphEngine::new_linear(48000.0, 256);
+        engine.add_effect_named(gain(2.0), "a");
+        engine.add_effect_named(gain(3.0), "b");
+        engine.add_effect_named(gain(4.0), "c");
+
+        engine.reorder_slots(&[2, 0, 1]);
+        assert_eq!(engine.effect_ids(), &["c", "a", "b"]);
+    }
+
+    #[test]
+    fn test_clear() {
+        let mut engine = GraphEngine::new_linear(48000.0, 4);
+        engine.add_effect_named(gain(2.0), "a");
+        engine.add_effect_named(gain(3.0), "b");
+        engine.add_effect_named(gain(4.0), "c");
+
+        engine.clear();
+        assert!(engine.is_empty());
+        assert_eq!(engine.slot_count(), 0);
+        assert!(engine.effect_ids().is_empty());
+
+        // Verify passthrough still works.
+        let input = [1.0; 4];
+        let mut left_out = [0.0; 4];
+        let mut right_out = [0.0; 4];
+        engine.process_block_stereo(&input, &input, &mut left_out, &mut right_out);
+        assert_eq!(left_out, [1.0; 4]);
+    }
+
+    #[test]
+    fn test_set_get_param_at() {
+        let mut engine = GraphEngine::new_linear(48000.0, 256);
+        engine.add_effect_named(gain(2.0), "g");
+
+        // Read initial value.
+        assert_eq!(engine.get_param_at(0, 0), Some(2.0));
+
+        // Set and read back.
+        assert!(engine.set_param_at(0, 0, 5.0));
+        assert_eq!(engine.get_param_at(0, 0), Some(5.0));
+
+        // Out of bounds.
+        assert!(!engine.set_param_at(5, 0, 1.0));
+        assert_eq!(engine.get_param_at(5, 0), None);
+        assert!(!engine.set_param_at(0, 99, 1.0));
+        assert_eq!(engine.get_param_at(0, 99), None);
+    }
+
+    #[test]
+    fn test_param_count_at() {
+        let mut engine = GraphEngine::new_linear(48000.0, 256);
+        engine.add_effect_named(gain(2.0), "g");
+
+        assert_eq!(engine.param_count_at(0), 1);
+        assert_eq!(engine.param_count_at(99), 0);
+    }
+
+    #[test]
+    fn test_param_descriptor_at() {
+        let mut engine = GraphEngine::new_linear(48000.0, 256);
+        engine.add_effect_named(gain(2.0), "g");
+
+        let desc = engine.param_descriptor_at(0, 0).unwrap();
+        assert_eq!(desc.name, "Factor");
+        assert!(engine.param_descriptor_at(0, 99).is_none());
+        assert!(engine.param_descriptor_at(99, 0).is_none());
+    }
+
+    #[test]
+    fn test_bypass_at() {
+        let mut engine = GraphEngine::new_linear(48000.0, 256);
+        engine.add_effect_named(gain(2.0), "g");
+
+        assert!(!engine.is_bypassed_at(0));
+        engine.set_bypass_at(0, true);
+        assert!(engine.is_bypassed_at(0));
+        engine.set_bypass_at(0, false);
+        assert!(!engine.is_bypassed_at(0));
+
+        // Out of bounds is safe.
+        assert!(!engine.is_bypassed_at(99));
+    }
+
+    #[test]
+    fn test_snapshot() {
+        let mut engine = GraphEngine::new_linear(48000.0, 256);
+        engine.add_effect_named(gain(2.0), "distortion");
+        engine.add_effect_named(gain(3.0), "reverb");
+        engine.set_bypass_at(1, true);
+
+        let snap = engine.snapshot();
+        assert_eq!(snap.entries.len(), 2);
+
+        assert_eq!(snap.entries[0].effect_id, "distortion");
+        assert_eq!(snap.entries[0].params, vec![2.0]);
+        assert!(!snap.entries[0].bypassed);
+
+        assert_eq!(snap.entries[1].effect_id, "reverb");
+        assert_eq!(snap.entries[1].params, vec![3.0]);
+        assert!(snap.entries[1].bypassed);
+    }
+
+    #[test]
+    fn test_effect_ids_across_remove() {
+        let mut engine = GraphEngine::new_linear(48000.0, 256);
+        engine.add_effect_named(gain(1.0), "a");
+        engine.add_effect_named(gain(2.0), "b");
+        engine.add_effect_named(gain(3.0), "c");
+
+        engine.remove_at(1); // remove "b"
+        assert_eq!(engine.effect_ids(), &["a", "c"]);
+        assert_eq!(engine.slot_count(), 2);
+    }
+
+    #[test]
+    fn test_slot_count_alias() {
+        let mut engine = GraphEngine::new_linear(48000.0, 256);
+        engine.add_effect(gain(1.0));
+        engine.add_effect(gain(2.0));
+        assert_eq!(engine.slot_count(), engine.effect_count());
+    }
+
+    #[test]
+    fn test_effect_at_access() {
+        let mut engine = GraphEngine::new_linear(48000.0, 256);
+        engine.add_effect_named(gain(2.0), "g");
+
+        assert!(engine.effect_at(0).is_some());
+        assert!(engine.effect_at(99).is_none());
+
+        let ewp = engine.effect_at_mut(0).unwrap();
+        ewp.effect_set_param(0, 7.0);
+        assert_eq!(engine.get_param_at(0, 0), Some(7.0));
     }
 }

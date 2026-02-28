@@ -140,28 +140,25 @@ impl AtomicParamBridge {
         SlotIndex(idx)
     }
 
-    /// Removes a slot via swap-remove.
+    /// Removes a slot at the given position, shifting remaining slots left.
     ///
     /// Called on the audio thread when processing a `ChainCommand::Remove`.
-    /// Uses RCU. The order vector is updated to remove the slot and remap
-    /// the swapped-in last index.
+    /// Uses RCU. The order vector is updated to remove the slot and decrement
+    /// all indices greater than the removed slot.
     pub(crate) fn remove_slot(&self, slot: SlotIndex) {
         self.state.rcu(|old| {
             if slot.0 >= old.slots.len() {
                 return Arc::clone(old);
             }
-            let old_last = old.slots.len() - 1;
             let mut slots = old.slots.clone();
-            slots.swap_remove(slot.0);
+            slots.remove(slot.0);
 
-            // Remove `slot` from order and remap last→slot
+            // Remove `slot` from order and decrement indices > slot.0
             let mut order: Vec<usize> =
                 old.order.iter().copied().filter(|&i| i != slot.0).collect();
-            if slot.0 != old_last {
-                for idx in &mut order {
-                    if *idx == old_last {
-                        *idx = slot.0;
-                    }
+            for idx in &mut order {
+                if *idx > slot.0 {
+                    *idx -= 1;
                 }
             }
             Arc::new(SharedAudioState { slots, order })
@@ -377,17 +374,17 @@ mod tests {
     }
 
     #[test]
-    fn remove_slot_swap_removes() {
+    fn remove_slot_positional() {
         let registry = EffectRegistry::new();
         let bridge =
             AtomicParamBridge::new(&registry, &["distortion", "compressor", "reverb"], 48000.0);
         assert_eq!(bridge.slot_count(), 3);
 
-        // Remove slot 0 → "reverb" (last) swaps into position 0
+        // Remove slot 0 → remaining slots shift left
         bridge.remove_slot(SlotIndex(0));
         assert_eq!(bridge.slot_count(), 2);
-        assert_eq!(bridge.effect_id(SlotIndex(0)), "reverb");
-        assert_eq!(bridge.effect_id(SlotIndex(1)), "compressor");
+        assert_eq!(bridge.effect_id(SlotIndex(0)), "compressor");
+        assert_eq!(bridge.effect_id(SlotIndex(1)), "reverb");
     }
 
     #[test]
@@ -445,9 +442,9 @@ mod tests {
             AtomicParamBridge::new(&registry, &["distortion", "compressor", "reverb"], 48000.0);
         assert_eq!(bridge.get_order(), vec![0, 1, 2]);
 
-        // Remove slot 0 → slot 2 swaps to 0, order remaps 2→0
+        // Remove slot 0 → indices shift down
         bridge.remove_slot(SlotIndex(0));
-        // Original order [0, 1, 2] → remove 0 → [1, 2] → remap 2→0 → [1, 0]
-        assert_eq!(bridge.get_order(), vec![1, 0]);
+        // Original order [0, 1, 2] → remove 0 → [1, 2] → decrement → [0, 1]
+        assert_eq!(bridge.get_order(), vec![0, 1]);
     }
 }

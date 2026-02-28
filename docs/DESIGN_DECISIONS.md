@@ -1070,7 +1070,7 @@ Pre-allocate a flat parameter space: **16 slots × 32 params = 512 CLAP paramete
 
 1. **`ClapParamId` validated newtype** — encodes `slot * 32 + local_param_index` in a `u32`. Validated at construction; all flat-space access goes through this type. `const fn` methods are zero-cost.
 
-2. **Direct effect ownership** — the audio processor stores effects as `Vec<Option<Box<dyn EffectWithParams + Send>>>` rather than using `ProcessingGraph`. Reason: `ProcessingGraph::effect_mut()` returns `&mut dyn Effect` which loses the `ParameterInfo` vtable needed for parameter synchronization with the host.
+2. **GraphEngine-backed chain** — the audio processor delegates to `GraphEngine` (ADR-027), which owns all effect instances via `ProcessingGraph` with full `EffectWithParams` vtable access. Plugin slot indices (sparse, 0..MAX_SLOTS) map to engine slot positions (dense, 0..n) via a `slot_map: Vec<usize>` bridge.
 
 3. **Param cache diffing** — the audio processor maintains a `param_cache: Vec<f32>` mirroring the last-seen shared values. Each process cycle, it diffs against `ChainShared` atomics and emits CLAP `ParamValueEvent` (with gesture begin/end) only for changed parameters. This correctly attributes GUI-originated changes to the host.
 
@@ -1083,7 +1083,7 @@ Pre-allocate a flat parameter space: **16 slots × 32 params = 512 CLAP paramete
 ### Alternatives Considered
 
 - **Dynamic parameter registration** — CLAP supports `CLAP_PARAM_RESCAN_ALL` to add/remove params at runtime. Rejected: many hosts don't handle this well, and pre-allocation with hidden unused params is the standard approach (CLAP spec §params recommends it for multi-slot instruments).
-- **ProcessingGraph for chain** — would provide latency compensation and buffer optimization. Rejected for v0.2: the `Effect`-only vtable from `effect_mut()` can't drive `ParameterInfo` sync. May revisit in v0.3 with a `EffectWithParams`-aware graph node type.
+- **ProcessingGraph for chain** — initially rejected (v0.2) because `effect_mut()` returned `&mut dyn Effect` without `ParameterInfo`. Resolved in v0.3: `ProcessingGraph` gained `effect_with_params_mut()` returning `&mut (dyn EffectWithParams + Send)`, enabling `GraphEngine` as the universal chain host (ADR-027).
 - **One parameter map per slot** — cleaner but requires runtime HashMap lookup per param access. The flat array with `ClapParamId` encoding is O(1) with zero allocation.
 
 ### References
@@ -1092,4 +1092,53 @@ Pre-allocate a flat parameter space: **16 slots × 32 params = 512 CLAP paramete
 - `crates/sonido-plugin/examples/sonido-chain.rs` — CLAP entry point
 - `docs/ARCHITECTURE.md` — plugin section (multi-effect chain)
 - ADR-024 — single-effect CLAP plugin architecture (foundation)
+- ADR-027 — GraphEngine as universal chain host
 - CLAP specification §params — parameter pre-allocation pattern for multi-slot instruments
+
+---
+
+## ADR-027: GraphEngine as Universal Chain Host
+
+**Status:** Accepted
+
+### Context
+
+Four consumers manage linear effect chains independently: GUI (`AudioProcessor` + `node_map`), CLAP plugin (`ChainAudioProcessor` + raw `ProcessingGraph` + parallel arrays), CLI (already clean via `GraphEngine`), and embedded (future Daisy Seed). Each consumer re-implements the same topology management (add/remove/reorder/reconnect/recompile), duplicating ~80 LOC of graph wiring per consumer. A linear chain IS a linear graph — there should be one type for this.
+
+`GraphEngine` (sonido-core, `no_std + alloc`) already handles topology, add/remove/reorder, and block processing. What was missing: effect registry IDs per slot, slot-indexed parameter/bypass access, and state snapshot/restore.
+
+### Decision
+
+Extend `GraphEngine` with a **slot-indexed API** rather than create a separate `ChainEngine`. All consumers use one type.
+
+**Slot extensions added to `GraphEngine`:**
+
+1. **`effect_ids: Vec<&'static str>`** — parallel to `chain_order`, stores registry effect IDs per slot.
+2. **`add_effect_named(effect, id) -> usize`** — returns slot index (not `NodeId`), stores the registry ID.
+3. **`remove_at(slot) -> Option<Box<dyn EffectWithParams + Send>>`** — positional remove (elements shift left).
+4. **Slot-indexed accessors** — `set_param_at()`, `get_param_at()`, `param_count_at()`, `param_descriptor_at()`, `effect_at()`, `effect_at_mut()`, `set_bypass_at()`, `is_bypassed_at()`.
+5. **`snapshot() -> GraphSnapshot`** — captures all effect IDs, parameter values, and bypass states for save/restore.
+6. **`reorder_slots(&[usize])`** — reorder by slot index (translates to `NodeId`s internally).
+7. **`clear()`** — drops all effects, rebuilds empty Input → Output passthrough.
+
+**Consumer migrations:**
+
+- **GUI `AudioProcessor`**: removed `node_map: Vec<NodeId>` shadow array. All slot access goes through `GraphEngine` slot API. `AtomicParamBridge::remove_slot()` changed from `swap_remove` to positional `remove` to match engine semantics.
+- **CLAP `ChainAudioProcessor`**: replaced raw `ProcessingGraph` + `slot_node_ids: [Option<NodeId>; 16]` + `slot_ids` + `input_node` + `output_node` with `GraphEngine` + `slot_map: Vec<usize>` (engine_slot → plugin_slot). Removed `reconnect_and_compile()` (~40 LOC). Added `ChainCommand::Restore` for deferred param/bypass restoration during state load.
+- **CLI**: already used `GraphEngine` — no changes needed.
+
+**Dual API principle:** `GraphEngine` exposes both `NodeId`-based methods (for arbitrary DAG topologies) and slot-indexed methods (for linear chains). The slot API is a convenience layer — it translates to `NodeId` operations internally.
+
+### Alternatives Considered
+
+- **Separate `ChainEngine` type** — cleaner separation between linear and DAG use cases. Rejected: would duplicate graph management code that `GraphEngine` already provides. The slot API is a thin layer (~100 LOC) that doesn't compromise the DAG API.
+- **Trait-based abstraction** — define a `ChainHost` trait implemented by both standalone and plugin contexts. Rejected: trait would need to abstract over both topology management AND parameter access, leading to a wide trait surface. Concrete `GraphEngine` is simpler.
+- **Keep consumer-specific wiring** — each consumer manages its own topology. Rejected: bug-prone (the GUI's `swap_remove` vs. engine's positional `remove` mismatch was a real issue) and duplicates ~80 LOC per consumer.
+
+### References
+
+- `crates/sonido-core/src/graph/engine.rs` — `GraphEngine`, `GraphSnapshot`, `SnapshotEntry`
+- `crates/sonido-gui/src/audio_processor.rs` — standalone consumer (slot API)
+- `crates/sonido-plugin/src/chain/audio.rs` — CLAP consumer (slot_map bridge)
+- ADR-025 — DAG Routing Engine (foundation)
+- ADR-026 — Multi-Effect Chain CLAP Plugin (parameter space design)
