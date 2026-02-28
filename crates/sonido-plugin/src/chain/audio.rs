@@ -1,18 +1,38 @@
 //! Audio processor for the multi-effect chain plugin.
 //!
-//! [`ChainAudioProcessor`] drives a [`ProcessingGraph`] for audio routing,
+//! [`ChainAudioProcessor`] drives a [`GraphEngine`] for audio routing,
 //! drains structural commands from [`ChainShared`], and processes stereo
 //! audio blocks via the compiled DAG schedule.
 //!
 //! # Design
 //!
-//! Effects are stored inside the [`ProcessingGraph`] as
+//! Effects are stored inside the [`GraphEngine`] as
 //! `Box<dyn EffectWithParams + Send>`, preserving both the
 //! [`Effect`](sonido_core::Effect) and
-//! [`ParameterInfo`](sonido_core::ParameterInfo) vtables. Slot indices are mapped to graph [`NodeId`]s
-//! via `slot_node_ids`. On every topology change (add/remove/reorder) the
-//! linear chain `Input → E[0] → … → E[n] → Output` is rebuilt and
-//! recompiled.
+//! [`ParameterInfo`](sonido_core::ParameterInfo) vtables. Engine slots are
+//! dense positions (`0..n`); plugin slots are a fixed pool (`0..MAX_SLOTS`).
+//! `slot_map[engine_slot]` maps to the plugin slot index, bridging the two
+//! namespaces.
+//!
+//! # Slot Mapping
+//!
+//! Plugin slots are sparse (0..MAX_SLOTS=16); engine slots are dense (0..n).
+//! `slot_map: Vec<usize>` grows as effects are added and shrinks as they are
+//! removed. `slot_map[engine_slot] = plugin_slot`.
+//!
+//! On every topology change (add/remove/reorder) the slot_map is updated and
+//! `GraphEngine` handles the linear chain topology internally.
+//!
+//! # Parameter Sync
+//!
+//! The shared param array is the source of truth. On every `process()` call,
+//! `sync_gui_changes()` diffs the shared values against `param_cache` (last
+//! values written to the effects). Divergences cause:
+//!
+//! 1. A CLAP `ParamGestureBeginEvent` if a begin-gesture flag is pending.
+//! 2. A CLAP `ParamValueEvent` so the DAW updates its automation display.
+//! 3. A call to `set_param_at()` to apply the value.
+//! 4. A CLAP `ParamGestureEndEvent` if an end-gesture flag is pending.
 
 use crate::chain::main_thread::ChainMainThread;
 use crate::chain::shared::{ChainCommand, ChainShared, GESTURE_BEGIN, GESTURE_END, SlotSnapshot};
@@ -24,15 +44,21 @@ use clack_plugin::events::event_types::{
 };
 use clack_plugin::prelude::*;
 use clack_plugin::utils::Cookie;
-use sonido_core::graph::{NodeId, ProcessingGraph};
+use sonido_core::graph::GraphEngine;
 use sonido_registry::EffectRegistry;
 
 /// Audio-thread processor for the chain plugin.
 ///
-/// Owns all active `EffectWithParams` instances (inside the graph) and
+/// Owns all active `EffectWithParams` instances (inside the engine) and
 /// processes stereo audio in real time. Structural commands (add/remove/reorder)
 /// arrive via [`ChainShared::try_drain_commands`] and are applied synchronously
 /// at the start of each block.
+///
+/// ## Slot Mapping
+///
+/// Plugin slots are sparse (0..MAX_SLOTS); engine slots are dense (0..n).
+/// `slot_map[engine_slot]` returns the plugin slot index. This allows stable
+/// `ClapParamId` addresses even as effects are added and removed.
 ///
 /// ## Graph Topology
 ///
@@ -40,42 +66,23 @@ use sonido_registry::EffectRegistry;
 /// Input → Effect[order[0]] → Effect[order[1]] → … → Effect[order[n]] → Output
 /// ```
 ///
-/// The Input and Output nodes are permanent; only the effect edges are rebuilt
-/// on each structural mutation.
-///
-/// ## Parameter Sync
-///
-/// The shared param array is the source of truth. On every `process()` call,
-/// `sync_gui_changes()` diffs the shared values against `param_cache` (last
-/// values written to the effects). Divergences cause:
-///
-/// 1. A CLAP `ParamGestureBeginEvent` if a begin-gesture flag is pending.
-/// 2. A CLAP `ParamValueEvent` so the DAW updates its automation display.
-/// 3. A call to `effect_set_param()` to apply the value.
-/// 4. A CLAP `ParamGestureEndEvent` if an end-gesture flag is pending.
+/// The Input and Output nodes are permanent inside `GraphEngine`; only the
+/// effect slots are mutated on structural commands.
 pub struct ChainAudioProcessor<'a> {
     shared: &'a ChainShared,
     /// DAG routing engine — owns all effect instances.
-    graph: ProcessingGraph,
-    /// Maps slot index → [`NodeId`] in the graph.
+    engine: GraphEngine,
+    /// Maps engine slot position → plugin slot index.
     ///
-    /// `None` entries are vacant slots. Active slots have `Some(NodeId)`.
-    slot_node_ids: [Option<NodeId>; MAX_SLOTS],
-    /// Static effect IDs per slot, tracked alongside `slot_node_ids`.
-    ///
-    /// Used when publishing `SlotSnapshot`s to the main thread. The `&'static str`
-    /// comes from `EffectDescriptor::id` via the registry.
-    slot_ids: [Option<&'static str>; MAX_SLOTS],
-    /// Permanent Input node in the graph.
-    input_node: NodeId,
-    /// Permanent Output node in the graph.
-    output_node: NodeId,
+    /// Plugin slots are sparse (0..MAX_SLOTS); engine slots are dense (0..n).
+    /// `slot_map[engine_slot]` returns the plugin slot index.
+    slot_map: Vec<usize>,
     /// Registry used to instantiate new effects on `ChainCommand::Add`.
     registry: EffectRegistry,
     sample_rate: f32,
     #[allow(dead_code)]
     block_size: usize,
-    /// Current processing order as an ordered list of occupied slot indices.
+    /// Current processing order as an ordered list of occupied plugin slot indices.
     cached_order: Vec<usize>,
     /// Last param values written to the effects.
     ///
@@ -101,22 +108,10 @@ impl<'a> PluginAudioProcessor<'a, ChainShared, ChainMainThread<'a>> for ChainAud
         let block_size = audio_config.max_frames_count as usize;
         let sample_rate = audio_config.sample_rate as f32;
 
-        let mut graph = ProcessingGraph::new(sample_rate, block_size);
-        let input_node = graph.add_input();
-        let output_node = graph.add_output();
-        // Compile the empty (passthrough-via-direct) chain. Input→Output directly.
-        graph
-            .connect(input_node, output_node)
-            .expect("initial Input→Output connection must succeed");
-        graph.compile().expect("initial empty graph must compile");
-
         Ok(Self {
             shared,
-            graph,
-            slot_node_ids: [None; MAX_SLOTS],
-            slot_ids: [None; MAX_SLOTS],
-            input_node,
-            output_node,
+            engine: GraphEngine::new_linear(sample_rate, block_size),
+            slot_map: Vec::new(),
             registry: EffectRegistry::new(),
             sample_rate,
             block_size,
@@ -150,17 +145,11 @@ impl<'a> PluginAudioProcessor<'a, ChainShared, ChainMainThread<'a>> for ChainAud
     }
 
     fn deactivate(self, _main_thread: &mut ChainMainThread<'_>) {
-        // Graph (and all effects) are dropped here, releasing all DSP state.
+        // Engine (and all effects) are dropped here, releasing all DSP state.
     }
 
     fn reset(&mut self) {
-        for slot in 0..MAX_SLOTS {
-            if let Some(node_id) = self.slot_node_ids[slot]
-                && let Some(effect) = self.graph.effect_with_params_mut(node_id)
-            {
-                effect.reset();
-            }
-        }
+        self.engine.reset();
     }
 }
 
@@ -178,14 +167,31 @@ impl ChainAudioProcessor<'_> {
                 ChainCommand::Add { effect_id } => self.handle_add(&effect_id),
                 ChainCommand::Remove { slot } => self.handle_remove(slot),
                 ChainCommand::Reorder { new_order } => self.handle_reorder(new_order),
+                ChainCommand::Restore {
+                    slot,
+                    params,
+                    bypassed,
+                } => {
+                    if let Some(engine_slot) = self.slot_map.iter().position(|&ps| ps == slot) {
+                        for (i, &val) in params.iter().enumerate() {
+                            self.engine.set_param_at(engine_slot, i, val);
+                            if let Some(id) = ClapParamId::new(slot, i) {
+                                self.shared.set_value(id, val);
+                                self.param_cache[id.raw() as usize] = val;
+                            }
+                        }
+                        self.engine.set_bypass_at(engine_slot, bypassed);
+                        self.shared.set_bypassed(slot, bypassed);
+                    }
+                }
             }
         }
     }
 
-    /// Add a new effect to the first available slot.
+    /// Add a new effect to the first available plugin slot.
     fn handle_add(&mut self, effect_id: &str) {
-        // Find first vacant slot.
-        let Some(slot) = self.slot_node_ids.iter().position(|s| s.is_none()) else {
+        // Find first vacant plugin slot.
+        let Some(plugin_slot) = (0..MAX_SLOTS).find(|s| !self.slot_map.contains(s)) else {
             tracing::warn!("ChainAudioProcessor: no vacant slot for '{effect_id}' (chain full)");
             return;
         };
@@ -208,24 +214,21 @@ impl ChainAudioProcessor<'_> {
             .collect();
 
         // Initialize shared param values to effect defaults.
-        self.shared.init_slot_defaults(slot, &descriptors);
+        self.shared.init_slot_defaults(plugin_slot, &descriptors);
 
         // Sync param_cache so the first process() call doesn't emit spurious events.
         for (param_idx, desc) in descriptors.iter().enumerate() {
-            if let Some(id) = ClapParamId::new(slot, param_idx) {
+            if let Some(id) = ClapParamId::new(plugin_slot, param_idx) {
                 self.param_cache[id.raw() as usize] = desc.default;
             }
         }
 
-        tracing::info!("ChainAudioProcessor: adding '{effect_id}' in slot {slot}");
-        let node_id = self.graph.add_effect(effect);
-        self.slot_node_ids[slot] = Some(node_id);
-        self.slot_ids[slot] = Some(static_id);
+        tracing::info!("ChainAudioProcessor: adding '{effect_id}' in slot {plugin_slot}");
+        self.engine.add_effect_named(effect, static_id);
+        self.slot_map.push(plugin_slot);
 
-        // Rebuild order: all occupied slots in index order.
+        // Rebuild order: all occupied slots in current engine order.
         self.rebuild_order_from_slots();
-        // Reconnect graph in new order and recompile.
-        self.reconnect_and_compile();
 
         // Publish updated slot metadata to main thread.
         self.publish_slots();
@@ -234,131 +237,74 @@ impl ChainAudioProcessor<'_> {
         self.shared.request_callback();
     }
 
-    /// Remove the effect at `slot`, clearing all associated state.
-    fn handle_remove(&mut self, slot: usize) {
-        let Some(node_id) = self.slot_node_ids.get(slot).copied().flatten() else {
-            tracing::warn!("ChainAudioProcessor: remove on vacant/invalid slot {slot}");
+    /// Remove the effect at `plugin_slot`, clearing all associated state.
+    fn handle_remove(&mut self, plugin_slot: usize) {
+        let Some(engine_slot) = self.slot_map.iter().position(|&ps| ps == plugin_slot) else {
+            tracing::warn!("ChainAudioProcessor: remove on vacant/invalid slot {plugin_slot}");
             return;
         };
 
-        tracing::info!("ChainAudioProcessor: removing slot {slot}");
+        tracing::info!("ChainAudioProcessor: removing slot {plugin_slot}");
 
-        // Remove the node (and all its edges) from the graph.
-        if let Err(e) = self.graph.remove_node(node_id) {
-            tracing::warn!("ChainAudioProcessor: remove_node failed: {e:?}");
-        }
-        self.slot_node_ids[slot] = None;
-        self.slot_ids[slot] = None;
-        self.shared.clear_slot_values(slot);
+        self.engine.remove_at(engine_slot);
+        self.slot_map.remove(engine_slot);
+        self.shared.clear_slot_values(plugin_slot);
 
         // Clear param_cache for this slot.
         for param_idx in 0..SLOT_STRIDE {
-            if let Some(id) = ClapParamId::new(slot, param_idx) {
+            if let Some(id) = ClapParamId::new(plugin_slot, param_idx) {
                 self.param_cache[id.raw() as usize] = 0.0;
             }
         }
 
         self.rebuild_order_from_slots();
-        self.reconnect_and_compile();
         self.publish_slots();
 
         self.shared.set_needs_rescan();
         self.shared.request_callback();
     }
 
-    /// Reorder the chain to the provided slot sequence.
+    /// Reorder the chain to the provided plugin slot sequence.
     fn handle_reorder(&mut self, new_order: Vec<usize>) {
-        // Validate: only include occupied slots, reject out-of-range indices.
+        // Validate: only include plugin slots present in slot_map.
         let valid_order: Vec<usize> = new_order
             .into_iter()
-            .filter(|&s| s < MAX_SLOTS && self.slot_node_ids[s].is_some())
+            .filter(|s| self.slot_map.contains(s))
             .collect();
 
         tracing::info!("ChainAudioProcessor: reorder → {valid_order:?}");
         self.shared.store_order(valid_order.clone());
-        self.cached_order = valid_order;
+        self.cached_order = valid_order.clone();
 
-        // Reconnect graph in new order and recompile.
-        self.reconnect_and_compile();
-    }
-
-    /// Rebuild `cached_order` from the occupied slots in index order.
-    fn rebuild_order_from_slots(&mut self) {
-        self.cached_order = self
-            .slot_node_ids
+        // Translate plugin slot order to engine slot order.
+        let engine_order: Vec<usize> = valid_order
             .iter()
-            .enumerate()
-            .filter_map(|(i, s)| s.map(|_| i))
+            .filter_map(|ps| self.slot_map.iter().position(|&s| s == *ps))
             .collect();
-        self.shared.store_order(self.cached_order.clone());
+
+        if engine_order.len() == self.engine.slot_count() {
+            self.engine.reorder_slots(&engine_order);
+            // Rebuild slot_map to match new engine order.
+            self.slot_map = valid_order;
+        }
     }
 
-    /// Disconnect all inter-effect edges and reconnect in `cached_order`, then recompile.
-    ///
-    /// Topology after reconnect:
-    /// `Input → Effect[order[0]] → Effect[order[1]] → … → Effect[order[n]] → Output`
-    fn reconnect_and_compile(&mut self) {
-        // Disconnect everything from input_node and output_node, and between effects.
-        // Strategy: collect all edges from/to nodes in the chain and disconnect them.
-        let all_nodes: Vec<NodeId> = core::iter::once(self.input_node)
-            .chain(
-                self.cached_order
-                    .iter()
-                    .filter_map(|&s| self.slot_node_ids[s]),
-            )
-            .chain(core::iter::once(self.output_node))
-            .collect();
-
-        // Disconnect all adjacent pairs in current topology.
-        // We try all pairs in `all_nodes` since order may have changed.
-        // collect edge IDs first to avoid mutating while iterating.
-        let mut edges_to_remove = Vec::new();
-        for i in 0..all_nodes.len() {
-            for j in 0..all_nodes.len() {
-                if i != j
-                    && let Some(edge_id) = self.graph.find_edge(all_nodes[i], all_nodes[j])
-                {
-                    edges_to_remove.push(edge_id);
-                }
-            }
-        }
-        for edge_id in edges_to_remove {
-            let _ = self.graph.disconnect(edge_id);
-        }
-
-        // Build the linear chain: Input → E[0] → … → E[n] → Output.
-        let chain_nodes: Vec<NodeId> = core::iter::once(self.input_node)
-            .chain(
-                self.cached_order
-                    .iter()
-                    .filter_map(|&s| self.slot_node_ids[s]),
-            )
-            .chain(core::iter::once(self.output_node))
-            .collect();
-
-        for window in chain_nodes.windows(2) {
-            if let [from, to] = *window
-                && let Err(e) = self.graph.connect(from, to)
-            {
-                tracing::warn!("ChainAudioProcessor: connect failed: {e:?}");
-            }
-        }
-
-        if let Err(e) = self.graph.compile() {
-            tracing::warn!("ChainAudioProcessor: compile failed: {e:?}");
-        }
+    /// Rebuild `cached_order` from the current slot_map order.
+    fn rebuild_order_from_slots(&mut self) {
+        self.cached_order = self.slot_map.clone();
+        self.shared.store_order(self.cached_order.clone());
     }
 
     /// Publish a fresh `Vec<SlotSnapshot>` to the main thread.
     fn publish_slots(&self) {
         let slots: Vec<SlotSnapshot> = (0..MAX_SLOTS)
-            .map(|slot| {
-                if let Some(node_id) = self.slot_node_ids[slot] {
-                    if let Some(effect) = self.graph.effect_with_params_ref(node_id) {
+            .map(|plugin_slot| {
+                if let Some(engine_slot) = self.slot_map.iter().position(|&ps| ps == plugin_slot) {
+                    if let Some(effect) = self.engine.effect_at(engine_slot) {
                         let descriptors: Vec<_> = (0..effect.effect_param_count())
                             .filter_map(|i| effect.effect_param_info(i))
                             .collect();
-                        let id = self.slot_ids[slot].unwrap_or("");
+                        let id = self.engine.effect_id_at(engine_slot).unwrap_or("");
                         SlotSnapshot::occupied(id, descriptors)
                     } else {
                         SlotSnapshot::empty()
@@ -392,18 +338,16 @@ impl ChainAudioProcessor<'_> {
                 continue;
             };
 
-            let slot = clap_id.slot();
+            let plugin_slot = clap_id.slot();
             let local_idx = clap_id.param();
             let value = ev.value() as f32;
 
             // Write to shared so main thread sees latest host value.
             self.shared.set_value(clap_id, value);
 
-            // Apply directly to effect via graph.
-            if let Some(node_id) = self.slot_node_ids.get(slot).copied().flatten()
-                && let Some(effect) = self.graph.effect_with_params_mut(node_id)
-            {
-                effect.effect_set_param(local_idx, value);
+            // Apply directly to effect via engine slot lookup.
+            if let Some(engine_slot) = self.slot_map.iter().position(|&ps| ps == plugin_slot) {
+                self.engine.set_param_at(engine_slot, local_idx, value);
             }
 
             // Update cache — host change is authoritative, no need to re-emit.
@@ -421,20 +365,16 @@ impl ChainAudioProcessor<'_> {
     /// effect). Divergences trigger a CLAP `ParamValueEvent` so the DAW can
     /// update automation lanes, and the new value is applied to the effect.
     fn sync_gui_changes(&mut self, output: &mut OutputEvents) {
-        for &slot in &self.cached_order.clone() {
-            let Some(node_id) = self.slot_node_ids[slot] else {
+        let order = self.cached_order.clone();
+        for &plugin_slot in &order {
+            let Some(engine_slot) = self.slot_map.iter().position(|&ps| ps == plugin_slot) else {
                 continue;
             };
 
-            let param_count = {
-                let Some(effect) = self.graph.effect_with_params_ref(node_id) else {
-                    continue;
-                };
-                effect.effect_param_count()
-            };
+            let param_count = self.engine.param_count_at(engine_slot);
 
             for local_idx in 0..param_count {
-                let Some(clap_id) = ClapParamId::new(slot, local_idx) else {
+                let Some(clap_id) = ClapParamId::new(plugin_slot, local_idx) else {
                     continue;
                 };
                 let flat = clap_id.raw() as usize;
@@ -456,9 +396,7 @@ impl ChainAudioProcessor<'_> {
                 let cached_val = self.param_cache[flat];
 
                 if shared_val.to_bits() != cached_val.to_bits() {
-                    if let Some(effect) = self.graph.effect_with_params_mut(node_id) {
-                        effect.effect_set_param(local_idx, shared_val);
-                    }
+                    self.engine.set_param_at(engine_slot, local_idx, shared_val);
                     self.param_cache[flat] = shared_val;
 
                     let ev = ParamValueEvent::new(
@@ -529,7 +467,7 @@ impl ChainAudioProcessor<'_> {
         Ok(())
     }
 
-    /// Process separate input/output stereo buffers through the graph.
+    /// Process separate input/output stereo buffers through the engine.
     fn process_stereo_separate(
         &mut self,
         left_in: &[f32],
@@ -542,11 +480,11 @@ impl ChainAudioProcessor<'_> {
             return;
         }
 
-        self.graph
-            .process_block(&left_in[..len], &right_in[..len], left_out, right_out);
+        self.engine
+            .process_block_stereo(&left_in[..len], &right_in[..len], left_out, right_out);
     }
 
-    /// Process in-place stereo buffers through the graph.
+    /// Process in-place stereo buffers through the engine.
     fn process_stereo_inplace(&mut self, left: &mut [f32], right: &mut [f32]) {
         let len = left.len().min(right.len());
         if len == 0 {
@@ -556,13 +494,17 @@ impl ChainAudioProcessor<'_> {
         self.left_buf[..len].copy_from_slice(&left[..len]);
         self.right_buf[..len].copy_from_slice(&right[..len]);
 
-        self.graph
-            .process_block(&self.left_buf[..len], &self.right_buf[..len], left, right);
+        self.engine.process_block_stereo(
+            &self.left_buf[..len],
+            &self.right_buf[..len],
+            left,
+            right,
+        );
     }
 
-    /// Process a single mono channel pair through the graph.
+    /// Process a single mono channel pair through the engine.
     ///
-    /// Duplicates the mono signal to both graph channels (stereo-symmetric
+    /// Duplicates the mono signal to both channels (stereo-symmetric
     /// processing) and takes the left output as the mono result. The right
     /// output is discarded into `mono_right_out`.
     fn process_channel_pair_mono(&mut self, pair: ChannelPair<f32>) {
@@ -576,7 +518,7 @@ impl ChainAudioProcessor<'_> {
                 self.left_buf[..len].copy_from_slice(&input[..len]);
                 self.right_buf[..len].copy_from_slice(&input[..len]);
                 // Output: left → `output`, right → `mono_right_out` (discarded).
-                self.graph.process_block(
+                self.engine.process_block_stereo(
                     &self.left_buf[..len],
                     &self.right_buf[..len],
                     output,
@@ -592,7 +534,7 @@ impl ChainAudioProcessor<'_> {
                 self.left_buf[..len].copy_from_slice(buf as &[f32]);
                 self.right_buf[..len].copy_from_slice(buf as &[f32]);
                 // Output: left → `buf` (in-place), right → `mono_right_out` (discarded).
-                self.graph.process_block(
+                self.engine.process_block_stereo(
                     &self.left_buf[..len],
                     &self.right_buf[..len],
                     buf,
@@ -625,21 +567,11 @@ mod tests {
     fn make_proc(shared: &ChainShared) -> ChainAudioProcessor<'_> {
         let block_size = 256_usize;
         let sample_rate = 48000.0_f32;
-        let mut graph = ProcessingGraph::new(sample_rate, block_size);
-        let input_node = graph.add_input();
-        let output_node = graph.add_output();
-        graph
-            .connect(input_node, output_node)
-            .expect("test graph init");
-        graph.compile().expect("test graph compile");
 
         ChainAudioProcessor {
             shared,
-            graph,
-            slot_node_ids: [None; MAX_SLOTS],
-            slot_ids: [None; MAX_SLOTS],
-            input_node,
-            output_node,
+            engine: GraphEngine::new_linear(sample_rate, block_size),
+            slot_map: Vec::new(),
             registry: EffectRegistry::new(),
             sample_rate,
             block_size,
@@ -668,7 +600,7 @@ mod tests {
         let mut proc = make_proc(&shared);
         proc.drain_commands();
 
-        assert!(proc.slot_node_ids[0].is_some());
+        assert!(!proc.slot_map.is_empty());
         assert_eq!(proc.cached_order, vec![0]);
         assert_eq!(shared.active_slot_count(), 1);
     }
@@ -684,7 +616,7 @@ mod tests {
         let mut proc = make_proc(&shared);
         proc.drain_commands();
 
-        assert!(proc.slot_node_ids[0].is_none());
+        assert!(proc.slot_map.is_empty());
         assert!(proc.cached_order.is_empty());
         assert_eq!(shared.active_slot_count(), 0);
     }

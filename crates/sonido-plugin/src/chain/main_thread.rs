@@ -234,7 +234,7 @@ impl PluginStateImpl for ChainMainThread<'_> {
         }
 
         // Rebuild from saved state
-        for entry in chain_arr {
+        for (slot_idx, entry) in chain_arr.iter().enumerate() {
             let Some(effect_id) = entry.get("id").and_then(|v| v.as_str()) else {
                 continue;
             };
@@ -243,13 +243,38 @@ impl PluginStateImpl for ChainMainThread<'_> {
                 effect_id: effect_id.to_owned(),
             });
 
-            // Parameter values and bypass will be applied after the audio thread
-            // processes the Add command and triggers a rescan. For now, queue the
-            // values — they'll be picked up on the next process() cycle.
-            // TODO: deferred param restore after structural rebuild
+            // Queue param/bypass restore — applied after audio thread processes the Add
+            let bypassed = entry
+                .get("bypassed")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            let params: Vec<f32> = entry
+                .get("params")
+                .and_then(|v| v.as_object())
+                .map(|obj| {
+                    let mut vals: Vec<(usize, f32)> = obj
+                        .iter()
+                        .filter_map(|(k, v)| {
+                            let idx: usize = k.parse().ok()?;
+                            let val = v.as_f64()? as f32;
+                            Some((idx, val))
+                        })
+                        .collect();
+                    vals.sort_by_key(|(idx, _)| *idx);
+                    vals.into_iter().map(|(_, v)| v).collect()
+                })
+                .unwrap_or_default();
+
+            if !params.is_empty() || bypassed {
+                self.shared.push_command(ChainCommand::Restore {
+                    slot: slot_idx,
+                    params,
+                    bypassed,
+                });
+            }
         }
 
-        let _ = chain_arr; // suppress unused warning for bypass/params (deferred)
         Ok(())
     }
 }

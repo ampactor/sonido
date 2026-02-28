@@ -237,7 +237,7 @@ mod tests {
     fn test_default_config() {
         let config = BackendStreamConfig::default();
         assert_eq!(config.sample_rate, 48000);
-        assert_eq!(config.buffer_size, 256);
+        assert_eq!(config.buffer_size, 512);
         assert_eq!(config.channels, 2);
         assert!(config.device_name.is_none());
     }
