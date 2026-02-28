@@ -9,13 +9,6 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
-  RUSTC_WRAPPER: "sccache"
-  SCCACHE_GHA_ENABLED: "true"
-  SYSTEM_DEPS: >-
-    libasound2-dev libudev-dev mold libgl-dev libx11-dev libx11-xcb-dev
-    libxcursor-dev libxrandr-dev libxi-dev libxkbcommon-dev libxext-dev
-    libxfixes-dev libxinerama-dev libxrender-dev libxpresent-dev
-    libxxf86vm-dev libxft-dev libxmu-dev libxss-dev libxtst-dev
 
 jobs:
   lint:
@@ -26,12 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: mozilla-actions/sccache-action@v0.0.9
-
-      - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y $SYSTEM_DEPS
-
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust
         with:
           components: rustfmt, clippy
 
@@ -49,15 +37,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: mozilla-actions/sccache-action@v0.0.9
-
-      - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y $SYSTEM_DEPS
-
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust
 
       - name: Run tests
-        run: cargo test --workspace --exclude sonido-plugin
+        run: cargo test --workspace
 
       - name: Build documentation
         run: cargo doc --workspace --no-deps
@@ -72,12 +55,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: mozilla-actions/sccache-action@v0.0.9
-
-      - name: Install mold linker
-        run: sudo apt-get update && sudo apt-get install -y mold
-
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust
 
       - name: Check no_std crates
         run: |
@@ -95,12 +73,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: mozilla-actions/sccache-action@v0.0.9
-
-      - name: Install mold linker
-        run: sudo apt-get update && sudo apt-get install -y mold
-
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust
         with:
           targets: wasm32-unknown-unknown
 

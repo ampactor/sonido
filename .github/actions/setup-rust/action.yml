@@ -1,0 +1,32 @@
+name: 'Setup Rust'
+description: 'Rust toolchain, sccache, system deps, cargo cache'
+inputs:
+  components:
+    description: 'Comma-separated toolchain components (e.g., rustfmt, clippy)'
+    default: ''
+  targets:
+    description: 'Comma-separated compilation targets (e.g., wasm32-unknown-unknown)'
+    default: ''
+  sccache:
+    description: 'Enable sccache (set false for coverage)'
+    default: 'true'
+runs:
+  using: 'composite'
+  steps:
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: ${{ inputs.components }}
+        targets: ${{ inputs.targets }}
+    - uses: mozilla-actions/sccache-action@v0.0.9
+      if: inputs.sccache == 'true'
+    - name: Install system dependencies
+      if: runner.os == 'Linux'
+      shell: bash
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq libasound2-dev libudev-dev mold libgl-dev libx11-dev libx11-xcb-dev libxcursor-dev libxrandr-dev libxi-dev libxkbcommon-dev libxext-dev libxfixes-dev libxinerama-dev libxrender-dev libxpresent-dev libxxf86vm-dev libxft-dev libxmu-dev libxss-dev libxtst-dev
+    - uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: cargo-${{ runner.os }}-

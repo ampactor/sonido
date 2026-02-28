@@ -73,7 +73,7 @@ sonido --help
 sonido --version
 ```
 
-- [ ] Help shows all 10 commands: process, realtime, generate, analyze, compare, devices, effects, presets, info, help
+- [ ] Help shows all 11 commands: process, realtime, play, generate, analyze, compare, devices, effects, presets, info, help
 
 ### 1.2 List Effects
 
@@ -698,6 +698,10 @@ Click each effect button and test its panel:
 | Delay | [ ] | [ ] | [ ] | [ ] | [ ] |
 | Tape | [ ] | [ ] | [ ] | [ ] | [ ] |
 | Reverb | [ ] | [ ] | [ ] | [ ] | [ ] |
+| Limiter | [ ] | [ ] | [ ] | [ ] | [ ] |
+| Bitcrusher | [ ] | [ ] | [ ] | [ ] | [ ] |
+| RingMod | [ ] | [ ] | [ ] | [ ] | [ ] |
+| Stage | [ ] | [ ] | [ ] | [ ] | [ ] |
 
 ### 7.4 Knob Interaction
 
@@ -768,7 +772,7 @@ cargo run -p sonido-gui -- --buffer-size 128
 cargo test -p sonido-effects --test regression
 ```
 
-- [ ] All 16 regression tests pass
+- [ ] All 44 regression tests pass
 
 ### 8.2 Full Test Suite
 

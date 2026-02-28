@@ -105,7 +105,7 @@ let idx = registry.param_index_by_name("distortion", "drive");
 assert!(idx.is_some());
 ```
 
-- [ ] All 15 effects create successfully
+- [ ] All 19 effects create successfully
 - [ ] Param lookup by name works for every effect
 
 ### WAV File Processing
@@ -286,12 +286,16 @@ Default gain behavior for each effect with unit-amplitude input. Use this table 
 | MultiVibrato | 0 dB | `mix` param | Pitch shift only, no amplitude change |
 | Delay | 0-2.5 dB | `output` param | Feedback adds energy; signal-dependent |
 | Reverb | ~0 dB | `output` param | Mix control balances dry/wet |
+| Limiter | 0 dB | `ceiling` param | Brickwall limiting to ceiling level |
+| Bitcrusher | 0 dB | `output` param | Bit reduction + downsampling |
+| RingMod | ~0 dB | `output` param | Ring modulation, signal-dependent |
+| Stage | 0 dB | `output` param | Stereo imaging, no amplitude change |
 
 ---
 
 ## See Also
 
 - [CLI Testing Protocol](CLI_TESTING.md) — Manual testing for CLI and GUI
-- [Effects Reference](EFFECTS_REFERENCE.md) — All 15 effects with parameters and DSP theory
+- [Effects Reference](EFFECTS_REFERENCE.md) — All 19 effects with parameters and DSP theory
 - [DSP Fundamentals](DSP_FUNDAMENTALS.md) — Theory behind the implementations
 - [Architecture](ARCHITECTURE.md) — Crate dependency graph and design overview

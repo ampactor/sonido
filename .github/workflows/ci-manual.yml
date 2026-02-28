@@ -16,13 +16,6 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
-  RUSTC_WRAPPER: "sccache"
-  SCCACHE_GHA_ENABLED: "true"
-  SYSTEM_DEPS: >-
-    libasound2-dev libudev-dev mold libgl-dev libx11-dev libx11-xcb-dev
-    libxcursor-dev libxrandr-dev libxi-dev libxkbcommon-dev libxext-dev
-    libxfixes-dev libxinerama-dev libxrender-dev libxpresent-dev
-    libxxf86vm-dev libxft-dev libxmu-dev libxss-dev libxtst-dev
 
 jobs:
   bench:
@@ -34,21 +27,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: mozilla-actions/sccache-action@v0.0.9
-
-      - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y $SYSTEM_DEPS
-
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust
 
       - name: Restore criterion baseline cache
         id: bench-cache
         uses: actions/cache@v4
         with:
           path: target/criterion
-          key: bench-baseline-${{ github.sha }}
+          key: bench-baseline-${{ github.ref_name }}-${{ github.sha }}
           restore-keys: |
-            bench-baseline-
+            bench-baseline-${{ github.ref_name }}-
+            bench-baseline-main-
 
       - name: Rename previous baseline for comparison
         if: steps.bench-cache.outputs.cache-hit == 'true'
@@ -103,20 +92,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y $SYSTEM_DEPS
-
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust
         with:
           components: llvm-tools-preview
+          sccache: 'false'
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Generate coverage
         run: cargo llvm-cov --workspace --lcov --output-path lcov.info
-        env:
-          RUSTC_WRAPPER: ""
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
@@ -133,12 +118,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: mozilla-actions/sccache-action@v0.0.9
-
-      - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y $SYSTEM_DEPS
-
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust
 
       - name: Run plugin tests
         run: cargo test -p sonido-plugin

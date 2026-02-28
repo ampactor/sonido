@@ -131,7 +131,7 @@ sonido-gui --effect reverb
 
 ### Effect Chain Strip
 
-The chain strip shows all 15 effects in processing order:
+The chain strip shows all 19 effects in processing order:
 
 | Effect | Short Name | Description |
 |--------|------------|-------------|

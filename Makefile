@@ -83,11 +83,12 @@ plugins:
 	done
 	@echo "All plugins installed to ~/.clap/"
 
-# Full local CI check (mirrors remote CI minus no_std/wasm cross-compilation)
+# Full local CI check (mirrors remote CI minus no_std/wasm jobs)
 ci:
 	cargo fmt --all -- --check
-	cargo clippy --workspace --all-targets -- -D warnings
+	cargo clippy --workspace --lib --bins --tests --benches -- -D warnings
 	cargo test --workspace
+	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 	@echo "All CI checks passed"
 
 # Exhaustive CLI smoke test (manual, all effects + graphs + edge cases)
