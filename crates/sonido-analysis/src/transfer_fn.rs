@@ -308,37 +308,11 @@ pub struct Resonance {
     pub bandwidth_hz: f32,
 }
 
-/// Unwrap phase to remove discontinuities
+/// Unwrap phase to remove discontinuities.
 ///
-/// Phase values are adjusted to be continuous by adding/subtracting
-/// multiples of 2*pi when jumps exceed pi.
+/// Delegates to [`crate::phase::unwrap_phase`]. Kept for backwards compatibility.
 pub fn unwrap_phase(phase: &[f32]) -> Vec<f32> {
-    use std::f32::consts::PI;
-
-    if phase.is_empty() {
-        return Vec::new();
-    }
-
-    let mut unwrapped = Vec::with_capacity(phase.len());
-    unwrapped.push(phase[0]);
-
-    let two_pi = 2.0 * PI;
-    let mut correction = 0.0;
-
-    for i in 1..phase.len() {
-        let diff = phase[i] - phase[i - 1];
-
-        // Check for phase wrap
-        if diff > PI {
-            correction -= two_pi;
-        } else if diff < -PI {
-            correction += two_pi;
-        }
-
-        unwrapped.push(phase[i] + correction);
-    }
-
-    unwrapped
+    crate::phase::unwrap_phase(phase)
 }
 
 /// Smooth data using a moving average filter

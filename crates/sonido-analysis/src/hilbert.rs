@@ -180,6 +180,8 @@ impl HilbertTransform {
     /// Phase values jump from PI to -PI (or vice versa) at discontinuities.
     /// This function unwraps the phase to create a continuous curve.
     ///
+    /// Delegates to [`crate::phase::unwrap_phase`]. Kept for backwards compatibility.
+    ///
     /// # Arguments
     ///
     /// * `phase` - Wrapped phase values in radians
@@ -188,29 +190,7 @@ impl HilbertTransform {
     ///
     /// Unwrapped phase values
     pub fn unwrap_phase(phase: &[f32]) -> Vec<f32> {
-        if phase.is_empty() {
-            return Vec::new();
-        }
-
-        let mut unwrapped = Vec::with_capacity(phase.len());
-        unwrapped.push(phase[0]);
-
-        let mut offset = 0.0;
-
-        for i in 1..phase.len() {
-            let delta = phase[i] - phase[i - 1];
-
-            // Detect discontinuity and adjust offset
-            if delta > PI {
-                offset -= 2.0 * PI;
-            } else if delta < -PI {
-                offset += 2.0 * PI;
-            }
-
-            unwrapped.push(phase[i] + offset);
-        }
-
-        unwrapped
+        crate::phase::unwrap_phase(phase)
     }
 
     /// Compute the instantaneous frequency from the phase.
