@@ -1,5 +1,5 @@
 .PHONY: build test bench clean check fmt doc demo walkthrough verify-demos
-.PHONY: quick-check verify test-nostd dev-install install plugins ci install-hooks smoke measure overnight-qa
+.PHONY: quick-check verify test-nostd install plugins ci install-hooks smoke measure overnight-qa
 
 # Build
 build:
@@ -57,6 +57,7 @@ verify:
 		-p sonido-synth -p sonido-registry -p sonido-platform
 	cargo test --test regression -p sonido-effects
 	cargo test --test extreme_params -p sonido-effects
+	cargo check --target wasm32-unknown-unknown -p sonido-gui
 	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 # Test no_std compatibility (all no_std crates)
@@ -67,15 +68,7 @@ test-nostd:
 	cargo test --no-default-features -p sonido-registry
 	cargo test --no-default-features -p sonido-platform
 
-# Install CLI via debug build symlink (fast iteration)
-dev-install:
-	cargo build -p sonido-cli
-	@mkdir -p $(HOME)/.local/bin
-	@ln -sf $(CURDIR)/target/debug/sonido $(HOME)/.local/bin/sonido
-	@echo "Linked target/debug/sonido → ~/.local/bin/sonido"
-	@echo "Ensure ~/.local/bin is in your PATH"
-
-# Install CLI globally
+# Install CLI globally (use `cargo run -p sonido-cli -- <args>` during development)
 install:
 	cargo install --path crates/sonido-cli
 

@@ -15,4 +15,5 @@ fi
 echo "Running pre-push checks..."
 cargo fmt --all -- --check
 cargo check --workspace --all-targets
+cargo check --target wasm32-unknown-unknown -p sonido-gui
 echo "Pre-push checks passed."
