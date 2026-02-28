@@ -5,8 +5,7 @@ use crate::effects::{create_effect_with_params, parse_chain};
 use clap::Args;
 use sonido_io::{AudioStream, GraphEngine, StreamConfig, default_device};
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 
 #[derive(Args)]
 pub struct RealtimeArgs {
@@ -144,14 +143,6 @@ pub fn run(args: RealtimeArgs) -> anyhow::Result<()> {
     println!("  Buffer size: {} samples", args.buffer_size);
     println!("\nPress Ctrl+C to stop...\n");
 
-    // Set up Ctrl+C handler
-    let running = Arc::new(AtomicBool::new(true));
-    let r = Arc::clone(&running);
-    ctrlc::set_handler(move || {
-        println!("\nStopping...");
-        r.store(false, Ordering::SeqCst);
-    })?;
-
     // Create audio stream
     let config = StreamConfig {
         sample_rate: args.sample_rate,
@@ -161,6 +152,13 @@ pub fn run(args: RealtimeArgs) -> anyhow::Result<()> {
     };
 
     let mut stream = AudioStream::new(config)?;
+
+    // Use the stream's own running flag so Ctrl+C stops the blocking loop.
+    let r = stream.running_handle();
+    ctrlc::set_handler(move || {
+        println!("\nStopping...");
+        r.store(false, Ordering::SeqCst);
+    })?;
 
     // Run the audio stream on the main thread
     // Use stereo or mono processing based on flag
