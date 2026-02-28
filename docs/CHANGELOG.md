@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Core DSP Primitives (sonido-analysis)
+- `LmsFilter` / `NlmsFilter` — adaptive filters for noise cancellation, echo cancellation, and system identification (Haykin ch. 5-6)
+- `xcorr_direct` / `xcorr_fft` / `xcorr_normalized` / `peak_lag` — cross-correlation with signed lag estimation (Oppenheim & Schafer §2.8)
+- `Ddc` — digital down-conversion with NCO, anti-aliasing FIR, and integer decimation (Lyons ch. 10)
+- `unwrap_phase` / `unwrap_phase_tol` / `unwrap_phase_quality` / `PhaseTracker` — phase unwrapping extracted to dedicated module with quality-guided and streaming variants (Ghiglia & Pritt ch. 3)
+- `decimate` / `interpolate` / `resample` / `design_lowpass` — rational resampling via polyphase filter decomposition (Vaidyanathan ch. 4)
+
 #### Multi-Effect Chain CLAP Plugin (sonido-plugin)
 - `ChainPlugin` — single CLAP plugin exposing a full effect chain with runtime add/remove/reorder
 - Pre-allocated parameter space: 16 slots × 32 params = 512 CLAP parameter IDs, stable across sessions

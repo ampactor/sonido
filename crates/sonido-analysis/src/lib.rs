@@ -14,6 +14,11 @@
 //! - [`filterbank`] - Bandpass filter bank for frequency band extraction
 //! - [`hilbert`] - Hilbert transform for analytic signals
 //! - [`cfc`] - Cross-Frequency Coupling (Phase-Amplitude Coupling) analysis
+//! - [`lms`] - LMS/NLMS adaptive filters for noise/echo cancellation
+//! - [`xcorr`] - Cross-correlation (direct + FFT) with lag estimation
+//! - [`ddc`] - Digital down-conversion (NCO + FIR + decimation)
+//! - [`phase`] - Phase unwrapping (batch, quality-guided, streaming)
+//! - [`mod@resample`] - Rational resampling via polyphase filter (decimate, interpolate, P/Q)
 //!
 //! ## Target Use Case
 //!
@@ -67,6 +72,7 @@
 pub mod cfc;
 pub mod compare;
 pub mod constant_q;
+pub mod ddc;
 pub mod distortion;
 pub mod dynamics;
 pub mod export;
@@ -74,9 +80,13 @@ pub mod fft;
 pub mod filterbank;
 pub mod hilbert;
 pub mod ir;
+pub mod lms;
+pub mod phase;
+pub mod resample;
 pub mod spectrogram;
 pub mod spectrum;
 pub mod transfer_fn;
+pub mod xcorr;
 
 // Re-export main types
 pub use cfc::{Comodulogram, PacAnalyzer, PacMethod, PacResult};
@@ -92,4 +102,11 @@ pub use hilbert::HilbertTransform;
 pub use ir::{Rt60Estimate, SineSweep, energy_decay_curve, estimate_rt60, trim_ir};
 pub use spectrogram::{MelFilterbank, MelSpectrogram, Spectrogram, StftAnalyzer};
 pub use spectrum::{coherence, magnitude_spectrum, phase_spectrum, spectral_centroid, welch_psd};
-pub use transfer_fn::{Resonance, TransferFunction, unwrap_phase};
+pub use transfer_fn::{Resonance, TransferFunction};
+
+// DSP primitives
+pub use ddc::Ddc;
+pub use lms::{LmsFilter, NlmsFilter};
+pub use phase::{PhaseTracker, unwrap_phase, unwrap_phase_quality, unwrap_phase_tol};
+pub use resample::{decimate, design_lowpass, interpolate};
+pub use xcorr::{peak_lag, xcorr_direct, xcorr_fft, xcorr_normalized};
