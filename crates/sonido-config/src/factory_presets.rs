@@ -16,6 +16,7 @@ pub static FACTORY_PRESET_NAMES: &[&str] = &[
     "clean_studio",
     "80s_chorus",
     "slapback",
+    "justice_dance_bass",
 ];
 
 /// TOML content for factory presets.
@@ -30,6 +31,7 @@ static FACTORY_PRESETS_TOML: &[(&str, &str)] = &[
     ("clean_studio", CLEAN_STUDIO_PRESET),
     ("80s_chorus", EIGHTIES_CHORUS_PRESET),
     ("slapback", SLAPBACK_PRESET),
+    ("justice_dance_bass", JUSTICE_DANCE_BASS_PRESET),
 ];
 
 /// Initialization preset - clean signal path.
@@ -348,6 +350,95 @@ decay = "30"
 mix = "15"
 "#;
 
+/// Justice D.A.N.C.E. bass preset — gritty compressed mid-focused bass.
+const JUSTICE_DANCE_BASS_PRESET: &str = r#"
+name = "Justice DANCE Bass"
+description = "Gritty, compressed, mid-focused bass inspired by Justice - D.A.N.C.E."
+sample_rate = 48000
+
+[[effects]]
+type = "preamp"
+[effects.params]
+gain = "8"
+headroom = "10"
+output = "0"
+
+[[effects]]
+type = "eq"
+[effects.params]
+low_freq = "80"
+low_gain = "-8"
+low_q = "0.8"
+mid_freq = "800"
+mid_gain = "6"
+mid_q = "1.2"
+high_freq = "3000"
+high_gain = "3"
+high_q = "1.0"
+
+[[effects]]
+type = "distortion"
+[effects.params]
+drive = "28"
+tone = "6"
+waveshape = "hardclip"
+mix = "100"
+output = "-12"
+
+[[effects]]
+type = "tape"
+[effects.params]
+drive = "5.0"
+saturation = "0.8"
+hf_rolloff = "6000"
+bias = "0.05"
+wow = "0"
+flutter = "0"
+hysteresis = "0.25"
+head_bump = "0.5"
+bump_freq = "100"
+output = "-4"
+
+[[effects]]
+type = "compressor"
+[effects.params]
+threshold = "-30"
+ratio = "20"
+attack = "0.5"
+release = "40"
+makeup = "18"
+knee = "0"
+
+[[effects]]
+type = "eq"
+[effects.params]
+low_freq = "150"
+low_gain = "-10"
+low_q = "0.7"
+mid_freq = "1500"
+mid_gain = "4"
+mid_q = "1.5"
+high_freq = "6000"
+high_gain = "-6"
+high_q = "0.8"
+
+[[effects]]
+type = "bitcrusher"
+[effects.params]
+bit_depth = "12"
+downsample = "2"
+jitter = "15"
+mix = "70"
+
+[[effects]]
+type = "limiter"
+[effects.params]
+threshold = "-3"
+ceiling = "-0.3"
+release = "50"
+lookahead = "5"
+"#;
+
 /// Get all factory presets.
 ///
 /// Returns a vector of all built-in presets that ship with the library.
@@ -471,6 +562,7 @@ mod tests {
         assert!(names.contains(&"Crunch"));
         assert!(names.contains(&"High Gain"));
         assert!(names.contains(&"Ambient"));
+        assert!(names.contains(&"Justice DANCE Bass"));
     }
 
     #[test]

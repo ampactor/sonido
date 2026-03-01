@@ -360,6 +360,36 @@ pub fn available_effects() -> Vec<EffectInfo> {
                     default: "0.0",
                     range: "-0.2-0.2",
                 },
+                ParameterInfo {
+                    name: "wow",
+                    description: "Wow depth (tape transport wobble)",
+                    default: "0.3",
+                    range: "0-1",
+                },
+                ParameterInfo {
+                    name: "flutter",
+                    description: "Flutter depth (tape transport jitter)",
+                    default: "0.2",
+                    range: "0-1",
+                },
+                ParameterInfo {
+                    name: "hysteresis",
+                    description: "Hysteresis feedback amount",
+                    default: "0.15",
+                    range: "0-0.5",
+                },
+                ParameterInfo {
+                    name: "head_bump",
+                    description: "Low-frequency head bump amount",
+                    default: "0.3",
+                    range: "0-1",
+                },
+                ParameterInfo {
+                    name: "bump_freq",
+                    description: "Head bump center frequency in Hz",
+                    default: "80.0",
+                    range: "40-200",
+                },
             ],
         },
         EffectInfo {
@@ -1011,6 +1041,11 @@ pub fn create_effect_with_params(
                     }
                     "hf_rolloff" | "hf" => effect.set_hf_rolloff(parse_f32(key, value)?),
                     "bias" => effect.set_bias(parse_f32(key, value)?),
+                    "wow" => effect.set_wow_depth(parse_f32(key, value)?),
+                    "flutter" => effect.set_flutter_depth(parse_f32(key, value)?),
+                    "hysteresis" | "hyst" => effect.set_hysteresis(parse_f32(key, value)?),
+                    "head_bump" | "bump" => effect.set_head_bump(parse_f32(key, value)?),
+                    "bump_freq" => effect.set_bump_freq(parse_f32(key, value)?),
                     _ => {
                         return Err(EffectError::UnknownParameter {
                             effect: name.to_string(),

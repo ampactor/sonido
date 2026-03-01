@@ -42,8 +42,12 @@ param = "value"
 | `delay` | time, feedback, mix |
 | `filter` | cutoff, resonance |
 | `multivibrato` | depth |
-| `tape` | drive, saturation |
-| `preamp` | gain |
+| `tape` | drive, saturation, hf_rolloff, bias, wow, flutter, hysteresis, head_bump, bump_freq, output |
+| `preamp` | gain, headroom, output |
+| `eq` | low_freq, low_gain, low_q, mid_freq, mid_gain, mid_q, high_freq, high_gain, high_q, output |
+| `bitcrusher` | bit_depth, downsample, jitter, mix, output |
+| `limiter` | threshold, ceiling, release, lookahead, output |
+| `gate` | threshold, attack, release, hold, output |
 
 ## Included Presets
 
@@ -52,6 +56,7 @@ param = "value"
 - **subtle_chorus.toml** - Light stereo widening effect
 - **clean_boost.toml** - Transparent gain boost
 - **full_chain.toml** - Complete signal chain example
+- **justice_dance_bass.toml** - Gritty, compressed bass inspired by Justice - D.A.N.C.E.
 
 ## Creating Custom Presets
 

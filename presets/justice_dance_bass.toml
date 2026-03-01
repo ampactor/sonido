@@ -1,0 +1,112 @@
+name = "Justice DANCE Bass"
+description = "Gritty, compressed, mid-focused bass inspired by Justice - D.A.N.C.E. Feed any bass source (synth, sampled, DI) through this chain."
+sample_rate = 48000
+
+# ── 1. Hot input gain ─────────────────────────────────────────────
+# Low headroom kicks off harmonic layering from the very first stage.
+[[effects]]
+type = "preamp"
+[effects.params]
+gain = "8"
+headroom = "10"
+output = "0"
+
+# ── 2. Pre-distortion EQ ─────────────────────────────────────────
+# Cut sub-bass to keep the distortion focused on mids. Boost 800 Hz
+# so the harmonics land in the vocal/nasal range that defines the tone.
+[[effects]]
+type = "eq"
+[effects.params]
+low_freq = "80"
+low_gain = "-8"
+low_q = "0.8"
+mid_freq = "800"
+mid_gain = "6"
+mid_q = "1.2"
+high_freq = "3000"
+high_gain = "3"
+high_q = "1.0"
+
+# ── 3. Hard-clip distortion ──────────────────────────────────────
+# The primary harmonic generator. HardClip for aggressive fuzz character
+# with dense odd harmonics. Tone boost pushes the 1 kHz presence peak.
+[[effects]]
+type = "distortion"
+[effects.params]
+drive = "28"
+tone = "6"
+waveshape = "hardclip"
+mix = "100"
+output = "-12"
+
+# ── 4. Tape saturation ───────────────────────────────────────────
+# Second harmonic layer — asymmetric saturation adds even harmonics
+# and warmth. Hysteresis gives natural compression. HF rolloff tames
+# fizz. Head bump reinforces body around 100 Hz. No wow/flutter —
+# this sound is tight, not vintage-wobbly.
+[[effects]]
+type = "tape"
+[effects.params]
+drive = "5.0"
+saturation = "0.8"
+hf_rolloff = "6000"
+bias = "0.05"
+wow = "0"
+flutter = "0"
+hysteresis = "0.25"
+head_bump = "0.5"
+bump_freq = "100"
+output = "-4"
+
+# ── 5. Extreme compression ───────────────────────────────────────
+# FET-style brick: 20:1 ratio, sub-millisecond attack, fast release.
+# Squashes everything flat — near-zero dynamic range. This is what
+# gives the D.A.N.C.E. bass its relentless, in-your-face presence.
+[[effects]]
+type = "compressor"
+[effects.params]
+threshold = "-30"
+ratio = "20"
+attack = "0.5"
+release = "40"
+makeup = "18"
+knee = "0"
+
+# ── 6. Post EQ — "radio isolator" ────────────────────────────────
+# Narrow the bandwidth: cut the rumble, cut the fizz, spotlight the
+# mids. This is the "playing through a transistor radio" quality that
+# makes the bass sit in a specific frequency pocket.
+[[effects]]
+type = "eq"
+[effects.params]
+low_freq = "150"
+low_gain = "-10"
+low_q = "0.7"
+mid_freq = "1500"
+mid_gain = "4"
+mid_q = "1.5"
+high_freq = "6000"
+high_gain = "-6"
+high_q = "0.8"
+
+# ── 7. Bitcrusher — lo-fi sampler character ──────────────────────
+# Emulates the grit of the Akai S2000 sampler. 12-bit quantization
+# with slight downsample adds that crunchy, stepped quality. Blended
+# at 70% to keep some smoothness.
+[[effects]]
+type = "bitcrusher"
+[effects.params]
+bit_depth = "12"
+downsample = "2"
+jitter = "15"
+mix = "70"
+
+# ── 8. Brickwall limiter ─────────────────────────────────────────
+# Safety net. Catches any peaks the compressor missed.
+[[effects]]
+type = "limiter"
+[effects.params]
+threshold = "-3"
+ceiling = "-0.3"
+release = "50"
+lookahead = "5"
