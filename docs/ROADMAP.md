@@ -21,7 +21,7 @@ Sonido is a production-grade DSP framework in Rust. The following capabilities a
 
 ### Effects Library
 
-19 production effects with dual implementations — classic `Effect` trait and kernel architecture (`DspKernel` + `KernelParams`):
+19 production effects using the kernel architecture (`DspKernel` + `KernelParams` + `KernelAdapter`):
 
 - **Dynamics**: Compressor (11 params, sidechain-capable), Limiter, Gate
 - **Gain/Saturation**: Preamp, Distortion (4 waveshaper modes, ADAA), Tape Saturation (10 params, hysteresis + wow/flutter + head bump)

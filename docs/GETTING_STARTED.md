@@ -88,19 +88,20 @@ cargo run -p sonido-effects --example chain_demo
 
 ## Your First Effect
 
-Let's create a simple distortion effect:
+Let's create a simple distortion effect using the registry:
 
 ```rust
 use sonido_core::Effect;
-use sonido_effects::Distortion;
+use sonido_registry::EffectRegistry;
 
 fn main() {
-    // Create effect at 48kHz sample rate
-    let mut distortion = Distortion::new(48000.0);
+    // Create effect via the registry at 48kHz sample rate
+    let registry = EffectRegistry::new();
+    let mut distortion = registry.create("distortion", 48000.0).unwrap();
 
-    // Configure parameters
-    distortion.set_drive_db(12.0);   // 12dB of gain into the waveshaper
-    distortion.set_tone_db(3.0);     // +3dB peaking EQ at 1kHz
+    // Configure parameters by index (0=drive, 1=tone)
+    distortion.effect_set_param(0, 12.0);   // 12dB of gain into the waveshaper
+    distortion.effect_set_param(1, 3.0);     // +3dB peaking EQ at 1kHz
 
     // Generate a test signal (sine wave)
     let sample_rate = 48000.0;
@@ -124,29 +125,30 @@ fn main() {
 
 ## Effect Chaining
 
-Chain multiple effects together:
+Chain multiple effects together using the registry:
 
 ```rust
 use sonido_core::Effect;
-use sonido_effects::{CleanPreamp, Distortion, Delay};
+use sonido_registry::EffectRegistry;
 
 fn main() {
     let sample_rate = 48000.0;
+    let registry = EffectRegistry::new();
 
-    // Create effects
-    let mut preamp = CleanPreamp::new(sample_rate);
-    preamp.set_gain_db(6.0);  // Boost input
+    // Create effects via registry
+    let mut preamp = registry.create("preamp", sample_rate).unwrap();
+    preamp.effect_set_param(0, 6.0);  // gain = 6 dB
 
-    let mut distortion = Distortion::new(sample_rate);
-    distortion.set_drive_db(15.0);
+    let mut distortion = registry.create("distortion", sample_rate).unwrap();
+    distortion.effect_set_param(0, 15.0);  // drive = 15 dB
 
-    let mut delay = Delay::new(sample_rate);
-    delay.set_delay_time_ms(300.0);
-    delay.set_feedback(0.4);
-    delay.set_mix(0.3);
+    let mut delay = registry.create("delay", sample_rate).unwrap();
+    delay.effect_set_param(0, 300.0);  // time = 300 ms
+    delay.effect_set_param(1, 0.4);    // feedback = 0.4
+    delay.effect_set_param(4, 30.0);   // mix = 30%
 
     // Process through the chain
-    let input = vec![0.5f32; 1024];  // Example input
+    let input = vec![0.5f32; 1024];
     let mut buffer = vec![0.0; 1024];
     let mut output = vec![0.0; 1024];
 
@@ -161,21 +163,22 @@ fn main() {
 
 ## Dynamic Effect Chains
 
-For runtime-configurable chains, use `Box<dyn Effect>`:
+For runtime-configurable chains, use the registry with `Box<dyn Effect>`:
 
 ```rust
 use sonido_core::Effect;
-use sonido_effects::{Distortion, Chorus, Delay};
+use sonido_registry::EffectRegistry;
 
 fn main() {
     let sample_rate = 48000.0;
+    let registry = EffectRegistry::new();
 
-    // Build a dynamic chain
-    let mut chain: Vec<Box<dyn Effect + Send>> = Vec::new();
-
-    chain.push(Box::new(Distortion::new(sample_rate)));
-    chain.push(Box::new(Chorus::new(sample_rate)));
-    chain.push(Box::new(Delay::new(sample_rate)));
+    // Build a dynamic chain via registry
+    let mut chain: Vec<Box<dyn Effect + Send>> = vec![
+        Box::new(registry.create("distortion", sample_rate).unwrap()),
+        Box::new(registry.create("chorus", sample_rate).unwrap()),
+        Box::new(registry.create("delay", sample_rate).unwrap()),
+    ];
 
     // Process through the chain
     let input = vec![0.5f32; 1024];
@@ -224,7 +227,7 @@ sonido realtime --effect chorus --param rate=2 --param depth=0.6
 
 ```rust
 use sonido_io::{read_wav, write_wav, WavSpec};
-use sonido_effects::Compressor;
+use sonido_registry::EffectRegistry;
 use sonido_core::Effect;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -232,12 +235,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (samples, spec) = read_wav("input.wav")?;
     let sample_rate = spec.sample_rate as f32;
 
-    // Create and configure effect
-    let mut compressor = Compressor::new(sample_rate);
-    compressor.set_threshold_db(-18.0);
-    compressor.set_ratio(4.0);
-    compressor.set_attack_ms(10.0);
-    compressor.set_release_ms(100.0);
+    // Create and configure effect via registry
+    let registry = EffectRegistry::new();
+    let mut compressor = registry.create("compressor", sample_rate).unwrap();
+    compressor.effect_set_param(0, -18.0);  // threshold
+    compressor.effect_set_param(1, 4.0);    // ratio
+    compressor.effect_set_param(2, 10.0);   // attack
+    compressor.effect_set_param(3, 100.0);  // release
 
     // Process
     let mut output = vec![0.0; samples.len()];
@@ -257,7 +261,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Embedded/no_std Usage
 
-For embedded systems without standard library:
+For embedded systems without standard library, use kernels directly (no adapter overhead):
 
 ```toml
 [dependencies]
@@ -268,17 +272,15 @@ sonido-effects = { version = "0.1", default-features = false }
 ```rust
 #![no_std]
 
-use sonido_core::Effect;
-use sonido_effects::LowPassFilter;
+use sonido_effects::kernels::{FilterKernel, FilterParams};
+use sonido_core::kernel::DspKernel;
 
-// Pre-allocated buffers
-static mut INPUT: [f32; 256] = [0.0; 256];
-static mut OUTPUT: [f32; 256] = [0.0; 256];
+fn audio_callback(kernel: &mut FilterKernel, adc_cutoff: f32, adc_resonance: f32) {
+    // Map ADC readings (0.0-1.0) directly to parameter ranges
+    let params = FilterParams::from_knobs(adc_cutoff, adc_resonance, 0.5, 0.0, 1.0);
 
-fn process_audio(filter: &mut LowPassFilter) {
-    unsafe {
-        filter.process_block(&INPUT, &mut OUTPUT);
-    }
+    // Process sample-by-sample — no allocation, no smoothing
+    let (left, right) = kernel.process_stereo(input_l, input_r, &params);
 }
 ```
 

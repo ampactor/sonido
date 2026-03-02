@@ -28,14 +28,16 @@ Tests in Sonido follow Rust conventions with inline unit tests and separate inte
 Each module contains a `#[cfg(test)]` block with unit tests:
 
 ```rust
-// In crates/sonido-effects/src/reverb.rs
+// In crates/sonido-effects/src/kernels/reverb.rs
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sonido_core::kernel::KernelAdapter;
+    use sonido_core::Effect;
 
     #[test]
     fn test_reverb_basic() {
-        let mut reverb = Reverb::new(48000.0);
+        let mut reverb = KernelAdapter::new(ReverbKernel::new(48000.0), 48000.0);
         let output = reverb.process(0.5);
         assert!(output.is_finite());
     }
@@ -69,8 +71,8 @@ Example pattern:
 ```rust
 #[test]
 fn test_distortion_basic() {
-    let mut effect = Distortion::new(48000.0);
-    effect.set_drive_db(20.0);
+    let mut effect = KernelAdapter::new(DistortionKernel::new(48000.0), 48000.0);
+    effect.set_param(0, 20.0);  // drive_db
 
     // Test single sample
     let output = effect.process(0.5);
@@ -80,7 +82,7 @@ fn test_distortion_basic() {
 
 #[test]
 fn test_distortion_block() {
-    let mut effect = Distortion::new(48000.0);
+    let mut effect = KernelAdapter::new(DistortionKernel::new(48000.0), 48000.0);
     let input = vec![0.5; 512];
     let mut output = vec![0.0; 512];
 
@@ -97,15 +99,17 @@ Verify parameter behavior:
 ```rust
 #[test]
 fn test_compressor_parameters() {
-    let mut comp = Compressor::new(48000.0);
+    let registry = EffectRegistry::new();
+    let mut comp = registry.create("compressor", 48000.0).unwrap();
 
-    // Test parameter ranges
-    comp.set_threshold_db(-40.0);
-    assert_eq!(comp.threshold_db(), -40.0);
+    // Test parameter ranges via ParameterInfo
+    comp.effect_set_param(0, -40.0);  // threshold
+    assert_eq!(comp.effect_get_param(0), -40.0);
 
-    comp.set_ratio(10.0);
-    assert!(comp.ratio() >= 1.0);
-    assert!(comp.ratio() <= 20.0);
+    comp.effect_set_param(1, 10.0);  // ratio
+    let ratio = comp.effect_get_param(1);
+    assert!(ratio >= 1.0);
+    assert!(ratio <= 20.0);
 }
 ```
 
@@ -116,11 +120,12 @@ Effects implementing `ParameterInfo` should verify introspection:
 ```rust
 #[test]
 fn test_reverb_parameter_info() {
-    let reverb = Reverb::new(48000.0);
+    let registry = EffectRegistry::new();
+    let reverb = registry.create("reverb", 48000.0).unwrap();
 
-    assert!(reverb.param_count() > 0);
+    assert!(reverb.effect_param_count() > 0);
 
-    let info = reverb.param_info(0).unwrap();
+    let info = reverb.effect_param_info(0).unwrap();
     assert!(!info.name.is_empty());
     assert!(info.min <= info.default);
     assert!(info.default <= info.max);
@@ -134,8 +139,9 @@ True stereo effects need additional tests:
 ```rust
 #[test]
 fn test_reverb_stereo_decorrelation() {
-    let mut reverb = Reverb::new(48000.0);
-    reverb.set_mix(1.0);  // Full wet
+    let mut reverb = KernelAdapter::new(ReverbKernel::new(48000.0), 48000.0);
+    // Find and set the mix parameter to 1.0 (full wet)
+    reverb.set_param(4, 100.0);  // mix = 100%
 
     // Feed identical signal to both channels
     for _ in 0..1000 {
@@ -244,14 +250,12 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 ```rust
 #[test]
 fn test_effect_chain() {
-    use sonido_core::EffectExt;
+    let registry = EffectRegistry::new();
+    let mut preamp = registry.create("preamp", 48000.0).unwrap();
+    let mut distortion = registry.create("distortion", 48000.0).unwrap();
 
-    let preamp = CleanPreamp::new(48000.0);
-    let distortion = Distortion::new(48000.0);
-
-    let mut chain = preamp.chain(distortion);
-
-    let output = chain.process(0.5);
+    let mid = preamp.process(0.5);
+    let output = distortion.process(mid);
     assert!(output.is_finite());
 }
 ```
@@ -279,9 +283,10 @@ fn test_factory_presets() {
 ```rust
 #[test]
 fn test_delay_reset() {
-    let mut delay = Delay::new(48000.0);
-    delay.set_delay_time_ms(100.0);
-    delay.set_feedback(0.5);
+    let registry = EffectRegistry::new();
+    let mut delay = registry.create("delay", 48000.0).unwrap();
+    delay.effect_set_param(0, 100.0);  // time = 100ms
+    delay.effect_set_param(1, 0.5);    // feedback = 0.5
 
     // Fill the delay buffer
     for _ in 0..10000 {

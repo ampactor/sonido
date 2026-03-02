@@ -4,11 +4,12 @@
 //! parameters are set to their minimum and maximum values, and when running
 //! at extreme sample rates (8 kHz and 192 kHz).
 
-use sonido_core::{Effect, ParameterInfo};
-use sonido_effects::{
-    Bitcrusher, Chorus, CleanPreamp, Compressor, Delay, Distortion, Flanger, Gate, Limiter,
-    LowPassFilter, MultiVibrato, ParametricEq, Phaser, Reverb, RingMod, Stage, TapeSaturation,
-    Tremolo, Wah,
+use sonido_core::{Effect, KernelAdapter, ParameterInfo};
+use sonido_effects::kernels::{
+    BitcrusherKernel, ChorusKernel, CompressorKernel, DelayKernel, DistortionKernel, FilterKernel,
+    FlangerKernel, GateKernel, LimiterKernel, MultiVibratoKernel, ParametricEqKernel, PhaserKernel,
+    PreampKernel, ReverbKernel, RingModKernel, StageKernel, TapeSaturationKernel, TremoloKernel,
+    WahKernel,
 };
 
 const DEFAULT_SAMPLE_RATE: f32 = 48000.0;
@@ -100,95 +101,119 @@ fn run_extreme_test<E: Effect + ParameterInfo>(name: &str, mut create: impl FnMu
 
 #[test]
 fn test_extreme_distortion() {
-    run_extreme_test("Distortion", Distortion::new);
+    run_extreme_test("Distortion", |sr| {
+        KernelAdapter::new(DistortionKernel::new(sr), sr)
+    });
 }
 
 #[test]
 fn test_extreme_compressor() {
-    run_extreme_test("Compressor", Compressor::new);
+    run_extreme_test("Compressor", |sr| {
+        KernelAdapter::new(CompressorKernel::new(sr), sr)
+    });
 }
 
 #[test]
 fn test_extreme_chorus() {
-    run_extreme_test("Chorus", Chorus::new);
+    run_extreme_test("Chorus", |sr| KernelAdapter::new(ChorusKernel::new(sr), sr));
 }
 
 #[test]
 fn test_extreme_delay() {
-    run_extreme_test("Delay", Delay::new);
+    run_extreme_test("Delay", |sr| KernelAdapter::new(DelayKernel::new(sr), sr));
 }
 
 #[test]
 fn test_extreme_reverb() {
-    run_extreme_test("Reverb", Reverb::new);
+    run_extreme_test("Reverb", |sr| KernelAdapter::new(ReverbKernel::new(sr), sr));
 }
 
 #[test]
 fn test_extreme_lowpass() {
-    run_extreme_test("LowPassFilter", LowPassFilter::new);
+    run_extreme_test("LowPassFilter", |sr| {
+        KernelAdapter::new(FilterKernel::new(sr), sr)
+    });
 }
 
 #[test]
 fn test_extreme_phaser() {
-    run_extreme_test("Phaser", Phaser::new);
+    run_extreme_test("Phaser", |sr| KernelAdapter::new(PhaserKernel::new(sr), sr));
 }
 
 #[test]
 fn test_extreme_flanger() {
-    run_extreme_test("Flanger", Flanger::new);
+    run_extreme_test("Flanger", |sr| {
+        KernelAdapter::new(FlangerKernel::new(sr), sr)
+    });
 }
 
 #[test]
 fn test_extreme_tremolo() {
-    run_extreme_test("Tremolo", Tremolo::new);
+    run_extreme_test("Tremolo", |sr| {
+        KernelAdapter::new(TremoloKernel::new(sr), sr)
+    });
 }
 
 #[test]
 fn test_extreme_tape_saturation() {
-    run_extreme_test("TapeSaturation", TapeSaturation::new);
+    run_extreme_test("TapeSaturation", |sr| {
+        KernelAdapter::new(TapeSaturationKernel::new(sr), sr)
+    });
 }
 
 #[test]
 fn test_extreme_clean_preamp() {
-    run_extreme_test("CleanPreamp", CleanPreamp::new);
+    run_extreme_test("CleanPreamp", |sr| {
+        KernelAdapter::new(PreampKernel::new(sr), sr)
+    });
 }
 
 #[test]
 fn test_extreme_multi_vibrato() {
-    run_extreme_test("MultiVibrato", MultiVibrato::new);
+    run_extreme_test("MultiVibrato", |sr| {
+        KernelAdapter::new(MultiVibratoKernel::new(sr), sr)
+    });
 }
 
 #[test]
 fn test_extreme_gate() {
-    run_extreme_test("Gate", Gate::new);
+    run_extreme_test("Gate", |sr| KernelAdapter::new(GateKernel::new(sr), sr));
 }
 
 #[test]
 fn test_extreme_wah() {
-    run_extreme_test("Wah", Wah::new);
+    run_extreme_test("Wah", |sr| KernelAdapter::new(WahKernel::new(sr), sr));
 }
 
 #[test]
 fn test_extreme_parametric_eq() {
-    run_extreme_test("ParametricEq", ParametricEq::new);
+    run_extreme_test("ParametricEq", |sr| {
+        KernelAdapter::new(ParametricEqKernel::new(sr), sr)
+    });
 }
 
 #[test]
 fn test_extreme_limiter() {
-    run_extreme_test("Limiter", Limiter::new);
+    run_extreme_test("Limiter", |sr| {
+        KernelAdapter::new(LimiterKernel::new(sr), sr)
+    });
 }
 
 #[test]
 fn test_extreme_bitcrusher() {
-    run_extreme_test("Bitcrusher", Bitcrusher::new);
+    run_extreme_test("Bitcrusher", |sr| {
+        KernelAdapter::new(BitcrusherKernel::new(sr), sr)
+    });
 }
 
 #[test]
 fn test_extreme_ringmod() {
-    run_extreme_test("RingMod", RingMod::new);
+    run_extreme_test("RingMod", |sr| {
+        KernelAdapter::new(RingModKernel::new(sr), sr)
+    });
 }
 
 #[test]
 fn test_extreme_stage() {
-    run_extreme_test("Stage", Stage::new);
+    run_extreme_test("Stage", |sr| KernelAdapter::new(StageKernel::new(sr), sr));
 }

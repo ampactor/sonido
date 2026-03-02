@@ -11,11 +11,11 @@
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use sonido_core::{Effect, Oversampled};
-//! use sonido_effects::Distortion;
+//! use sonido_core::{Effect, KernelAdapter, Oversampled};
+//! use sonido_effects::kernels::DistortionKernel;
 //!
-//! // Create a distortion effect
-//! let dist = Distortion::new(48000.0);
+//! // Create a distortion effect via kernel adapter
+//! let dist = KernelAdapter::new(DistortionKernel::new(48000.0), 48000.0);
 //!
 //! // Wrap it with 4x oversampling
 //! let mut oversampled = Oversampled::<4, _>::new(dist, 48000.0);

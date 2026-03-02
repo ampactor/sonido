@@ -1,6 +1,6 @@
 //! Clean preamp kernel — pure DSP with separated parameter ownership.
 //!
-//! This is the kernel-architecture equivalent of [`CleanPreamp`](crate::CleanPreamp).
+//! Implements the CleanPreamp effect using the kernel architecture.
 //! The DSP math is identical in structure; the difference is architectural:
 //!
 //! - **Classic `CleanPreamp`**: owns `SmoothedParam` for gain/output, manages

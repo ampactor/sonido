@@ -333,7 +333,7 @@ Both topologies are available because each has strengths:
 ## ADR-009: Separate Reverb Tanks for Stereo
 
 **Status:** Accepted
-**Source:** `crates/sonido-effects/src/reverb.rs`
+**Source:** `crates/sonido-effects/src/kernels/reverb.rs`
 
 ### Context
 
@@ -648,7 +648,7 @@ Fix gain staging bugs at the root:
 ## ADR-018: Feedback-Adaptive Reverb Gain Compensation
 
 **Status:** Superseded by ADR-019
-**Source:** `crates/sonido-effects/src/reverb.rs`
+**Source:** `crates/sonido-effects/src/kernels/reverb.rs`
 
 Original reverb-only quadratic compensation (`1 - x² * 0.88`). Superseded by ADR-019 which generalizes feedback compensation across all comb-based effects using topology-aware formulas.
 
@@ -657,7 +657,7 @@ Original reverb-only quadratic compensation (`1 - x² * 0.88`). Superseded by AD
 ## ADR-019: Generalized Feedback Compensation
 
 **Status:** Accepted
-**Source:** `crates/sonido-core/src/gain.rs`, `crates/sonido-effects/src/reverb.rs`
+**Source:** `crates/sonido-core/src/gain.rs`, `crates/sonido-effects/src/kernels/reverb.rs`
 
 ### Context
 
@@ -746,7 +746,7 @@ Profiling identified transcendental calls as the dominant cost in: LFO tick, com
 ## ADR-021: Block Processing Overrides
 
 **Status:** Accepted
-**Source:** `crates/sonido-effects/src/distortion.rs`, `compressor.rs`, `chorus.rs`, `delay.rs`, `reverb.rs`
+**Source:** `crates/sonido-effects/src/kernels/distortion.rs`, `kernels/compressor.rs`, `kernels/chorus.rs`, `kernels/delay.rs`, `kernels/reverb.rs`
 
 ### Context
 

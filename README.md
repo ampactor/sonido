@@ -23,12 +23,16 @@ sonido-effects = { git = "https://github.com/ampactor-labs/sonido" }
 Process audio through an effect:
 
 ```rust
-use sonido_core::Effect;
-use sonido_effects::Distortion;
+use sonido_core::{Effect, ParameterInfo};
+use sonido_registry::EffectRegistry;
 
-let mut distortion = Distortion::new(48000.0);
-distortion.set_drive_db(15.0);
-distortion.set_tone_db(3.0);
+// Create an effect via the registry (simplest approach)
+let registry = EffectRegistry::new();
+let mut distortion = registry.create("distortion", 48000.0).unwrap();
+
+// Set parameters by index (0=drive, 1=tone, 2=output, 3=shape, 4=mix)
+distortion.effect_set_param(0, 15.0);  // drive = 15 dB
+distortion.effect_set_param(1, 3.0);   // tone = 3 dB
 
 // Sample-by-sample
 let output = distortion.process(input_sample);
@@ -40,16 +44,25 @@ distortion.process_block(&input_buffer, &mut output_buffer);
 ### Effect Chaining
 
 ```rust
-use sonido_core::{Effect, EffectExt};
-use sonido_effects::{Distortion, Chorus, Delay, Reverb};
+use sonido_core::Effect;
+use sonido_registry::EffectRegistry;
 
-// Zero-cost static dispatch (no heap allocation)
-let mut chain = Distortion::new(48000.0)
-    .chain(Chorus::new(48000.0))
-    .chain(Delay::new(48000.0))
-    .chain(Reverb::new(48000.0));
+// Dynamic chain via registry (runtime-configurable)
+let registry = EffectRegistry::new();
+let mut chain: Vec<Box<dyn Effect + Send>> = vec![
+    Box::new(registry.create("distortion", 48000.0).unwrap()),
+    Box::new(registry.create("chorus", 48000.0).unwrap()),
+    Box::new(registry.create("delay", 48000.0).unwrap()),
+    Box::new(registry.create("reverb", 48000.0).unwrap()),
+];
 
-chain.process_block(&input, &mut output);
+// Process through the chain
+let mut buf = input.to_vec();
+let mut tmp = vec![0.0; buf.len()];
+for effect in &mut chain {
+    effect.process_block(&buf, &mut tmp);
+    std::mem::swap(&mut buf, &mut tmp);
+}
 ```
 
 ## Architecture
@@ -89,7 +102,7 @@ graph TD
 | Crate | Purpose | no_std |
 |-------|---------|--------|
 | `sonido-core` | Effect trait, DspKernel/KernelParams/KernelAdapter, parameters, delays, filters, LFOs, tempo, DAG processing graph | Yes |
-| `sonido-effects` | 19 effects (classic Effect + kernel DspKernel implementations) | Yes |
+| `sonido-effects` | 19 effects via DspKernel + KernelAdapter architecture | Yes |
 | `sonido-synth` | PolyBLEP oscillators, ADSR envelopes, voice management, modulation matrix | Yes |
 | `sonido-registry` | Effect factory and discovery by name/category | Yes |
 | `sonido-platform` | Hardware abstraction: PlatformController, ControlMapper | Yes |

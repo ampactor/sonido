@@ -1,6 +1,6 @@
 //! Flanger kernel — pure DSP with separated parameter ownership.
 //!
-//! This is the kernel-architecture equivalent of the classic `Flanger` effect.
+//! Implements the Flanger effect using the kernel architecture.
 //! The DSP math is identical; the difference is structural:
 //!
 //! - **Classic `Flanger`**: owns `SmoothedParam` for rate/depth/feedback/mix/output,

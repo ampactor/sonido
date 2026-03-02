@@ -1,6 +1,6 @@
 //! Gate kernel — pure DSP with separated parameter ownership.
 //!
-//! This is the kernel-architecture equivalent of the classic `Gate` effect.
+//! Implements the Gate effect using the kernel architecture.
 //! The DSP math is identical; the difference is structural:
 //!
 //! - **Classic `Gate`**: owns `SmoothedParam` for all parameters, manages

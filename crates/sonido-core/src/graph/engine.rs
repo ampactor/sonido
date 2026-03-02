@@ -13,11 +13,12 @@
 //!
 //! ```rust,ignore
 //! use sonido_core::graph::GraphEngine;
-//! use sonido_effects::{Distortion, Reverb};
+//! use sonido_core::KernelAdapter;
+//! use sonido_effects::kernels::{DistortionKernel, ReverbKernel};
 //!
 //! let mut engine = GraphEngine::new_linear(48000.0, 256);
-//! let dist = engine.add_effect(Box::new(Distortion::new(48000.0)));
-//! let reverb = engine.add_effect(Box::new(Reverb::new(48000.0)));
+//! let dist = engine.add_effect(Box::new(KernelAdapter::new(DistortionKernel::new(48000.0), 48000.0)));
+//! let reverb = engine.add_effect(Box::new(KernelAdapter::new(ReverbKernel::new(48000.0), 48000.0)));
 //!
 //! engine.process_block_stereo(&left_in, &right_in, &mut left_out, &mut right_out);
 //! ```

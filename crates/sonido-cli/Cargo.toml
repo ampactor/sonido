@@ -12,7 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 sonido-core = { workspace = true, features = ["std", "tracing"] }
-sonido-effects = { workspace = true, features = ["std"] }
+sonido-registry = { workspace = true, features = ["std"] }
 sonido-analysis = { workspace = true }
 sonido-io = { workspace = true }
 sonido-config = { workspace = true, features = ["std"] }
@@ -32,7 +32,6 @@ rustfft = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-sonido-registry = { workspace = true, features = ["std"] }
 
 [lints]
 workspace = true

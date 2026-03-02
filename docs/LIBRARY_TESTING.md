@@ -68,12 +68,13 @@ Process audio through a chain of effects:
 
 ```rust
 use sonido_core::Effect;
-use sonido_effects::{Distortion, Delay, Reverb};
+use sonido_registry::EffectRegistry;
 
 let sample_rate = 48000.0;
-let mut dist = Distortion::new(sample_rate);
-let mut delay = Delay::new(sample_rate);
-let mut reverb = Reverb::new(sample_rate);
+let registry = EffectRegistry::new();
+let mut dist = registry.create("distortion", sample_rate).unwrap();
+let mut delay = registry.create("delay", sample_rate).unwrap();
+let mut reverb = registry.create("reverb", sample_rate).unwrap();
 
 // Process a block of samples through the chain
 let input = vec![0.5_f32; 1024];
@@ -113,13 +114,14 @@ assert!(idx.is_some());
 ```rust
 use sonido_io::{WavReader, WavWriter};
 use sonido_core::Effect;
-use sonido_effects::Chorus;
+use sonido_registry::EffectRegistry;
 
 let reader = WavReader::open("input.wav").unwrap();
 let spec = reader.spec();
 let samples: Vec<f32> = reader.into_samples().map(|s| s.unwrap()).collect();
 
-let mut chorus = Chorus::new(spec.sample_rate as f32);
+let registry = EffectRegistry::new();
+let mut chorus = registry.create("chorus", spec.sample_rate as f32).unwrap();
 let output: Vec<f32> = samples.iter().map(|&s| chorus.process(s)).collect();
 
 let writer = WavWriter::create("output.wav", spec).unwrap();
