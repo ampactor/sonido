@@ -1,37 +1,14 @@
 //! Kernel-architecture effect implementations.
 //!
-//! This module contains effects implemented using the [`DspKernel`](sonido_core::DspKernel)
-//! pattern: pure DSP separated from parameter ownership. Each kernel defines:
+//! All 19 effects in `sonido-effects` are implemented using the
+//! [`DspKernel`](sonido_core::DspKernel) pattern: pure DSP separated from parameter
+//! ownership. Each effect defines:
 //!
 //! - A `Params` struct (parameter values + metadata via [`KernelParams`](sonido_core::KernelParams))
 //! - A `Kernel` struct (DSP state only — filters, delay lines, ADAA processors)
 //!
 //! Kernels are deployed via [`KernelAdapter`](sonido_core::KernelAdapter) for desktop/plugin
 //! use, or called directly on embedded targets.
-//!
-//! # Migration Status
-//!
-//! | Effect | Status |
-//! |--------|--------|
-//! | Distortion | ✅ Kernel |
-//! | CleanPreamp | ✅ Kernel |
-//! | LowPassFilter | ✅ Kernel |
-//! | Gate | ✅ Kernel |
-//! | Bitcrusher | ✅ Kernel |
-//! | RingMod | ✅ Kernel |
-//! | Wah | ✅ Kernel |
-//! | Tremolo | ✅ Kernel |
-//! | Limiter | ✅ Kernel |
-//! | Flanger | ✅ Kernel |
-//! | Chorus | ✅ Kernel |
-//! | Phaser | ✅ Kernel |
-//! | Compressor | ✅ Kernel |
-//! | MultiVibrato | ✅ Kernel |
-//! | ParametricEq | ✅ Kernel |
-//! | Delay | ✅ Kernel |
-//! | Stage | ✅ Kernel |
-//! | Reverb | ✅ Kernel |
-//! | TapeSaturation | ✅ Kernel |
 
 pub mod bitcrusher;
 pub mod chorus;

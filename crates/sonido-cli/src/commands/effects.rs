@@ -43,7 +43,7 @@ pub fn run(args: EffectsArgs) -> anyhow::Result<()> {
             "----", "-----------", "-------", "-----"
         );
 
-        for param in effect.parameters {
+        for param in &effect.parameters {
             println!(
                 "  {:12}  {:40}  {:12}  {}",
                 param.name, param.description, param.default, param.range

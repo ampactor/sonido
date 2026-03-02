@@ -350,7 +350,7 @@ Cubic interpolation reduces the high-frequency roll-off inherent in linear inter
 
 ## Reverb: Freeverb Topology
 
-**Source:** `crates/sonido-effects/src/reverb.rs`, `crates/sonido-core/src/comb.rs`, `crates/sonido-core/src/allpass.rs`
+**Source:** `crates/sonido-effects/src/kernels/reverb.rs`, `crates/sonido-core/src/comb.rs`, `crates/sonido-core/src/allpass.rs`
 
 ### Algorithm Structure
 
@@ -477,7 +477,7 @@ The phaser's allpass cascade has unity magnitude at all frequencies — resonanc
 
 Reference: CCRMA PASP, "Feedback Comb Filters" — peak gain = 1/(1-|g|).
 
-Source: `crates/sonido-core/src/gain.rs` (`feedback_wet_compensation`), `crates/sonido-effects/src/reverb.rs` (`update_comb_params`)
+Source: `crates/sonido-core/src/gain.rs` (`feedback_wet_compensation`), `crates/sonido-effects/src/kernels/reverb.rs` (`update_comb_params`)
 
 ---
 
@@ -544,7 +544,7 @@ Linear smoothing guarantees the target is reached in exactly the specified time.
 
 ## Waveshaping and Distortion
 
-**Source:** `crates/sonido-effects/src/distortion.rs`
+**Source:** `crates/sonido-effects/src/kernels/distortion.rs`
 
 ### Signal Flow
 
@@ -574,7 +574,7 @@ Distortion is a prime candidate for the `Oversampled<N, E>` wrapper since wavesh
 
 ## Dynamics Processing
 
-**Source:** `crates/sonido-effects/src/compressor.rs`
+**Source:** `crates/sonido-effects/src/kernels/compressor.rs`
 
 ### Feed-Forward Compressor
 

@@ -1,11 +1,12 @@
 //! Effect factory and parameter parsing.
+//!
+//! All effect creation goes through [`sonido_registry::EffectRegistry`], which
+//! returns `Box<dyn EffectWithParams + Send>` backed by `KernelAdapter<XxxKernel>`.
+//! CLI-specific aliases for effect names, parameter names, and enum values are
+//! normalized here before being passed to the registry.
 
 use sonido_core::EffectWithParams;
-use sonido_effects::{
-    Bitcrusher, CarrierWaveform, ChannelMode, Chorus, CleanPreamp, Compressor, Delay, Distortion,
-    Flanger, Gate, HaasSide, Limiter, LowPassFilter, MultiVibrato, ParametricEq, Phaser, Reverb,
-    ReverbType, RingMod, Stage, TapeSaturation, Tremolo, TremoloWaveform, Wah, WahMode, WaveShape,
-};
+use sonido_registry::EffectRegistry;
 use std::collections::HashMap;
 
 /// Error type for effect creation.
@@ -24,1267 +25,279 @@ pub enum EffectError {
     ParseError(String),
 }
 
-/// Information about an available effect.
+/// Information about an available effect (for display in `sonido effects`).
 #[derive(Debug, Clone)]
 pub struct EffectInfo {
-    pub name: &'static str,
-    pub description: &'static str,
-    pub parameters: &'static [ParameterInfo],
+    pub name: String,
+    pub description: String,
+    pub parameters: Vec<ParameterInfo>,
 }
 
-/// Information about an effect parameter.
+/// Information about an effect parameter (for display).
 #[derive(Debug, Clone)]
 pub struct ParameterInfo {
-    pub name: &'static str,
-    pub description: &'static str,
-    pub default: &'static str,
-    pub range: &'static str,
+    pub name: String,
+    pub description: String,
+    pub default: String,
+    pub range: String,
 }
 
-/// Get information about all available effects.
+/// Get information about all available effects from the registry.
 pub fn available_effects() -> Vec<EffectInfo> {
-    vec![
-        EffectInfo {
-            name: "distortion",
-            description: "Waveshaping distortion with multiple modes",
-            parameters: &[
-                ParameterInfo {
-                    name: "drive",
-                    description: "Drive amount in dB",
-                    default: "12.0",
-                    range: "0-40",
-                },
-                ParameterInfo {
-                    name: "tone",
-                    description: "Tone frequency in Hz",
-                    default: "4000.0",
-                    range: "500-10000",
-                },
-                ParameterInfo {
-                    name: "level",
-                    description: "Output level in dB",
-                    default: "-6.0",
-                    range: "-20-0",
-                },
-                ParameterInfo {
-                    name: "waveshape",
-                    description: "Waveshape type",
-                    default: "softclip",
-                    range: "softclip|hardclip|foldback|asymmetric",
-                },
-                ParameterInfo {
-                    name: "foldback_threshold",
-                    description: "Foldback threshold (foldback mode only)",
-                    default: "0.8",
-                    range: "0.1-1.0",
-                },
-            ],
-        },
-        EffectInfo {
-            name: "compressor",
-            description: "Dynamics compressor with soft knee",
-            parameters: &[
-                ParameterInfo {
-                    name: "threshold",
-                    description: "Threshold in dB",
-                    default: "-18.0",
-                    range: "-40-0",
-                },
-                ParameterInfo {
-                    name: "ratio",
-                    description: "Compression ratio",
-                    default: "4.0",
-                    range: "1-20",
-                },
-                ParameterInfo {
-                    name: "attack",
-                    description: "Attack time in ms",
-                    default: "10.0",
-                    range: "0.1-100",
-                },
-                ParameterInfo {
-                    name: "release",
-                    description: "Release time in ms",
-                    default: "100.0",
-                    range: "10-1000",
-                },
-                ParameterInfo {
-                    name: "makeup",
-                    description: "Makeup gain in dB",
-                    default: "0.0",
-                    range: "0-20",
-                },
-                ParameterInfo {
-                    name: "knee",
-                    description: "Knee width in dB",
-                    default: "6.0",
-                    range: "0-12",
-                },
-            ],
-        },
-        EffectInfo {
-            name: "chorus",
-            description: "Dual-voice modulated delay chorus",
-            parameters: &[
-                ParameterInfo {
-                    name: "rate",
-                    description: "LFO rate in Hz",
-                    default: "1.0",
-                    range: "0.1-10",
-                },
-                ParameterInfo {
-                    name: "depth",
-                    description: "Modulation depth (0-1)",
-                    default: "0.5",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "mix",
-                    description: "Wet/dry mix (0-1)",
-                    default: "0.5",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "output",
-                    description: "Output level in dB",
-                    default: "0.0",
-                    range: "-20-20",
-                },
-            ],
-        },
-        EffectInfo {
-            name: "delay",
-            description: "Tape-style feedback delay",
-            parameters: &[
-                ParameterInfo {
-                    name: "time",
-                    description: "Delay time in ms",
-                    default: "300.0",
-                    range: "1-2000",
-                },
-                ParameterInfo {
-                    name: "feedback",
-                    description: "Feedback amount (0-1)",
-                    default: "0.4",
-                    range: "0-0.95",
-                },
-                ParameterInfo {
-                    name: "mix",
-                    description: "Wet/dry mix (0-1)",
-                    default: "0.5",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "ping_pong",
-                    description: "Ping-pong stereo mode (0=off, 1=on)",
-                    default: "0",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "output",
-                    description: "Output level in dB",
-                    default: "0.0",
-                    range: "-20-20",
-                },
-            ],
-        },
-        EffectInfo {
-            name: "flanger",
-            description: "Classic flanger with through-zero mode and bipolar feedback",
-            parameters: &[
-                ParameterInfo {
-                    name: "rate",
-                    description: "LFO rate in Hz",
-                    default: "0.5",
-                    range: "0.05-5",
-                },
-                ParameterInfo {
-                    name: "depth",
-                    description: "Modulation depth (0-1)",
-                    default: "0.5",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "feedback",
-                    description: "Feedback amount, negative = even harmonics",
-                    default: "0.5",
-                    range: "-0.95-0.95",
-                },
-                ParameterInfo {
-                    name: "mix",
-                    description: "Wet/dry mix (0-1)",
-                    default: "0.5",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "tzf",
-                    description: "Through-zero flanging mode",
-                    default: "false",
-                    range: "true/false",
-                },
-                ParameterInfo {
-                    name: "output",
-                    description: "Output level in dB",
-                    default: "0.0",
-                    range: "-20-20",
-                },
-            ],
-        },
-        EffectInfo {
-            name: "phaser",
-            description: "Multi-stage allpass phaser with LFO",
-            parameters: &[
-                ParameterInfo {
-                    name: "rate",
-                    description: "LFO rate in Hz",
-                    default: "0.3",
-                    range: "0.05-5",
-                },
-                ParameterInfo {
-                    name: "depth",
-                    description: "Frequency sweep range (0-1)",
-                    default: "0.5",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "stages",
-                    description: "Number of allpass stages",
-                    default: "6",
-                    range: "2-12",
-                },
-                ParameterInfo {
-                    name: "feedback",
-                    description: "Feedback/resonance (0-1)",
-                    default: "0.5",
-                    range: "0-0.95",
-                },
-                ParameterInfo {
-                    name: "mix",
-                    description: "Wet/dry mix (0-1)",
-                    default: "0.5",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "stereo_spread",
-                    description: "Stereo LFO phase offset (0-0.5)",
-                    default: "0.25",
-                    range: "0-0.5",
-                },
-                ParameterInfo {
-                    name: "output",
-                    description: "Output level in dB",
-                    default: "0.0",
-                    range: "-20-20",
-                },
-            ],
-        },
-        EffectInfo {
-            name: "filter",
-            description: "Resonant lowpass filter",
-            parameters: &[
-                ParameterInfo {
-                    name: "cutoff",
-                    description: "Cutoff frequency in Hz",
-                    default: "1000.0",
-                    range: "20-20000",
-                },
-                ParameterInfo {
-                    name: "resonance",
-                    description: "Resonance (Q)",
-                    default: "0.707",
-                    range: "0.1-10",
-                },
-                ParameterInfo {
-                    name: "output",
-                    description: "Output level in dB",
-                    default: "0.0",
-                    range: "-20-20",
-                },
-            ],
-        },
-        EffectInfo {
-            name: "multivibrato",
-            description: "10-unit tape wow/flutter vibrato",
-            parameters: &[
-                ParameterInfo {
-                    name: "depth",
-                    description: "Overall depth (0-1)",
-                    default: "0.5",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "mix",
-                    description: "Wet/dry mix (0-1)",
-                    default: "1.0",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "output",
-                    description: "Output level in dB",
-                    default: "0.0",
-                    range: "-20-20",
-                },
-            ],
-        },
-        EffectInfo {
-            name: "tape",
-            description: "Tape saturation with HF rolloff",
-            parameters: &[
-                ParameterInfo {
-                    name: "drive",
-                    description: "Drive amount in dB",
-                    default: "6.0",
-                    range: "0-24",
-                },
-                ParameterInfo {
-                    name: "saturation",
-                    description: "Saturation amount (0-1)",
-                    default: "0.5",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "output",
-                    description: "Output level in dB",
-                    default: "0.0",
-                    range: "-12-12",
-                },
-                ParameterInfo {
-                    name: "hf_rolloff",
-                    description: "HF rolloff frequency in Hz",
-                    default: "12000.0",
-                    range: "1000-20000",
-                },
-                ParameterInfo {
-                    name: "bias",
-                    description: "Tape bias (-0.2 to 0.2)",
-                    default: "0.0",
-                    range: "-0.2-0.2",
-                },
-            ],
-        },
-        EffectInfo {
-            name: "preamp",
-            description: "Clean preamp/gain stage",
-            parameters: &[
-                ParameterInfo {
-                    name: "gain",
-                    description: "Gain in dB",
-                    default: "0.0",
-                    range: "-20-20",
-                },
-                ParameterInfo {
-                    name: "output",
-                    description: "Output level in dB",
-                    default: "0.0",
-                    range: "-20-20",
-                },
-                ParameterInfo {
-                    name: "headroom",
-                    description: "Headroom before clipping in dB",
-                    default: "20.0",
-                    range: "6-40",
-                },
-            ],
-        },
-        EffectInfo {
-            name: "reverb",
-            description: "Freeverb-style algorithmic reverb",
-            parameters: &[
-                ParameterInfo {
-                    name: "room_size",
-                    description: "Room size (0-1)",
-                    default: "0.5",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "decay",
-                    description: "Decay time (0-1)",
-                    default: "0.5",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "damping",
-                    description: "HF damping (0-1, 0=bright, 1=dark)",
-                    default: "0.5",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "predelay",
-                    description: "Pre-delay in ms",
-                    default: "10.0",
-                    range: "0-100",
-                },
-                ParameterInfo {
-                    name: "mix",
-                    description: "Wet/dry mix (0-1)",
-                    default: "0.5",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "stereo_width",
-                    description: "Stereo width (0-1)",
-                    default: "1.0",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "type",
-                    description: "Reverb type preset",
-                    default: "room",
-                    range: "room|hall",
-                },
-                ParameterInfo {
-                    name: "output",
-                    description: "Output level in dB",
-                    default: "0.0",
-                    range: "-20-20",
-                },
-            ],
-        },
-        EffectInfo {
-            name: "tremolo",
-            description: "Amplitude modulation with multiple waveforms",
-            parameters: &[
-                ParameterInfo {
-                    name: "rate",
-                    description: "LFO rate in Hz",
-                    default: "5.0",
-                    range: "0.5-20",
-                },
-                ParameterInfo {
-                    name: "depth",
-                    description: "Modulation depth (0-1)",
-                    default: "0.5",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "waveform",
-                    description: "Waveform type",
-                    default: "sine",
-                    range: "sine|triangle|square|samplehold",
-                },
-                ParameterInfo {
-                    name: "output",
-                    description: "Output level in dB",
-                    default: "0.0",
-                    range: "-20-20",
-                },
-            ],
-        },
-        EffectInfo {
-            name: "gate",
-            description: "Noise gate with threshold and hold",
-            parameters: &[
-                ParameterInfo {
-                    name: "threshold",
-                    description: "Threshold in dB",
-                    default: "-40.0",
-                    range: "-80-0",
-                },
-                ParameterInfo {
-                    name: "attack",
-                    description: "Attack time in ms",
-                    default: "1.0",
-                    range: "0.1-50",
-                },
-                ParameterInfo {
-                    name: "release",
-                    description: "Release time in ms",
-                    default: "100.0",
-                    range: "10-1000",
-                },
-                ParameterInfo {
-                    name: "hold",
-                    description: "Hold time in ms",
-                    default: "50.0",
-                    range: "0-500",
-                },
-                ParameterInfo {
-                    name: "output",
-                    description: "Output level in dB",
-                    default: "0.0",
-                    range: "-20-20",
-                },
-            ],
-        },
-        EffectInfo {
-            name: "wah",
-            description: "Auto-wah and manual wah with envelope follower",
-            parameters: &[
-                ParameterInfo {
-                    name: "frequency",
-                    description: "Center frequency in Hz",
-                    default: "800.0",
-                    range: "200-2000",
-                },
-                ParameterInfo {
-                    name: "resonance",
-                    description: "Filter Q (sharpness)",
-                    default: "5.0",
-                    range: "1-10",
-                },
-                ParameterInfo {
-                    name: "sensitivity",
-                    description: "Envelope sensitivity (0-1)",
-                    default: "0.5",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "mode",
-                    description: "Wah mode",
-                    default: "auto",
-                    range: "auto|manual",
-                },
-                ParameterInfo {
-                    name: "output",
-                    description: "Output level in dB",
-                    default: "0.0",
-                    range: "-20-20",
-                },
-            ],
-        },
-        EffectInfo {
-            name: "eq",
-            description: "3-band parametric equalizer",
-            parameters: &[
-                ParameterInfo {
-                    name: "low_freq",
-                    description: "Low band frequency in Hz",
-                    default: "100.0",
-                    range: "20-500",
-                },
-                ParameterInfo {
-                    name: "low_gain",
-                    description: "Low band gain in dB",
-                    default: "0.0",
-                    range: "-12-12",
-                },
-                ParameterInfo {
-                    name: "low_q",
-                    description: "Low band Q",
-                    default: "1.0",
-                    range: "0.5-5",
-                },
-                ParameterInfo {
-                    name: "mid_freq",
-                    description: "Mid band frequency in Hz",
-                    default: "1000.0",
-                    range: "200-5000",
-                },
-                ParameterInfo {
-                    name: "mid_gain",
-                    description: "Mid band gain in dB",
-                    default: "0.0",
-                    range: "-12-12",
-                },
-                ParameterInfo {
-                    name: "mid_q",
-                    description: "Mid band Q",
-                    default: "1.0",
-                    range: "0.5-5",
-                },
-                ParameterInfo {
-                    name: "high_freq",
-                    description: "High band frequency in Hz",
-                    default: "5000.0",
-                    range: "1000-15000",
-                },
-                ParameterInfo {
-                    name: "high_gain",
-                    description: "High band gain in dB",
-                    default: "0.0",
-                    range: "-12-12",
-                },
-                ParameterInfo {
-                    name: "high_q",
-                    description: "High band Q",
-                    default: "1.0",
-                    range: "0.5-5",
-                },
-                ParameterInfo {
-                    name: "output",
-                    description: "Output level in dB",
-                    default: "0.0",
-                    range: "-20-20",
-                },
-            ],
-        },
-        EffectInfo {
-            name: "limiter",
-            description: "Brickwall lookahead limiter",
-            parameters: &[
-                ParameterInfo {
-                    name: "threshold",
-                    description: "Threshold in dB",
-                    default: "-6.0",
-                    range: "-30-0",
-                },
-                ParameterInfo {
-                    name: "ceiling",
-                    description: "Output ceiling in dB",
-                    default: "-0.3",
-                    range: "-30-0",
-                },
-                ParameterInfo {
-                    name: "release",
-                    description: "Release time in ms",
-                    default: "100.0",
-                    range: "10-500",
-                },
-                ParameterInfo {
-                    name: "lookahead",
-                    description: "Lookahead time in ms",
-                    default: "5.0",
-                    range: "0-10",
-                },
-                ParameterInfo {
-                    name: "output",
-                    description: "Output level in dB",
-                    default: "0.0",
-                    range: "-20-20",
-                },
-            ],
-        },
-        EffectInfo {
-            name: "bitcrusher",
-            description: "Bit depth and sample rate reduction",
-            parameters: &[
-                ParameterInfo {
-                    name: "bit_depth",
-                    description: "Bit depth (2-16)",
-                    default: "8",
-                    range: "2-16",
-                },
-                ParameterInfo {
-                    name: "downsample",
-                    description: "Downsample factor (1-64)",
-                    default: "1",
-                    range: "1-64",
-                },
-                ParameterInfo {
-                    name: "jitter",
-                    description: "Sample jitter amount (0-1)",
-                    default: "0.0",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "mix",
-                    description: "Wet/dry mix (0-1)",
-                    default: "1.0",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "output",
-                    description: "Output level in dB",
-                    default: "0.0",
-                    range: "-20-20",
-                },
-            ],
-        },
-        EffectInfo {
-            name: "ringmod",
-            description: "Ring modulator with sine/triangle/square carrier",
-            parameters: &[
-                ParameterInfo {
-                    name: "frequency",
-                    description: "Carrier frequency in Hz",
-                    default: "440.0",
-                    range: "20-5000",
-                },
-                ParameterInfo {
-                    name: "depth",
-                    description: "Modulation depth (0-1)",
-                    default: "1.0",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "waveform",
-                    description: "Carrier waveform",
-                    default: "sine",
-                    range: "sine|triangle|square",
-                },
-                ParameterInfo {
-                    name: "mix",
-                    description: "Wet/dry mix (0-1)",
-                    default: "0.5",
-                    range: "0-1",
-                },
-                ParameterInfo {
-                    name: "output",
-                    description: "Output level in dB",
-                    default: "0.0",
-                    range: "-20-20",
-                },
-            ],
-        },
-        EffectInfo {
-            name: "stage",
-            description: "Signal conditioning and stereo utility",
-            parameters: &[
-                ParameterInfo {
-                    name: "gain",
-                    description: "Gain in dB",
-                    default: "0.0",
-                    range: "-20-20",
-                },
-                ParameterInfo {
-                    name: "width",
-                    description: "Stereo width in percent",
-                    default: "100",
-                    range: "0-200",
-                },
-                ParameterInfo {
-                    name: "balance",
-                    description: "L/R balance in percent",
-                    default: "0",
-                    range: "-100-100",
-                },
-                ParameterInfo {
-                    name: "phase_l",
-                    description: "Invert left phase (0 or 1)",
-                    default: "0",
-                    range: "0|1",
-                },
-                ParameterInfo {
-                    name: "phase_r",
-                    description: "Invert right phase (0 or 1)",
-                    default: "0",
-                    range: "0|1",
-                },
-                ParameterInfo {
-                    name: "channel",
-                    description: "Channel routing mode",
-                    default: "0",
-                    range: "0=normal|1=swap|2=mono_l|3=mono_r",
-                },
-                ParameterInfo {
-                    name: "dc_block",
-                    description: "Enable DC blocking filter (0 or 1)",
-                    default: "0",
-                    range: "0|1",
-                },
-                ParameterInfo {
-                    name: "bass_mono",
-                    description: "Sum bass to mono (0 or 1)",
-                    default: "0",
-                    range: "0|1",
-                },
-                ParameterInfo {
-                    name: "bass_freq",
-                    description: "Bass mono crossover frequency in Hz",
-                    default: "200.0",
-                    range: "40-400",
-                },
-                ParameterInfo {
-                    name: "haas_delay",
-                    description: "Haas delay in ms",
-                    default: "0.0",
-                    range: "0-30",
-                },
-                ParameterInfo {
-                    name: "haas_side",
-                    description: "Which channel gets Haas delay",
-                    default: "1",
-                    range: "0=left|1=right",
-                },
-                ParameterInfo {
-                    name: "output",
-                    description: "Output level in dB",
-                    default: "0.0",
-                    range: "-20-20",
-                },
-            ],
-        },
-    ]
+    let registry = EffectRegistry::new();
+    registry
+        .all_effects()
+        .iter()
+        .map(|desc| {
+            let effect = registry.create(desc.id, 48000.0).unwrap();
+            let params = (0..effect.effect_param_count())
+                .filter_map(|i| {
+                    let d = effect.effect_param_info(i)?;
+                    Some(ParameterInfo {
+                        name: d.short_name.to_lowercase(),
+                        description: format!(
+                            "{} ({} to {})",
+                            d.name,
+                            d.format_value(d.min),
+                            d.format_value(d.max),
+                        ),
+                        default: d.format_value(d.default),
+                        range: format!("{} .. {}", d.format_value(d.min), d.format_value(d.max)),
+                    })
+                })
+                .collect();
+            EffectInfo {
+                name: desc.id.to_string(),
+                description: desc.description.to_string(),
+                parameters: params,
+            }
+        })
+        .collect()
 }
 
-/// Create an effect with custom parameters.
+/// Map CLI effect name aliases to canonical registry IDs.
+///
+/// Returns a `&'static str` for known aliases, or the original `name` for
+/// pass-through (the registry will reject unknown names downstream).
+fn resolve_effect_name<'a>(name: &'a str) -> &'a str {
+    let lower = name.to_lowercase();
+    match lower.as_str() {
+        "lowpass" | "filter" => "filter",
+        "vibrato" | "multivibrato" => "multivibrato",
+        "tape" | "tapesaturation" | "tape_saturation" => "tape",
+        "noisegate" | "noise_gate" | "gate" => "gate",
+        "autowah" | "auto_wah" | "wah" => "wah",
+        "cleanpreamp" | "clean_preamp" | "preamp" => "preamp",
+        "parametriceq" | "parametric_eq" | "peq" | "eq" => "eq",
+        "crusher" | "bitcrusher" => "bitcrusher",
+        "ring" | "ring_mod" | "ringmod" => "ringmod",
+        "distortion" => "distortion",
+        "compressor" => "compressor",
+        "chorus" => "chorus",
+        "flanger" => "flanger",
+        "phaser" => "phaser",
+        "tremolo" => "tremolo",
+        "delay" => "delay",
+        "reverb" => "reverb",
+        "limiter" => "limiter",
+        "stage" => "stage",
+        // Pass through as-is — the registry will reject unknown names
+        _ => name,
+    }
+}
+
+/// Map CLI parameter aliases to canonical kernel parameter names.
+///
+/// The registry's `param_index_by_name()` already matches case-insensitively on
+/// the descriptor `name` and `short_name`. This function only handles aliases that
+/// don't match either.
+fn normalize_param_name(effect_id: &str, key: &str) -> String {
+    let k = key.to_lowercase();
+    match (effect_id, k.as_str()) {
+        // ── Delay ─────────────────────────────────────────────────────────
+        ("delay", "time") => "delay time".to_string(),
+        ("delay", "pingpong" | "ping_pong") => "ping pong".to_string(),
+        ("delay", "fb_lp") => "feedback lp".to_string(),
+        ("delay", "fb_hp") => "feedback hp".to_string(),
+
+        // ── Reverb ────────────────────────────────────────────────────────
+        ("reverb", "room" | "size") => "room size".to_string(),
+        ("reverb", "damp") => "damping".to_string(),
+        ("reverb", "predelay" | "pre") => "pre-delay".to_string(),
+        ("reverb", "stereo_width" | "width") => "stereo width".to_string(),
+        ("reverb", "er" | "er_level") => "er level".to_string(),
+
+        // ── Parametric EQ ─────────────────────────────────────────────────
+        ("eq", "lf" | "low_freq") => "low frequency".to_string(),
+        ("eq", "lg" | "low_gain") => "low gain".to_string(),
+        ("eq", "lq" | "low_q") => "low q".to_string(),
+        ("eq", "mf" | "mid_freq") => "mid frequency".to_string(),
+        ("eq", "mg" | "mid_gain") => "mid gain".to_string(),
+        ("eq", "mq" | "mid_q") => "mid q".to_string(),
+        ("eq", "hf" | "high_freq") => "high frequency".to_string(),
+        ("eq", "hg" | "high_gain") => "high gain".to_string(),
+        ("eq", "hq" | "high_q") => "high q".to_string(),
+
+        // ── Bitcrusher ────────────────────────────────────────────────────
+        ("bitcrusher", "bits" | "bit_depth") => "bit depth".to_string(),
+        ("bitcrusher", "ds") => "downsample".to_string(),
+
+        // ── Stage ─────────────────────────────────────────────────────────
+        ("stage", "haas" | "haas_delay") => "haas".to_string(),
+        ("stage", "bass_mono") => "bass mono".to_string(),
+        ("stage", "phase_l") => "phase l".to_string(),
+        ("stage", "phase_r") => "phase r".to_string(),
+        ("stage", "dc_block") => "dc block".to_string(),
+        ("stage", "bass_freq") => "bass freq".to_string(),
+        ("stage", "haas_side") => "haas side".to_string(),
+        ("stage", "bal") => "balance".to_string(),
+        ("stage", "channel") => "channel".to_string(),
+
+        // ── Distortion ────────────────────────────────────────────────────
+        ("distortion", "waveshape" | "shape") => "waveshape".to_string(),
+        ("distortion", "level") => "output".to_string(),
+
+        // ── Compressor ────────────────────────────────────────────────────
+        ("compressor", "thresh") => "threshold".to_string(),
+        ("compressor", "makeup" | "makeup_gain") => "makeup gain".to_string(),
+        ("compressor", "detect" | "detection") => "detection".to_string(),
+        ("compressor", "sc_hpf" | "sidechain_hpf") => "sc hpf freq".to_string(),
+        ("compressor", "auto_makeup" | "automu") => "auto makeup".to_string(),
+
+        // ── Gate ──────────────────────────────────────────────────────────
+        ("gate", "thresh") => "threshold".to_string(),
+        ("gate", "atk") => "attack".to_string(),
+        ("gate", "rel") => "release".to_string(),
+        ("gate", "hyst") => "hysteresis".to_string(),
+        ("gate", "sc_hpf") => "sc hpf freq".to_string(),
+
+        // ── Limiter ───────────────────────────────────────────────────────
+        ("limiter", "thresh") => "threshold".to_string(),
+        ("limiter", "ceil") => "ceiling".to_string(),
+        ("limiter", "rel") => "release".to_string(),
+        ("limiter", "la") => "lookahead".to_string(),
+
+        // ── Flanger ───────────────────────────────────────────────────────
+        ("flanger", "fdbk") => "feedback".to_string(),
+
+        // ── Phaser ────────────────────────────────────────────────────────
+        ("phaser", "stg") => "stages".to_string(),
+        ("phaser", "fdbk") => "feedback".to_string(),
+        ("phaser", "spread" | "stereo_spread") => "stereo spread".to_string(),
+
+        // ── Tremolo ───────────────────────────────────────────────────────
+        ("tremolo", "wave" | "waveform") => "waveform".to_string(),
+        ("tremolo", "spread" | "stereo_spread") => "stereo spread".to_string(),
+
+        // ── Wah ───────────────────────────────────────────────────────────
+        ("wah", "freq") => "frequency".to_string(),
+        ("wah", "reso" | "q") => "resonance".to_string(),
+        ("wah", "sens") => "sensitivity".to_string(),
+
+        // ── Ring Mod ──────────────────────────────────────────────────────
+        ("ringmod", "freq") => "frequency".to_string(),
+        ("ringmod", "wave" | "waveform") => "waveform".to_string(),
+
+        // ── Tape ──────────────────────────────────────────────────────────
+        ("tape", "hf" | "hf_rolloff") => "hf rolloff".to_string(),
+
+        // ── Preamp ────────────────────────────────────────────────────────
+        ("preamp", "headroom_db") => "tone".to_string(),
+
+        // ── Chorus ────────────────────────────────────────────────────────
+        ("chorus", "base_delay" | "basedelay") => "base delay".to_string(),
+
+        // ── Filter ────────────────────────────────────────────────────────
+        ("filter", "q") => "resonance".to_string(),
+
+        // Default: replace underscores with spaces (kernel descriptors use spaces,
+        // CLI users type underscores) and pass through for case-insensitive matching
+        _ => key.replace('_', " "),
+    }
+}
+
+/// Normalize CLI shorthand for stepped/enum parameter values into the
+/// canonical step-label strings that `ParamDescriptor::parse_value()` expects.
+fn normalize_enum_value(param_name: &str, value: &str) -> String {
+    let lower = value.to_lowercase();
+    match lower.as_str() {
+        // ── Waveshape ─────────────────────────────────────────────────────
+        "soft" | "softclip" | "soft_clip" => "Soft Clip".to_string(),
+        "hard" | "hardclip" | "hard_clip" => "Hard Clip".to_string(),
+        "fold" | "foldback" => "Foldback".to_string(),
+        "asym" | "asymmetric" => "Asymmetric".to_string(),
+
+        // ── Waveform (tremolo, ring mod) ──────────────────────────────────
+        "sin" | "sine" => "Sine".to_string(),
+        "tri" | "triangle" => "Triangle".to_string(),
+        "sq" | "square" => "Square".to_string(),
+        "sh" | "s&h" | "samplehold" | "sample_hold" => "SampleHold".to_string(),
+
+        // ── Wah mode ──────────────────────────────────────────────────────
+        "auto" => "Auto".to_string(),
+        "manual" => "Manual".to_string(),
+
+        // ── Filter types ──────────────────────────────────────────────────
+        "lp" | "lowpass" | "low_pass" => "Lowpass".to_string(),
+        "hp" | "highpass" | "high_pass" => "Highpass".to_string(),
+        "bp" | "bandpass" | "band_pass" => "Bandpass".to_string(),
+
+        // ── Boolean on/off (ping-pong, dc_block, etc.) ────────────────────
+        "true" | "on" | "yes" => "On".to_string(),
+        "false" | "off" | "no" => "Off".to_string(),
+
+        // Pass through: might be numeric or already matches a step label
+        _ => {
+            // If it looks like a param name check is useful, use the param_name
+            // to provide context, but for now just return as-is
+            let _ = param_name;
+            value.to_string()
+        }
+    }
+}
+
+/// Create an effect with custom parameters using the registry.
+///
+/// Effect names and parameter names are resolved through CLI alias tables,
+/// so users can type `distortion:drive=15,shape=soft` or
+/// `eq:lf=200,lg=3,hf=8000,hg=-2`.
 pub fn create_effect_with_params(
     name: &str,
     sample_rate: f32,
     params: &HashMap<String, String>,
 ) -> Result<Box<dyn EffectWithParams + Send>, EffectError> {
-    match name.to_lowercase().as_str() {
-        "distortion" => {
-            let mut effect = Distortion::new(sample_rate);
-            for (key, value) in params {
-                match key.as_str() {
-                    "drive" => effect.set_drive_db(parse_f32(key, value)?),
-                    "tone" => effect.set_tone_db(parse_f32(key, value)?),
-                    "mix" => effect.set_mix(parse_f32(key, value)? / 100.0),
-                    "waveshape" | "shape" => effect.set_waveshape(parse_waveshape(value)?),
-                    "foldback_threshold" | "foldback" => {
-                        effect.set_foldback_threshold(parse_f32(key, value)?);
-                    }
-                    "level" | "output" => {
-                        use sonido_core::ParameterInfo as _;
-                        let db = parse_f32(key, value)?;
-                        let last = effect.param_count() - 1;
-                        effect.set_param(last, db);
-                    }
-                    _ => {
-                        return Err(EffectError::UnknownParameter {
-                            effect: name.to_string(),
-                            param: key.to_string(),
-                        });
-                    }
-                }
-            }
-            Ok(Box::new(effect))
-        }
-        "compressor" => {
-            let mut effect = Compressor::new(sample_rate);
-            for (key, value) in params {
-                match key.as_str() {
-                    "threshold" => effect.set_threshold_db(parse_f32(key, value)?),
-                    "ratio" => effect.set_ratio(parse_f32(key, value)?),
-                    "attack" => effect.set_attack_ms(parse_f32(key, value)?),
-                    "release" => effect.set_release_ms(parse_f32(key, value)?),
-                    "makeup" => effect.set_makeup_gain_db(parse_f32(key, value)?),
-                    "knee" => effect.set_knee_db(parse_f32(key, value)?),
-                    _ => {
-                        return Err(EffectError::UnknownParameter {
-                            effect: name.to_string(),
-                            param: key.to_string(),
-                        });
-                    }
-                }
-            }
-            Ok(Box::new(effect))
-        }
-        "chorus" => {
-            let mut effect = Chorus::new(sample_rate);
-            for (key, value) in params {
-                match key.as_str() {
-                    "rate" => effect.set_rate(parse_f32(key, value)?),
-                    "depth" => effect.set_depth(parse_f32(key, value)?),
-                    "mix" => effect.set_mix(parse_f32(key, value)?),
-                    "output" => {
-                        use sonido_core::ParameterInfo as _;
-                        let db = parse_f32(key, value)?;
-                        let last = effect.param_count() - 1;
-                        effect.set_param(last, db);
-                    }
-                    _ => {
-                        return Err(EffectError::UnknownParameter {
-                            effect: name.to_string(),
-                            param: key.to_string(),
-                        });
-                    }
-                }
-            }
-            Ok(Box::new(effect))
-        }
-        "delay" => {
-            let mut effect = Delay::new(sample_rate);
-            for (key, value) in params {
-                match key.as_str() {
-                    "time" => effect.set_delay_time_ms(parse_f32(key, value)?),
-                    "feedback" => effect.set_feedback(parse_f32(key, value)?),
-                    "mix" => effect.set_mix(parse_f32(key, value)?),
-                    "ping_pong" | "pingpong" => {
-                        effect.set_ping_pong(parse_f32(key, value)? > 0.5);
-                    }
-                    "output" => {
-                        use sonido_core::ParameterInfo as _;
-                        let db = parse_f32(key, value)?;
-                        let last = effect.param_count() - 1;
-                        effect.set_param(last, db);
-                    }
-                    _ => {
-                        return Err(EffectError::UnknownParameter {
-                            effect: name.to_string(),
-                            param: key.to_string(),
-                        });
-                    }
-                }
-            }
-            Ok(Box::new(effect))
-        }
-        "flanger" => {
-            let mut effect = Flanger::new(sample_rate);
-            for (key, value) in params {
-                match key.as_str() {
-                    "rate" => effect.set_rate(parse_f32(key, value)?),
-                    "depth" => effect.set_depth(parse_f32(key, value)?),
-                    "feedback" | "fdbk" => effect.set_feedback(parse_f32(key, value)?),
-                    "mix" => effect.set_mix(parse_f32(key, value)?),
-                    "tzf" => effect.set_tzf(parse_f32(key, value)? > 0.5),
-                    "output" => {
-                        use sonido_core::ParameterInfo as _;
-                        let db = parse_f32(key, value)?;
-                        let last = effect.param_count() - 1;
-                        effect.set_param(last, db);
-                    }
-                    _ => {
-                        return Err(EffectError::UnknownParameter {
-                            effect: name.to_string(),
-                            param: key.to_string(),
-                        });
-                    }
-                }
-            }
-            Ok(Box::new(effect))
-        }
-        "phaser" => {
-            let mut effect = Phaser::new(sample_rate);
-            for (key, value) in params {
-                match key.as_str() {
-                    "rate" => effect.set_rate(parse_f32(key, value)?),
-                    "depth" => effect.set_depth(parse_f32(key, value)?),
-                    "stages" | "stg" => effect.set_stages(parse_f32(key, value)? as usize),
-                    "feedback" | "fdbk" => effect.set_feedback(parse_f32(key, value)?),
-                    "mix" => effect.set_mix(parse_f32(key, value)?),
-                    "stereo_spread" | "spread" => {
-                        effect.set_stereo_spread(parse_f32(key, value)?);
-                    }
-                    "min_freq" => effect.set_min_freq(parse_f32(key, value)?),
-                    "max_freq" => effect.set_max_freq(parse_f32(key, value)?),
-                    "output" => {
-                        use sonido_core::ParameterInfo as _;
-                        let db = parse_f32(key, value)?;
-                        let last = effect.param_count() - 1;
-                        effect.set_param(last, db);
-                    }
-                    _ => {
-                        return Err(EffectError::UnknownParameter {
-                            effect: name.to_string(),
-                            param: key.to_string(),
-                        });
-                    }
-                }
-            }
-            Ok(Box::new(effect))
-        }
-        "filter" | "lowpass" => {
-            let mut effect = LowPassFilter::new(sample_rate);
-            for (key, value) in params {
-                match key.as_str() {
-                    "cutoff" => effect.set_cutoff_hz(parse_f32(key, value)?),
-                    "resonance" | "q" => effect.set_q(parse_f32(key, value)?),
-                    "output" => {
-                        use sonido_core::ParameterInfo as _;
-                        let db = parse_f32(key, value)?;
-                        let last = effect.param_count() - 1;
-                        effect.set_param(last, db);
-                    }
-                    _ => {
-                        return Err(EffectError::UnknownParameter {
-                            effect: name.to_string(),
-                            param: key.to_string(),
-                        });
-                    }
-                }
-            }
-            Ok(Box::new(effect))
-        }
-        "multivibrato" | "vibrato" => {
-            let mut effect = MultiVibrato::new(sample_rate);
-            for (key, value) in params {
-                match key.as_str() {
-                    "depth" => effect.set_depth(parse_f32(key, value)?),
-                    "mix" => effect.set_mix(parse_f32(key, value)?),
-                    "output" => {
-                        use sonido_core::ParameterInfo as _;
-                        let db = parse_f32(key, value)?;
-                        let last = effect.param_count() - 1;
-                        effect.set_param(last, db);
-                    }
-                    _ => {
-                        return Err(EffectError::UnknownParameter {
-                            effect: name.to_string(),
-                            param: key.to_string(),
-                        });
-                    }
-                }
-            }
-            Ok(Box::new(effect))
-        }
-        "tape" | "tapesaturation" => {
-            let mut effect = TapeSaturation::new(sample_rate);
-            for (key, value) in params {
-                match key.as_str() {
-                    "drive" => effect.set_drive(parse_f32(key, value)?),
-                    "saturation" => effect.set_saturation(parse_f32(key, value)?),
-                    "output" => {
-                        let db = parse_f32(key, value)?;
-                        effect.set_output(10.0f32.powf(db / 20.0));
-                    }
-                    "hf_rolloff" | "hf" => effect.set_hf_rolloff(parse_f32(key, value)?),
-                    "bias" => effect.set_bias(parse_f32(key, value)?),
-                    _ => {
-                        return Err(EffectError::UnknownParameter {
-                            effect: name.to_string(),
-                            param: key.to_string(),
-                        });
-                    }
-                }
-            }
-            Ok(Box::new(effect))
-        }
-        "preamp" | "cleanpreamp" => {
-            let mut effect = CleanPreamp::new(sample_rate);
-            for (key, value) in params {
-                match key.as_str() {
-                    "gain" => effect.set_gain_db(parse_f32(key, value)?),
-                    "output" => effect.set_output_db(parse_f32(key, value)?),
-                    "headroom" | "headroom_db" => {
-                        effect.set_headroom_db(parse_f32(key, value)?);
-                    }
-                    _ => {
-                        return Err(EffectError::UnknownParameter {
-                            effect: name.to_string(),
-                            param: key.to_string(),
-                        });
-                    }
-                }
-            }
-            Ok(Box::new(effect))
-        }
-        "reverb" => {
-            let mut effect = Reverb::new(sample_rate);
-            for (key, value) in params {
-                match key.as_str() {
-                    "room_size" | "room" | "size" => effect.set_room_size(parse_f32(key, value)?),
-                    "decay" => effect.set_decay(parse_f32(key, value)?),
-                    "damping" | "damp" => effect.set_damping(parse_f32(key, value)?),
-                    "predelay" | "pre" => effect.set_predelay_ms(parse_f32(key, value)?),
-                    "mix" => effect.set_mix(parse_f32(key, value)?),
-                    "stereo_width" | "width" => {
-                        effect.set_stereo_width(parse_f32(key, value)?);
-                    }
-                    "type" | "preset" => effect.set_reverb_type(parse_reverb_type(value)?),
-                    "output" => {
-                        use sonido_core::ParameterInfo as _;
-                        let db = parse_f32(key, value)?;
-                        let last = effect.param_count() - 1;
-                        effect.set_param(last, db);
-                    }
-                    _ => {
-                        return Err(EffectError::UnknownParameter {
-                            effect: name.to_string(),
-                            param: key.to_string(),
-                        });
-                    }
-                }
-            }
-            Ok(Box::new(effect))
-        }
-        "tremolo" => {
-            let mut effect = Tremolo::new(sample_rate);
-            for (key, value) in params {
-                match key.as_str() {
-                    "rate" => effect.set_rate(parse_f32(key, value)?),
-                    "depth" => effect.set_depth(parse_f32(key, value)?),
-                    "waveform" | "wave" => effect.set_waveform(parse_tremolo_waveform(value)?),
-                    "stereo_spread" | "spread" => {
-                        effect.set_stereo_spread(parse_f32(key, value)?);
-                    }
-                    "output" => {
-                        use sonido_core::ParameterInfo as _;
-                        let db = parse_f32(key, value)?;
-                        let last = effect.param_count() - 1;
-                        effect.set_param(last, db);
-                    }
-                    _ => {
-                        return Err(EffectError::UnknownParameter {
-                            effect: name.to_string(),
-                            param: key.to_string(),
-                        });
-                    }
-                }
-            }
-            Ok(Box::new(effect))
-        }
-        "gate" | "noisegate" => {
-            let mut effect = Gate::new(sample_rate);
-            for (key, value) in params {
-                match key.as_str() {
-                    "threshold" | "thresh" => effect.set_threshold_db(parse_f32(key, value)?),
-                    "attack" | "atk" => effect.set_attack_ms(parse_f32(key, value)?),
-                    "release" | "rel" => effect.set_release_ms(parse_f32(key, value)?),
-                    "hold" => effect.set_hold_ms(parse_f32(key, value)?),
-                    "output" => {
-                        use sonido_core::ParameterInfo as _;
-                        let db = parse_f32(key, value)?;
-                        let last = effect.param_count() - 1;
-                        effect.set_param(last, db);
-                    }
-                    _ => {
-                        return Err(EffectError::UnknownParameter {
-                            effect: name.to_string(),
-                            param: key.to_string(),
-                        });
-                    }
-                }
-            }
-            Ok(Box::new(effect))
-        }
-        "wah" | "autowah" => {
-            let mut effect = Wah::new(sample_rate);
-            for (key, value) in params {
-                match key.as_str() {
-                    "frequency" | "freq" => effect.set_frequency(parse_f32(key, value)?),
-                    "resonance" | "reso" | "q" => effect.set_resonance(parse_f32(key, value)?),
-                    "sensitivity" | "sens" => effect.set_sensitivity(parse_f32(key, value)?),
-                    "mode" => effect.set_mode(parse_wah_mode(value)?),
-                    "output" => {
-                        use sonido_core::ParameterInfo as _;
-                        let db = parse_f32(key, value)?;
-                        let last = effect.param_count() - 1;
-                        effect.set_param(last, db);
-                    }
-                    _ => {
-                        return Err(EffectError::UnknownParameter {
-                            effect: name.to_string(),
-                            param: key.to_string(),
-                        });
-                    }
-                }
-            }
-            Ok(Box::new(effect))
-        }
-        "eq" | "parametriceq" | "peq" => {
-            let mut effect = ParametricEq::new(sample_rate);
-            for (key, value) in params {
-                match key.as_str() {
-                    "low_freq" | "lf" => effect.set_low_freq(parse_f32(key, value)?),
-                    "low_gain" | "lg" => effect.set_low_gain(parse_f32(key, value)?),
-                    "low_q" | "lq" => effect.set_low_q(parse_f32(key, value)?),
-                    "mid_freq" | "mf" => effect.set_mid_freq(parse_f32(key, value)?),
-                    "mid_gain" | "mg" => effect.set_mid_gain(parse_f32(key, value)?),
-                    "mid_q" | "mq" => effect.set_mid_q(parse_f32(key, value)?),
-                    "high_freq" | "hf" => effect.set_high_freq(parse_f32(key, value)?),
-                    "high_gain" | "hg" => effect.set_high_gain(parse_f32(key, value)?),
-                    "high_q" | "hq" => effect.set_high_q(parse_f32(key, value)?),
-                    "output" => {
-                        use sonido_core::ParameterInfo as _;
-                        let db = parse_f32(key, value)?;
-                        let last = effect.param_count() - 1;
-                        effect.set_param(last, db);
-                    }
-                    _ => {
-                        return Err(EffectError::UnknownParameter {
-                            effect: name.to_string(),
-                            param: key.to_string(),
-                        });
-                    }
-                }
-            }
-            Ok(Box::new(effect))
-        }
-        "limiter" => {
-            let mut effect = Limiter::new(sample_rate);
-            for (key, value) in params {
-                match key.as_str() {
-                    "threshold" | "thresh" => effect.set_threshold_db(parse_f32(key, value)?),
-                    "ceiling" | "ceil" => effect.set_ceiling_db(parse_f32(key, value)?),
-                    "release" | "rel" => effect.set_release_ms(parse_f32(key, value)?),
-                    "lookahead" | "la" => effect.set_lookahead_ms(parse_f32(key, value)?),
-                    "output" => {
-                        use sonido_core::ParameterInfo as _;
-                        let db = parse_f32(key, value)?;
-                        let last = effect.param_count() - 1;
-                        effect.set_param(last, db);
-                    }
-                    _ => {
-                        return Err(EffectError::UnknownParameter {
-                            effect: name.to_string(),
-                            param: key.to_string(),
-                        });
-                    }
-                }
-            }
-            Ok(Box::new(effect))
-        }
-        "bitcrusher" | "crusher" => {
-            let mut effect = Bitcrusher::new(sample_rate);
-            for (key, value) in params {
-                match key.as_str() {
-                    "bit_depth" | "bits" => effect.set_bit_depth(parse_f32(key, value)?),
-                    "downsample" | "ds" => effect.set_downsample(parse_f32(key, value)?),
-                    "jitter" => effect.set_jitter(parse_f32(key, value)?),
-                    "mix" => effect.set_mix(parse_f32(key, value)?),
-                    "output" => {
-                        use sonido_core::ParameterInfo as _;
-                        let db = parse_f32(key, value)?;
-                        let last = effect.param_count() - 1;
-                        effect.set_param(last, db);
-                    }
-                    _ => {
-                        return Err(EffectError::UnknownParameter {
-                            effect: name.to_string(),
-                            param: key.to_string(),
-                        });
-                    }
-                }
-            }
-            Ok(Box::new(effect))
-        }
-        "ringmod" | "ring" => {
-            let mut effect = RingMod::new(sample_rate);
-            for (key, value) in params {
-                match key.as_str() {
-                    "frequency" | "freq" => effect.set_frequency(parse_f32(key, value)?),
-                    "depth" => effect.set_depth(parse_f32(key, value)?),
-                    "waveform" | "wave" => effect.set_waveform(parse_carrier_waveform(value)?),
-                    "mix" => effect.set_mix(parse_f32(key, value)?),
-                    "output" => {
-                        use sonido_core::ParameterInfo as _;
-                        let db = parse_f32(key, value)?;
-                        let last = effect.param_count() - 1;
-                        effect.set_param(last, db);
-                    }
-                    _ => {
-                        return Err(EffectError::UnknownParameter {
-                            effect: name.to_string(),
-                            param: key.to_string(),
-                        });
-                    }
-                }
-            }
-            Ok(Box::new(effect))
-        }
-        "stage" => {
-            let mut effect = Stage::new(sample_rate);
-            for (key, value) in params {
-                match key.as_str() {
-                    "gain" => effect.set_gain_db(parse_f32(key, value)?),
-                    "width" => effect.set_width(parse_f32(key, value)?),
-                    "balance" | "bal" => effect.set_balance(parse_f32(key, value)?),
-                    "phase_l" => {
-                        effect.set_phase_invert_l(parse_f32(key, value)? > 0.5);
-                    }
-                    "phase_r" => {
-                        effect.set_phase_invert_r(parse_f32(key, value)? > 0.5);
-                    }
-                    "channel" => {
-                        effect.set_channel_mode(ChannelMode::from_index(parse_f32(key, value)?));
-                    }
-                    "dc_block" => effect.set_dc_block(parse_f32(key, value)? > 0.5),
-                    "bass_mono" => effect.set_bass_mono(parse_f32(key, value)? > 0.5),
-                    "bass_freq" => effect.set_bass_mono_freq(parse_f32(key, value)?),
-                    "haas_delay" | "haas" => effect.set_haas_delay_ms(parse_f32(key, value)?),
-                    "haas_side" => {
-                        effect.set_haas_side(HaasSide::from_index(parse_f32(key, value)?));
-                    }
-                    "output" => {
-                        use sonido_core::ParameterInfo as _;
-                        let db = parse_f32(key, value)?;
-                        let last = effect.param_count() - 1;
-                        effect.set_param(last, db);
-                    }
-                    _ => {
-                        return Err(EffectError::UnknownParameter {
-                            effect: name.to_string(),
-                            param: key.to_string(),
-                        });
-                    }
-                }
-            }
-            Ok(Box::new(effect))
-        }
-        _ => Err(EffectError::UnknownEffect(name.to_string())),
+    let registry = EffectRegistry::new();
+    let effect_id = resolve_effect_name(name);
+
+    let mut effect = registry
+        .create(effect_id, sample_rate)
+        .ok_or_else(|| EffectError::UnknownEffect(name.to_string()))?;
+
+    for (key, value) in params {
+        let norm_key = normalize_param_name(effect_id, key);
+
+        let idx = registry
+            .param_index_by_name(effect_id, &norm_key)
+            .ok_or_else(|| EffectError::UnknownParameter {
+                effect: name.to_string(),
+                param: key.clone(),
+            })?;
+
+        let desc = effect.effect_param_info(idx).unwrap();
+
+        // Try enum normalization first, then parse_value
+        let norm_value = normalize_enum_value(&norm_key, value);
+        let parsed = desc
+            .parse_value(&norm_value)
+            .ok_or_else(|| EffectError::InvalidValue {
+                param: key.clone(),
+                message: format!("'{}' is not a valid value for '{}'", value, desc.name),
+            })?;
+
+        effect.effect_set_param(idx, parsed);
     }
+
+    Ok(effect)
 }
 
 /// Parse an effect chain specification.
@@ -1356,82 +369,6 @@ fn parse_params(params_str: &str) -> Result<HashMap<String, String>, EffectError
     Ok(params)
 }
 
-fn parse_f32(param: &str, value: &str) -> Result<f32, EffectError> {
-    value.parse().map_err(|_| EffectError::InvalidValue {
-        param: param.to_string(),
-        message: format!("'{}' is not a valid number", value),
-    })
-}
-
-fn parse_waveshape(value: &str) -> Result<WaveShape, EffectError> {
-    match value.to_lowercase().as_str() {
-        "softclip" | "soft" => Ok(WaveShape::SoftClip),
-        "hardclip" | "hard" => Ok(WaveShape::HardClip),
-        "foldback" | "fold" => Ok(WaveShape::Foldback),
-        "asymmetric" | "asym" => Ok(WaveShape::Asymmetric),
-        _ => Err(EffectError::InvalidValue {
-            param: "waveshape".to_string(),
-            message: format!(
-                "'{}' is not a valid waveshape (use: softclip, hardclip, foldback, asymmetric)",
-                value
-            ),
-        }),
-    }
-}
-
-fn parse_reverb_type(value: &str) -> Result<ReverbType, EffectError> {
-    match value.to_lowercase().as_str() {
-        "room" => Ok(ReverbType::Room),
-        "hall" => Ok(ReverbType::Hall),
-        _ => Err(EffectError::InvalidValue {
-            param: "type".to_string(),
-            message: format!("'{}' is not a valid reverb type (use: room, hall)", value),
-        }),
-    }
-}
-
-fn parse_tremolo_waveform(value: &str) -> Result<TremoloWaveform, EffectError> {
-    match value.to_lowercase().as_str() {
-        "sine" | "sin" => Ok(TremoloWaveform::Sine),
-        "triangle" | "tri" => Ok(TremoloWaveform::Triangle),
-        "square" | "sq" => Ok(TremoloWaveform::Square),
-        "samplehold" | "sh" | "sample_hold" | "s&h" => Ok(TremoloWaveform::SampleHold),
-        _ => Err(EffectError::InvalidValue {
-            param: "waveform".to_string(),
-            message: format!(
-                "'{}' is not a valid waveform (use: sine, triangle, square, samplehold)",
-                value
-            ),
-        }),
-    }
-}
-
-fn parse_carrier_waveform(value: &str) -> Result<CarrierWaveform, EffectError> {
-    match value.to_lowercase().as_str() {
-        "sine" | "sin" => Ok(CarrierWaveform::Sine),
-        "triangle" | "tri" => Ok(CarrierWaveform::Triangle),
-        "square" | "sq" => Ok(CarrierWaveform::Square),
-        _ => Err(EffectError::InvalidValue {
-            param: "waveform".to_string(),
-            message: format!(
-                "'{}' is not a valid carrier waveform (use: sine, triangle, square)",
-                value
-            ),
-        }),
-    }
-}
-
-fn parse_wah_mode(value: &str) -> Result<WahMode, EffectError> {
-    match value.to_lowercase().as_str() {
-        "auto" | "0" => Ok(WahMode::Auto),
-        "manual" | "1" => Ok(WahMode::Manual),
-        _ => Err(EffectError::InvalidValue {
-            param: "mode".to_string(),
-            message: format!("'{}' is not a valid wah mode (use: auto, manual)", value),
-        }),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1483,18 +420,17 @@ mod tests {
 
         // Test with parameters
         let mut params = HashMap::new();
-        params.insert("decay".to_string(), "0.8".to_string());
-        params.insert("room_size".to_string(), "0.7".to_string());
-        params.insert("damping".to_string(), "0.3".to_string());
-        params.insert("mix".to_string(), "0.5".to_string());
-        params.insert("type".to_string(), "hall".to_string());
+        params.insert("decay".to_string(), "80".to_string());
+        params.insert("room_size".to_string(), "70".to_string());
+        params.insert("damping".to_string(), "30".to_string());
+        params.insert("mix".to_string(), "50".to_string());
         let effect = create_effect_with_params("reverb", 48000.0, &params);
         assert!(effect.is_ok());
     }
 
     #[test]
     fn test_parse_chain_with_reverb() {
-        let chain = parse_chain("delay:time=300|reverb:decay=0.9,mix=0.6", 48000.0);
+        let chain = parse_chain("delay:time=300|reverb:decay=90,mix=60", 48000.0);
         assert!(chain.is_ok());
         assert_eq!(chain.unwrap().len(), 2);
     }
@@ -1535,7 +471,6 @@ mod tests {
 
     #[test]
     fn parse_effect_spec_missing_colon() {
-        // Missing colon is equivalent to no params — not an error
         let (name, params) = parse_effect_spec("reverb").unwrap();
         assert_eq!(name, "reverb");
         assert!(params.is_empty());
@@ -1569,7 +504,11 @@ mod tests {
         for shape in &["softclip", "hardclip", "foldback", "asymmetric"] {
             let mut params = HashMap::new();
             params.insert("waveshape".to_string(), shape.to_string());
-            assert!(create_effect_with_params("distortion", 48000.0, &params).is_ok());
+            assert!(
+                create_effect_with_params("distortion", 48000.0, &params).is_ok(),
+                "waveshape '{}' should be accepted",
+                shape
+            );
         }
         let mut params = HashMap::new();
         params.insert("waveshape".to_string(), "invalid".to_string());
@@ -1577,23 +516,15 @@ mod tests {
     }
 
     #[test]
-    fn create_effect_reverb_type_enum() {
-        for rt in &["room", "hall"] {
-            let mut params = HashMap::new();
-            params.insert("type".to_string(), rt.to_string());
-            assert!(create_effect_with_params("reverb", 48000.0, &params).is_ok());
-        }
-        let mut params = HashMap::new();
-        params.insert("type".to_string(), "cathedral".to_string());
-        assert!(create_effect_with_params("reverb", 48000.0, &params).is_err());
-    }
-
-    #[test]
     fn create_effect_tremolo_waveform_enum() {
         for wf in &["sine", "triangle", "square", "samplehold"] {
             let mut params = HashMap::new();
             params.insert("waveform".to_string(), wf.to_string());
-            assert!(create_effect_with_params("tremolo", 48000.0, &params).is_ok());
+            assert!(
+                create_effect_with_params("tremolo", 48000.0, &params).is_ok(),
+                "waveform '{}' should be accepted",
+                wf
+            );
         }
         let mut params = HashMap::new();
         params.insert("waveform".to_string(), "sawtooth".to_string());
@@ -1605,11 +536,12 @@ mod tests {
         for mode in &["auto", "manual"] {
             let mut params = HashMap::new();
             params.insert("mode".to_string(), mode.to_string());
-            assert!(create_effect_with_params("wah", 48000.0, &params).is_ok());
+            assert!(
+                create_effect_with_params("wah", 48000.0, &params).is_ok(),
+                "wah mode '{}' should be accepted",
+                mode
+            );
         }
-        let mut params = HashMap::new();
-        params.insert("mode".to_string(), "expression".to_string());
-        assert!(create_effect_with_params("wah", 48000.0, &params).is_err());
     }
 
     #[test]
@@ -1620,7 +552,7 @@ mod tests {
     #[test]
     fn available_effects_names_match_registry() {
         let effects = available_effects();
-        let names: Vec<&str> = effects.iter().map(|e| e.name).collect();
+        let names: Vec<&str> = effects.iter().map(|e| e.name.as_str()).collect();
         let expected = [
             "distortion",
             "compressor",
@@ -1645,5 +577,94 @@ mod tests {
         for name in &expected {
             assert!(names.contains(name), "missing effect: {name}");
         }
+    }
+
+    #[test]
+    fn effect_name_aliases_resolve() {
+        let aliases = vec![
+            ("lowpass", "filter"),
+            ("vibrato", "multivibrato"),
+            ("tapesaturation", "tape"),
+            ("noisegate", "gate"),
+            ("autowah", "wah"),
+            ("cleanpreamp", "preamp"),
+            ("parametriceq", "eq"),
+            ("peq", "eq"),
+            ("crusher", "bitcrusher"),
+            ("ring", "ringmod"),
+        ];
+        for (alias, expected) in aliases {
+            let params = HashMap::new();
+            let result = create_effect_with_params(alias, 48000.0, &params);
+            assert!(
+                result.is_ok(),
+                "alias '{}' should resolve to '{}'",
+                alias,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn all_effects_creatable_with_no_params() {
+        let registry = EffectRegistry::new();
+        for desc in registry.all_effects() {
+            let params = HashMap::new();
+            let result = create_effect_with_params(desc.id, 48000.0, &params);
+            assert!(
+                result.is_ok(),
+                "effect '{}' should be creatable with no params",
+                desc.id
+            );
+        }
+    }
+
+    #[test]
+    fn eq_param_aliases() {
+        let cases = vec![
+            ("lf", "200"),
+            ("lg", "3"),
+            ("mf", "1000"),
+            ("mg", "-2"),
+            ("hf", "8000"),
+            ("hg", "1"),
+            ("lq", "2"),
+            ("mq", "1.5"),
+            ("hq", "3"),
+        ];
+        for (alias, val) in cases {
+            let mut params = HashMap::new();
+            params.insert(alias.to_string(), val.to_string());
+            let result = create_effect_with_params("eq", 48000.0, &params);
+            assert!(result.is_ok(), "eq param alias '{}' should work", alias);
+        }
+    }
+
+    #[test]
+    fn delay_param_aliases() {
+        let mut params = HashMap::new();
+        params.insert("time".to_string(), "500".to_string());
+        assert!(create_effect_with_params("delay", 48000.0, &params).is_ok());
+
+        let mut params = HashMap::new();
+        params.insert("pingpong".to_string(), "on".to_string());
+        assert!(create_effect_with_params("delay", 48000.0, &params).is_ok());
+    }
+
+    #[test]
+    fn reverb_param_aliases() {
+        let mut params = HashMap::new();
+        params.insert("room".to_string(), "70".to_string());
+        params.insert("damp".to_string(), "30".to_string());
+        assert!(create_effect_with_params("reverb", 48000.0, &params).is_ok());
+    }
+
+    #[test]
+    fn reverb_type_param_is_gone() {
+        // Kernel-based reverb no longer has a "type" / "preset" param
+        let mut params = HashMap::new();
+        params.insert("type".to_string(), "hall".to_string());
+        let result = create_effect_with_params("reverb", 48000.0, &params);
+        assert!(matches!(result, Err(EffectError::UnknownParameter { .. })));
     }
 }

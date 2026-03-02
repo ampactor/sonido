@@ -305,5 +305,5 @@ Verify parameter names, units, and ranges match the conventions in Rule 7.
 | Feedback descriptor | `crates/sonido-core/src/param_info.rs` (`ParamDescriptor::feedback`) |
 | Parameter units | `crates/sonido-core/src/param_info.rs` (`ParamUnit`) |
 | ParameterInfo trait | `crates/sonido-core/src/param_info.rs` |
-| Reverb comb feedback | `crates/sonido-effects/src/reverb.rs:298-302` |
+| Reverb comb feedback | `crates/sonido-effects/src/kernels/reverb.rs:298-302` |
 | Effect registry | `crates/sonido-registry/src/lib.rs` |

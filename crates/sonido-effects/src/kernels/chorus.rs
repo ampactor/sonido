@@ -1,6 +1,6 @@
 //! Chorus kernel — pure DSP with separated parameter ownership.
 //!
-//! This is the kernel-architecture equivalent of [`Chorus`](crate::Chorus).
+//! Implements the Chorus effect using the kernel architecture.
 //! The DSP math is identical; the difference is structural:
 //!
 //! - **Classic `Chorus`**: owns `SmoothedParam` for rate/depth/mix/feedback/delay/output,

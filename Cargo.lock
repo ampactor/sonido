@@ -3885,7 +3885,6 @@ dependencies = [
  "sonido-analysis",
  "sonido-config",
  "sonido-core",
- "sonido-effects",
  "sonido-io",
  "sonido-registry",
  "sonido-synth",

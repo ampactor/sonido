@@ -1,6 +1,6 @@
 //! Tape saturation kernel — pure DSP with separated parameter ownership.
 //!
-//! This is the kernel-architecture equivalent of the classic `TapeSaturation` effect.
+//! Implements the TapeSaturation effect using the kernel architecture.
 //! The DSP math is identical; the difference is structural:
 //!
 //! - **Classic `TapeSaturation`**: owns `SmoothedParam` for drive/saturation/output/etc.,

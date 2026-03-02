@@ -1,6 +1,6 @@
 //! Stage kernel — pure DSP with separated parameter ownership.
 //!
-//! This is the kernel-architecture equivalent of [`Stage`](crate::Stage).
+//! Implements the Stage effect using the kernel architecture.
 //! The DSP math is identical; the difference is structural:
 //!
 //! - **Classic `Stage`**: owns `SmoothedParam` for gain/width/balance/haas/output,

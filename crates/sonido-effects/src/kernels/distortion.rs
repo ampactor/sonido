@@ -1,6 +1,6 @@
 //! Distortion kernel — pure DSP with separated parameter ownership.
 //!
-//! This is the kernel-architecture equivalent of [`Distortion`](crate::Distortion).
+//! Implements the Distortion effect using the kernel architecture.
 //! The DSP math is identical; the difference is structural:
 //!
 //! - **Classic `Distortion`**: owns `SmoothedParam` for drive/tone/output/mix,

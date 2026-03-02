@@ -6,7 +6,7 @@ Complete parameter reference for all Sonido effects.
 
 All 19 effects have kernel-architecture implementations in `crates/sonido-effects/src/kernels/`. Each effect defines `XxxKernel` (`DspKernel` impl) and `XxxParams` (`KernelParams` impl). The registry creates `KernelAdapter<XxxKernel>` — all consumers (GUI, CLI, plugin) use kernel-backed effects transparently.
 
-Classic `Effect` implementations remain in `crates/sonido-effects/src/` for backwards compatibility.
+Classic `Effect` implementations have been removed as of v0.2. All effects are kernel-only.
 
 ```rust
 // Desktop/plugin: KernelAdapter handles smoothing
@@ -47,7 +47,7 @@ All effects expose an `output` parameter as their last ParameterInfo index (rang
 
 Waveshaping distortion with multiple modes.
 
-**Signal flow** (`crates/sonido-effects/src/distortion.rs`):
+**Signal flow** (`crates/sonido-effects/src/kernels/distortion.rs`):
 ```
 Input -> Drive (gain) -> Waveshaper -> Tone Filter -> Output Level
 ```
@@ -90,7 +90,7 @@ sonido process in.wav --effect distortion \
 
 Dynamics compressor with soft knee.
 
-**Architecture** (`crates/sonido-effects/src/compressor.rs`): Feed-forward design with envelope follower, gain computer, and smoothed makeup gain.
+**Architecture** (`crates/sonido-effects/src/kernels/compressor.rs`): Feed-forward design with envelope follower, gain computer, and smoothed makeup gain.
 
 ```
 Input -> Envelope Follower -> Gain Computer -> Gain Reduction -> Output
@@ -133,7 +133,7 @@ Multi-voice modulated delay chorus with feedback and tempo sync.
 
 **How chorus works**: A chorus effect creates the illusion of multiple instruments playing in unison by mixing the dry signal with copies that have slightly varying pitch. The pitch variation is achieved by modulating a short delay time with an LFO. When a delay time changes over time, it effectively time-stretches or compresses the signal, producing a Doppler-like pitch shift.
 
-**Implementation** (`crates/sonido-effects/src/chorus.rs`): Up to four `InterpolatedDelay` lines with independent LFOs provide 2-4 modulated voices. The configurable base delay (5-25 ms, default 15 ms) determines the centre of modulation. Each voice's LFO is phase-offset so the voices move independently, creating a richer effect. A feedback path recirculates the wet signal for resonant tones.
+**Implementation** (`crates/sonido-effects/src/kernels/chorus.rs`): Up to four `InterpolatedDelay` lines with independent LFOs provide 2-4 modulated voices. The configurable base delay (5-25 ms, default 15 ms) determines the centre of modulation. Each voice's LFO is phase-offset so the voices move independently, creating a richer effect. A feedback path recirculates the wet signal for resonant tones.
 
 **Stereo processing**: In stereo mode, voices are panned across the stereo field with alternating bias (odd voices left, even voices right). This creates a wide stereo image from a mono source — a classic technique for thickening synth pads and guitar tracks.
 
@@ -172,7 +172,7 @@ sonido process in.wav --effect chorus \
 
 Feedback delay with optional ping-pong stereo mode.
 
-**Architecture** (`crates/sonido-effects/src/delay.rs`): Two `InterpolatedDelay` lines (left/right) with feedback and smoothed parameter control. The delay time parameter uses 50 ms smoothing to prevent audible pitch artifacts when changing delay time during playback.
+**Architecture** (`crates/sonido-effects/src/kernels/delay.rs`): Two `InterpolatedDelay` lines (left/right) with feedback and smoothed parameter control. The delay time parameter uses 50 ms smoothing to prevent audible pitch artifacts when changing delay time during playback.
 
 **Ping-pong mode** (`delay.rs:129-135`): When enabled, the feedback path crosses channels -- the left delay line's output feeds back into the right delay line, and vice versa. This creates alternating left-right echoes that "bounce" across the stereo field. The effect reports `is_true_stereo() -> true` only when ping-pong is active.
 
@@ -315,7 +315,7 @@ sonido process in.wav --effect preamp --param gain=6
 
 Freeverb-style algorithmic reverb with 8 parallel comb filters and 4 series allpass filters.
 
-**Freeverb topology** (`crates/sonido-effects/src/reverb.rs`): The Freeverb algorithm, originally by Jezar at Dreampoint, is one of the most widely used algorithmic reverb designs. The signal flow is:
+**Freeverb topology** (`crates/sonido-effects/src/kernels/reverb.rs`): The Freeverb algorithm, originally by Jezar at Dreampoint, is one of the most widely used algorithmic reverb designs. The signal flow is:
 
 ```
 Input -> Pre-delay -> [8 parallel comb filters] -> sum -> [4 series allpass filters] -> Output
@@ -457,7 +457,7 @@ Classic flanger with modulated short delay.
 
 **How flanging works**: Flanging is a comb filtering effect created by mixing a signal with a short, time-varying delayed copy. The delay sweeps between ~1-10 ms, producing a series of notches in the frequency spectrum at multiples of 1/delay_time. As the delay changes, the notches sweep through the spectrum, creating the characteristic "jet" or "whoosh" sound.
 
-**Implementation** (`crates/sonido-effects/src/flanger.rs`): Base delay of 5 ms with up to 5 ms of LFO modulation (total range 1-10 ms). The feedback path feeds the delayed output back into the delay input, which deepens the comb filter notches and creates a more resonant, metallic character. At high feedback values, the comb filter approaches self-oscillation, producing pitched metallic tones.
+**Implementation** (`crates/sonido-effects/src/kernels/flanger.rs`): Base delay of 5 ms with up to 5 ms of LFO modulation (total range 1-10 ms). The feedback path feeds the delayed output back into the delay input, which deepens the comb filter notches and creates a more resonant, metallic character. At high feedback values, the comb filter approaches self-oscillation, producing pitched metallic tones.
 
 **Gain compensation**: The wet signal is scaled by `(1-feedback)` to exactly cancel comb-filter peak gain at resonance frequencies. At fb=0.5 (default), compensation = 0.5; the wet signal at resonance equals the dry signal. This keeps the flanger within the -1 dBFS peak ceiling at all feedback settings.
 
@@ -506,7 +506,7 @@ Multi-stage allpass phaser with LFO modulation.
 
 **How phasing works**: A phaser creates notches in the frequency spectrum by mixing the input with a phase-shifted copy of itself. Unlike flanging (which uses comb filters with evenly-spaced notches), phasing uses cascaded first-order allpass filters whose notch positions are unevenly spaced. This produces a more organic, less metallic sound.
 
-**Allpass filter theory** (`crates/sonido-effects/src/phaser.rs:112-135`): Each first-order allpass filter shifts the phase of the signal by up to 180 degrees, with the transition centered at a specific frequency. The coefficient is computed as:
+**Allpass filter theory** (`crates/sonido-effects/src/kernels/phaser.rs:112-135`): Each first-order allpass filter shifts the phase of the signal by up to 180 degrees, with the transition centered at a specific frequency. The coefficient is computed as:
 ```
 a = (tan(pi * fc / fs) - 1) / (tan(pi * fc / fs) + 1)
 ```
@@ -745,7 +745,7 @@ Input L/R
   → Output L/R
 ```
 
-Implementation: `crates/sonido-effects/src/stage.rs`
+Implementation: `crates/sonido-effects/src/kernels/stage.rs`
 
 | Parameter | Description | Default | Range |
 |-----------|-------------|---------|-------|

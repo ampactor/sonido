@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] — In Progress
 
+### Breaking Changes
+- Removed 19 classic `Effect` implementations from `sonido-effects`; all effects now use `DspKernel` + `KernelAdapter` architecture
+- Classic types (`Distortion`, `Chorus`, `Reverb`, etc.) no longer exist; use `KernelAdapter::new(XxxKernel::new(sr), sr)` or the registry (`EffectRegistry::new().create("distortion", sr)`)
+- Shared enums (`WaveShape`, `ReverbType`, `TremoloWaveform`, `WahMode`, `CarrierWaveform`, `ChannelMode`, `HaasSide`) removed; kernels use numeric parameters with step labels
+
 ### Added
 
 #### Core DSP Primitives (sonido-analysis)

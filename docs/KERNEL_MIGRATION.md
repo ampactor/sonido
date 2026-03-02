@@ -1,10 +1,12 @@
 # Kernel Migration Guide
 
-How to migrate a Sonido effect from the old `Effect`-owns-params pattern to the kernel architecture. Classic effects are **replaced**, not kept alongside — nothing is in production. This guide uses the Distortion effect as the reference migration.
+> **Migration is complete as of v0.2** -- all 19 classic `Effect` implementations have been removed. All effects now use the `DspKernel` + `KernelAdapter` architecture. This guide is retained as a reference for adding new effects using the kernel pattern.
 
-## Why Migrate
+How to add a new Sonido effect using the kernel architecture. The kernel pattern separates pure DSP from parameter ownership. This guide uses the Distortion effect as the reference implementation.
 
-The old pattern couples DSP math with parameter ownership:
+## Why the Kernel Pattern
+
+The old pattern (now deleted) coupled DSP math with parameter ownership:
 
 ```
 ┌─────────────────────────────────┐
@@ -389,29 +391,53 @@ crates/sonido-core/src/kernel/
 └── adapter.rs      # KernelAdapter<K> — bridges to Effect + ParameterInfo
 
 crates/sonido-effects/src/kernels/
-├── mod.rs          # Module root, migration status table
-├── distortion.rs   # DistortionKernel + DistortionParams (proof-of-concept)
-├── tremolo.rs      # (future)
-├── delay.rs        # (future)
-└── ...
+├── mod.rs          # Module root, re-exports all 19 kernels
+├── bitcrusher.rs   # BitcrusherKernel + BitcrusherParams
+├── chorus.rs       # ChorusKernel + ChorusParams
+├── compressor.rs   # CompressorKernel + CompressorParams
+├── delay.rs        # DelayKernel + DelayParams
+├── distortion.rs   # DistortionKernel + DistortionParams
+├── filter.rs       # FilterKernel + FilterParams
+├── flanger.rs      # FlangerKernel + FlangerParams
+├── gate.rs         # GateKernel + GateParams
+├── limiter.rs      # LimiterKernel + LimiterParams
+├── multi_vibrato.rs # MultiVibratoKernel + MultiVibratoParams
+├── parametric_eq.rs # ParametricEqKernel + ParametricEqParams
+├── phaser.rs       # PhaserKernel + PhaserParams
+├── preamp.rs       # PreampKernel + PreampParams
+├── reverb.rs       # ReverbKernel + ReverbParams
+├── ring_mod.rs     # RingModKernel + RingModParams
+├── stage.rs        # StageKernel + StageParams
+├── tape_saturation.rs # TapeSaturationKernel + TapeSaturationParams
+├── tremolo.rs      # TremoloKernel + TremoloParams
+└── wah.rs          # WahKernel + WahParams
 ```
 
-## Migration Priority
+## Migration Status
 
-Suggested order based on embedded relevance and complexity:
+All 19 effects have been migrated. Classic `Effect` implementations have been deleted.
 
-| Priority | Effect | Complexity | Embedded value | Notes |
-|----------|--------|-----------|----------------|-------|
-| 1 | Distortion | Medium | High | ✅ Done — proof-of-concept |
-| 2 | Tremolo | Low | High | Simple LFO, good second migration |
-| 3 | Delay | Medium | High | Delay lines are core embedded use case |
-| 4 | Chorus | Medium | High | Modulated delay, similar to Flanger |
-| 5 | Reverb | High | High | Complex, but high-value for embedded |
-| 6 | Compressor | Medium | Medium | Dynamic state management |
-| 7 | Filter | Low | High | Very simple, fast migration |
-| 8 | Flanger | Medium | Medium | Similar to Chorus |
-| 9 | Phaser | Medium | Medium | Multi-stage allpass |
-| 10 | Others | Varies | Lower | Bitcrusher, Gate, Limiter, etc. |
+| Effect | Status | Notes |
+|--------|--------|-------|
+| Distortion | Complete -- classic deleted | Proof-of-concept, first migrated |
+| Tremolo | Complete -- classic deleted | Simple LFO |
+| Delay | Complete -- classic deleted | Delay lines |
+| Chorus | Complete -- classic deleted | Modulated delay |
+| Reverb | Complete -- classic deleted | 8 comb + 4 allpass |
+| Compressor | Complete -- classic deleted | Dynamic state management |
+| Filter | Complete -- classic deleted | SVF-based |
+| Flanger | Complete -- classic deleted | Similar to Chorus |
+| Phaser | Complete -- classic deleted | Multi-stage allpass |
+| Preamp | Complete -- classic deleted | Simple gain stage |
+| Gate | Complete -- classic deleted | Noise gate |
+| Parametric EQ | Complete -- classic deleted | 3-band EQ |
+| Tape Saturation | Complete -- classic deleted | ADAA + hysteresis |
+| MultiVibrato | Complete -- classic deleted | Multi-voice pitch |
+| Wah | Complete -- classic deleted | SVF bandpass |
+| Limiter | Complete -- classic deleted | Lookahead brickwall |
+| Bitcrusher | Complete -- classic deleted | Bit/sample reduction |
+| Ring Modulator | Complete -- classic deleted | Carrier oscillator |
+| Stage | Complete -- classic deleted | Stereo utility |
 
 ## FAQ
 

@@ -1,6 +1,6 @@
 //! Ring modulator kernel — pure DSP with separated parameter ownership.
 //!
-//! This is the kernel-architecture equivalent of the classic `RingMod` effect.
+//! Implements the RingMod effect using the kernel architecture.
 //! The DSP math is identical; the difference is structural:
 //!
 //! - **Classic `RingMod`**: owns `SmoothedParam` for frequency and output level,

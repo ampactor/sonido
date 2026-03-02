@@ -319,15 +319,15 @@ fix: Correct compressor attack time calculation
 
 ### Code Steps
 
-1. Create the effect in `crates/sonido-effects/src/`
-2. Implement the `Effect` trait from `sonido-core`
-3. Implement the `ParameterInfo` trait for runtime introspection
-4. Use `SmoothedParam` for all user-controllable parameters
+1. Create the kernel file in `crates/sonido-effects/src/kernels/`
+2. Implement `KernelParams` for the params struct (indexed access, descriptors, smoothing hints)
+3. Implement `DspKernel` for the kernel struct (pure DSP processing, receives `&Params`)
+4. Add `from_knobs()` on the params struct for embedded ADC mapping
 5. Implement `process_stereo()` if the effect has decorrelated L/R processing
 6. Add tests in a `#[cfg(test)] mod tests` block
-7. Export from `crates/sonido-effects/src/lib.rs`
-8. Register in `crates/sonido-registry/src/lib.rs`
-9. Add to CLI in `crates/sonido-cli/src/effects.rs`
+7. Export from `crates/sonido-effects/src/kernels/mod.rs` and `crates/sonido-effects/src/lib.rs`
+8. Register in `crates/sonido-registry/src/lib.rs` using `KernelAdapter::new(XxxKernel::new(sr), sr)`
+9. Add to CLI in `crates/sonido-cli/src/commands/effects.rs`
 
 ### Documentation Steps (all required)
 

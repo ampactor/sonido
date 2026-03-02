@@ -1,6 +1,6 @@
 //! 3-band parametric EQ kernel — pure DSP with separated parameter ownership.
 //!
-//! This is the kernel-architecture equivalent of [`ParametricEq`](crate::ParametricEq).
+//! Implements the ParametricEq effect using the kernel architecture.
 //! The DSP math is identical; the difference is structural:
 //!
 //! - **Classic `ParametricEq`**: owns `SmoothedParam` for all 10 parameters,

@@ -1,6 +1,6 @@
 //! Reverb kernel — pure DSP with separated parameter ownership.
 //!
-//! This is the kernel-architecture equivalent of [`Reverb`](crate::Reverb).
+//! Implements the Reverb effect using the kernel architecture.
 //! The DSP math is identical; the difference is structural:
 //!
 //! - **Classic `Reverb`**: owns `SmoothedParam` for all parameters, manages

@@ -1,6 +1,6 @@
 //! Wah kernel — pure DSP with separated parameter ownership.
 //!
-//! This is the kernel-architecture equivalent of [`Wah`](crate::Wah).
+//! Implements the Wah effect using the kernel architecture.
 //! The DSP math is identical; the difference is structural:
 //!
 //! - **Classic `Wah`**: owns `SmoothedParam` for frequency/resonance/sensitivity/output,

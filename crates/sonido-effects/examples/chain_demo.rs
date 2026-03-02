@@ -1,13 +1,14 @@
-//! Demonstration of effect chaining in Sonido
+//! Demonstration of effect chaining in Sonido (kernel architecture)
 //!
 //! This example shows both static dispatch (zero-cost) and dynamic dispatch
 //! (runtime flexibility) approaches to chaining effects.
 //!
 //! Run with: cargo run --example chain_demo
 
-use sonido_core::{Effect, EffectExt};
-use sonido_effects::{
-    Chorus, CleanPreamp, Compressor, Delay, Distortion, LowPassFilter, TapeSaturation, WaveShape,
+use sonido_core::{Effect, EffectExt, KernelAdapter, ParameterInfo};
+use sonido_effects::kernels::{
+    ChorusKernel, CompressorKernel, DelayKernel, DistortionKernel, FilterKernel, PreampKernel,
+    TapeSaturationKernel,
 };
 
 const SAMPLE_RATE: f32 = 48000.0;
@@ -29,39 +30,39 @@ fn main() {
     println!("-------------------------------------------------");
 
     let preamp = {
-        let mut p = CleanPreamp::new(SAMPLE_RATE);
-        p.set_gain_db(6.0);
+        let mut p = KernelAdapter::new(PreampKernel::new(SAMPLE_RATE), SAMPLE_RATE);
+        p.set_param(0, 6.0); // gain_db
         p
     };
 
     let distortion = {
-        let mut d = Distortion::new(SAMPLE_RATE);
-        d.set_drive_db(12.0);
-        d.set_waveshape(WaveShape::SoftClip);
-        d.set_tone_db(3.0);
+        let mut d = KernelAdapter::new(DistortionKernel::new(SAMPLE_RATE), SAMPLE_RATE);
+        d.set_param(0, 12.0); // drive
+        d.set_param(3, 0.0); // waveshape: SoftClip
+        d.set_param(1, 3.0); // tone
         d
     };
 
     let tape = {
-        let mut t = TapeSaturation::new(SAMPLE_RATE);
-        t.set_drive(1.5);
-        t.set_saturation(0.4);
+        let mut t = KernelAdapter::new(TapeSaturationKernel::new(SAMPLE_RATE), SAMPLE_RATE);
+        t.set_param(0, 6.0); // drive (dB, range 0-24)
+        t.set_param(1, 40.0); // saturation (percent)
         t
     };
 
     let chorus = {
-        let mut c = Chorus::new(SAMPLE_RATE);
-        c.set_rate(1.2);
-        c.set_depth(0.5);
-        c.set_mix(0.3);
+        let mut c = KernelAdapter::new(ChorusKernel::new(SAMPLE_RATE), SAMPLE_RATE);
+        c.set_param(0, 1.2); // rate
+        c.set_param(1, 50.0); // depth (percent)
+        c.set_param(2, 30.0); // mix (percent)
         c
     };
 
     let delay = {
-        let mut d = Delay::new(SAMPLE_RATE);
-        d.set_delay_time_ms(375.0);
-        d.set_feedback(0.4);
-        d.set_mix(0.25);
+        let mut d = KernelAdapter::new(DelayKernel::new(SAMPLE_RATE), SAMPLE_RATE);
+        d.set_param(0, 375.0); // time_ms
+        d.set_param(1, 40.0); // feedback (percent)
+        d.set_param(2, 25.0); // mix (percent)
         d
     };
 
@@ -91,24 +92,24 @@ fn main() {
 
     let mut dynamic_chain: Vec<Box<dyn Effect>> = vec![
         Box::new({
-            let mut f = LowPassFilter::new(SAMPLE_RATE);
-            f.set_cutoff_hz(2000.0);
-            f.set_q(1.0);
+            let mut f = KernelAdapter::new(FilterKernel::new(SAMPLE_RATE), SAMPLE_RATE);
+            f.set_param(0, 2000.0); // cutoff
+            f.set_param(1, 1.0); // resonance
             f
         }),
         Box::new({
-            let mut c = Compressor::new(SAMPLE_RATE);
-            c.set_threshold_db(-18.0);
-            c.set_ratio(4.0);
-            c.set_attack_ms(5.0);
-            c.set_release_ms(100.0);
+            let mut c = KernelAdapter::new(CompressorKernel::new(SAMPLE_RATE), SAMPLE_RATE);
+            c.set_param(0, -18.0); // threshold
+            c.set_param(1, 4.0); // ratio
+            c.set_param(2, 5.0); // attack
+            c.set_param(3, 100.0); // release
             c
         }),
         Box::new({
-            let mut d = Delay::new(SAMPLE_RATE);
-            d.set_delay_time_ms(250.0);
-            d.set_feedback(0.3);
-            d.set_mix(0.2);
+            let mut d = KernelAdapter::new(DelayKernel::new(SAMPLE_RATE), SAMPLE_RATE);
+            d.set_param(0, 250.0); // time_ms
+            d.set_param(1, 30.0); // feedback (percent)
+            d.set_param(2, 20.0); // mix (percent)
             d
         }),
     ];
@@ -135,12 +136,15 @@ fn main() {
 
     let effects_info = [
         ("CleanPreamp", "High-headroom, zero-latency preamp"),
-        ("Distortion", "4 waveshapes: soft/hard clip, tanh, foldback"),
+        (
+            "Distortion",
+            "4 waveshapes: soft/hard clip, foldback, asymmetric",
+        ),
         ("TapeSaturation", "Asymmetric saturation with HF rolloff"),
         ("Compressor", "Soft-knee dynamics with envelope follower"),
         ("Chorus", "Dual-voice modulated delay"),
         ("Delay", "Feedback delay with smooth parameter changes"),
-        ("LowPassFilter", "Biquad-based resonant filter"),
+        ("LowPassFilter", "SVF-based resonant filter"),
     ];
 
     for (name, desc) in effects_info {
