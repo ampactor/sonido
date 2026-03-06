@@ -150,6 +150,10 @@ The chain strip shows all 19 effects in processing order:
 | Delay | DLY | Tape-style feedback delay |
 | Tape | TAPE | Tape saturation |
 | Reverb | REV | Freeverb-style reverb |
+| Limiter | LIM | Brickwall lookahead peak limiter |
+| Bitcrusher | CRUSH | Lo-fi bit depth and sample rate reduction |
+| Ring Modulator | RING | Ring modulation with sine/triangle/square carriers |
+| Stage | STG | Signal conditioning and stereo utility |
 
 The chain strip is wrapped in a horizontal `ScrollArea` that activates when the chain overflows the available width. When the chain fits, it is centered.
 

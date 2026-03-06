@@ -277,6 +277,7 @@ impl ReverbParams {
     /// - `width`:    Stereo width knob, 0.0–1.0 → 0–100%
     /// - `er_level`: Early reflections level knob, 0.0–1.0 → 0–100%
     /// - `output`:   Output level knob, 0.0–1.0 → −20–+20 dB
+    #[allow(clippy::too_many_arguments)]
     pub fn from_knobs(
         room: f32,
         decay: f32,

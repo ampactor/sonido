@@ -7,8 +7,9 @@
 use crate::atomic_param_bridge::AtomicParamBridge;
 use crate::audio_bridge::{AudioBridge, MeteringData};
 use crate::audio_processor::build_audio_streams;
-use crate::chain_manager::ChainCommand;
+use crate::chain_manager::GraphCommand;
 use crate::chain_view::ChainView;
+use crate::dsl_console::DslConsole;
 use crate::file_player::FilePlayer;
 use crate::preset_manager::PresetManager;
 use crate::theme::Theme;
@@ -25,6 +26,15 @@ use std::sync::atomic::Ordering;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
+
+/// View mode for the center panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ViewMode {
+    /// Classic pedalboard: linear chain with add/remove.
+    Chain,
+    /// DSL sandbox: text-based graph DSL input.
+    Dsl,
+}
 
 /// Main application state.
 pub struct SonidoApp {
@@ -68,6 +78,11 @@ pub struct SonidoApp {
 
     /// When set, the app runs in single-effect mode (no chain view).
     single_effect: bool,
+
+    /// Current center-panel mode (Chain or DSL).
+    view_mode: ViewMode,
+    /// DSL console widget state.
+    dsl_console: DslConsole,
 
     // Preset dialog (native only — no filesystem on wasm)
     #[cfg(not(target_arch = "wasm32"))]
@@ -143,6 +158,8 @@ impl SonidoApp {
             audio_error: None,
             cpu_history: Vec::with_capacity(60),
             single_effect,
+            view_mode: ViewMode::Chain,
+            dsl_console: DslConsole::new(48000.0, 1024),
             #[cfg(not(target_arch = "wasm32"))]
             show_save_dialog: false,
             #[cfg(not(target_arch = "wasm32"))]
@@ -181,6 +198,7 @@ impl SonidoApp {
                 && let Ok(config) = device.default_output_config()
             {
                 self.sample_rate = config.sample_rate() as f32;
+                self.dsl_console.set_sample_rate(self.sample_rate);
             }
         }
 
@@ -264,6 +282,7 @@ impl SonidoApp {
         }
 
         self.buffer_size = clamped_size;
+        self.dsl_console.set_block_size(clamped_size);
         self.stop_audio();
         if let Err(e) = self.start_audio() {
             tracing::error!(
@@ -382,6 +401,20 @@ impl SonidoApp {
 
             ui.add_space(8.0);
             self.file_player.render_source_toggle(ui);
+
+            // Mode toggle (Chain / DSL) — only in multi-effect mode
+            if !self.single_effect {
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(4.0);
+                let chain_selected = self.view_mode == ViewMode::Chain;
+                if ui.selectable_label(chain_selected, "Chain").clicked() {
+                    self.view_mode = ViewMode::Chain;
+                }
+                if ui.selectable_label(!chain_selected, "DSL").clicked() {
+                    self.view_mode = ViewMode::Dsl;
+                }
+            }
 
             // Save button (native only — no filesystem on wasm)
             #[cfg(not(target_arch = "wasm32"))]
@@ -794,7 +827,7 @@ impl eframe::App for SonidoApp {
                 .collect();
 
             // Send to audio thread — bridge registration happens transactionally
-            self.audio_bridge.send_command(ChainCommand::Add {
+            self.audio_bridge.send_command(GraphCommand::Add {
                 id,
                 effect,
                 descriptors,
@@ -808,7 +841,7 @@ impl eframe::App for SonidoApp {
 
             // Send to audio thread — bridge cleanup happens transactionally
             self.audio_bridge
-                .send_command(ChainCommand::Remove { slot });
+                .send_command(GraphCommand::Remove { slot });
         }
 
         // Resume audio on first user gesture (wasm autoplay policy).
@@ -907,7 +940,7 @@ impl eframe::App for SonidoApp {
                 self.render_io_section(&mut child);
             }
 
-            // Center column (chain strip + effect panel)
+            // Center column (chain strip + effect panel OR DSL console)
             {
                 let mut child = ui.new_child(
                     UiBuilder::new()
@@ -920,23 +953,49 @@ impl eframe::App for SonidoApp {
                     // Single-effect mode: show only the effect panel, no chain strip
                     self.render_effect_panel(&mut child, SlotIndex(0));
                 } else {
-                    // Full chain mode: chain strip + selected effect panel
-                    child.group(|ui| {
-                        ui.vertical_centered(|ui| {
-                            ui.label(
-                                egui::RichText::new("EFFECT CHAIN")
-                                    .small()
-                                    .color(Color32::from_rgb(150, 150, 160)),
-                            );
-                            ui.add_space(4.0);
-                            self.chain_view.ui(ui, &*self.bridge, &self.registry);
-                        });
-                    });
+                    match self.view_mode {
+                        ViewMode::Chain => {
+                            // Chain mode: chain strip + selected effect panel
+                            child.group(|ui| {
+                                ui.vertical_centered(|ui| {
+                                    ui.label(
+                                        egui::RichText::new("EFFECT CHAIN")
+                                            .small()
+                                            .color(Color32::from_rgb(150, 150, 160)),
+                                    );
+                                    ui.add_space(4.0);
+                                    self.chain_view.ui(ui, &*self.bridge, &self.registry);
+                                });
+                            });
 
-                    child.add_space(16.0);
+                            child.add_space(16.0);
 
-                    if let Some(slot) = self.chain_view.selected() {
-                        self.render_effect_panel(&mut child, slot);
+                            if let Some(slot) = self.chain_view.selected() {
+                                self.render_effect_panel(&mut child, slot);
+                            }
+                        }
+                        ViewMode::Dsl => {
+                            // DSL mode: console + effect panel for selected slot
+                            child.group(|ui| {
+                                self.dsl_console.ui(
+                                    ui,
+                                    &self.audio_bridge,
+                                    &self.bridge,
+                                    &self.registry,
+                                );
+                            });
+
+                            child.add_space(16.0);
+
+                            // Show the first slot's panel if bridge has any slots
+                            if self.bridge.slot_count() > 0 {
+                                // Use chain_view's selected slot, or default to slot 0
+                                let slot = self.chain_view.selected().unwrap_or(SlotIndex(0));
+                                if slot.0 < self.bridge.slot_count() {
+                                    self.render_effect_panel(&mut child, slot);
+                                }
+                            }
+                        }
                     }
                 }
             }

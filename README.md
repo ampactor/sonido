@@ -158,7 +158,7 @@ fn audio_callback(left_in: &[f32], right_in: &[f32],
 }
 ```
 
-The `PlatformController` trait and `ControlMapper` in `sonido-platform` provide a structured abstraction for mapping hardware controls (knobs, toggles, expression pedals) to kernel parameters. See [docs/DAISY_SEED.md](docs/DAISY_SEED.md) and [docs/HARDWARE.md](docs/HARDWARE.md) for hardware integration details.
+The `PlatformController` trait and `ControlMapper` in `sonido-platform` provide a structured abstraction for mapping hardware controls (knobs, toggles, expression pedals) to kernel parameters. See [docs/EMBEDDED.md](docs/EMBEDDED.md) for hardware integration details.
 
 ## Effects (19)
 
@@ -357,7 +357,7 @@ Even on a 2015 mobile CPU (Intel Core i5-6300U @ 2.40 GHz), every effect runs we
 | Vibrato | 73.4 | 287 | 1.38% |
 | 5-effect chain | 42.8 | 167 | 0.80% |
 
-CPU % = `ns_per_sample / (1e9 / 48000) × 100`. Measured on x86_64. Embedded ARM benchmarks pending (see [docs/DAISY_SEED.md](docs/DAISY_SEED.md) for memory budgets). Run benchmarks via CI: `gh workflow run ci-manual.yml -f job=bench`
+CPU % = `ns_per_sample / (1e9 / 48000) × 100`. Measured on x86_64. Embedded ARM benchmarks pending (see [docs/EMBEDDED.md](docs/EMBEDDED.md) for memory budgets). Run benchmarks via CI: `gh workflow run ci-manual.yml -f job=bench`
 
 ## Testing
 
@@ -411,8 +411,7 @@ Effect algorithms are informed by clean-room analysis of commercial DSP hardware
 - [Effects Reference](docs/EFFECTS_REFERENCE.md)
 - [Synthesis Guide](docs/SYNTHESIS.md)
 - [GUI Documentation](docs/GUI.md)
-- [Hardware Targets](docs/HARDWARE.md)
-- [Daisy Seed Integration](docs/DAISY_SEED.md)
+- [Embedded Guide](docs/EMBEDDED.md)
 
 ### Development
 - [Contributing](docs/CONTRIBUTING.md)

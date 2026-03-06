@@ -562,13 +562,23 @@ sonido process in.wav --effect phaser \
 
 Auto-wah and manual wah with envelope follower. Also available as `autowah`.
 
-| Parameter | Description | Default | Range |
-|-----------|-------------|---------|-------|
-| `frequency` | Center frequency in Hz | 800.0 | 200-2000 |
-| `resonance` | Filter Q (sharpness) | 5.0 | 1-10 |
-| `sensitivity` | Envelope sensitivity % | 50.0 | 0-100 |
-| `mode` | Wah mode (0=Auto, 1=Manual) | 0 | 0-1 |
-| `output` | Output level in dB | 0.0 | -20 to 20 |
+**Architecture** (`crates/sonido-effects/src/kernels/wah.rs`): State Variable Filter in bandpass mode with an envelope follower for auto-wah. In auto mode, the envelope follower tracks input amplitude (5 ms attack, 50 ms release) and sweeps the SVF cutoff upward from the base frequency across a 200–2000 Hz range proportionally to the sensitivity setting. In manual mode, the frequency parameter directly sets the SVF cutoff.
+
+```
+Input → EnvelopeFollower (auto-wah) → Target Frequency → SVF Bandpass → Normalize → Mix (80/20 wet/dry) → Soft Limit → Output Level
+```
+
+**Stereo processing**: Dual-mono (`is_true_stereo: false`). Both channels share one envelope follower (linked stereo detection from mid signal) and use identical filter parameters applied to independent SVF states.
+
+**Reference**: Pirkle, "Designing Audio Effect Plugins in C++", Chapter 19.
+
+| Index | Parameter | Range | Default | Unit | Description |
+|-------|-----------|-------|---------|------|-------------|
+| 0 | `frequency` | 200–2000 | 800.0 | Hz | Base/center frequency (logarithmic scale) |
+| 1 | `resonance` | 1–10 | 5.0 | — | SVF bandpass Q factor |
+| 2 | `sensitivity` | 0–100 | 50.0 | % | Envelope sensitivity (auto mode sweep range) |
+| 3 | `mode` | 0–1 | 0 | — | Wah mode (0=Auto, 1=Manual; stepped) |
+| 4 | `output` | -20–20 | 0.0 | dB | Output level |
 
 ### Gain Normalization
 
@@ -605,18 +615,28 @@ sonido process in.wav --effect wah \
 
 3-band parametric equalizer. Also available as `parametriceq` or `peq`.
 
-| Parameter | Description | Default | Range |
-|-----------|-------------|---------|-------|
-| `low_freq` | Low band frequency in Hz | 100.0 | 20-500 |
-| `low_gain` | Low band gain in dB | 0.0 | -12 to 12 |
-| `low_q` | Low band Q | 1.0 | 0.5-5 |
-| `mid_freq` | Mid band frequency in Hz | 1000.0 | 200-5000 |
-| `mid_gain` | Mid band gain in dB | 0.0 | -12 to 12 |
-| `mid_q` | Mid band Q | 1.0 | 0.5-5 |
-| `high_freq` | High band frequency in Hz | 5000.0 | 1000-15000 |
-| `high_gain` | High band gain in dB | 0.0 | -12 to 12 |
-| `high_q` | High band Q | 1.0 | 0.5-5 |
-| `output` | Output level in dB | 0.0 | -20 to 20 |
+**Architecture** (`crates/sonido-effects/src/kernels/eq.rs`): Three cascaded peaking EQ biquad filters (low, mid, high), each using the RBJ Audio EQ Cookbook formula. Coefficients are recomputed at most every 32 samples (0.67 ms at 48 kHz) when parameter values change, preventing per-sample transcendental math while keeping sweeps audibly smooth. A soft limiter at threshold 1.0 prevents clipping from accumulated band boosts before the output level stage.
+
+```
+Input → Low Band Peaking EQ → Mid Band Peaking EQ → High Band Peaking EQ → Soft Limit (1.0) → Output Level
+```
+
+**Stereo processing**: Dual-mono (`is_true_stereo: false`). Both channels use identical biquad coefficients applied to independent filter states.
+
+**Reference**: Robert Bristow-Johnson, "Cookbook formulae for audio EQ biquad filter coefficients", 1994.
+
+| Index | Parameter | Range | Default | Unit | Description |
+|-------|-----------|-------|---------|------|-------------|
+| 0 | `low_freq` | 20–500 | 100.0 | Hz | Low band center frequency (logarithmic scale) |
+| 1 | `low_gain` | -12–12 | 0.0 | dB | Low band peaking gain |
+| 2 | `low_q` | 0.5–5.0 | 1.0 | — | Low band Q factor (bandwidth control) |
+| 3 | `mid_freq` | 200–5000 | 1000.0 | Hz | Mid band center frequency (logarithmic scale) |
+| 4 | `mid_gain` | -12–12 | 0.0 | dB | Mid band peaking gain |
+| 5 | `mid_q` | 0.5–5.0 | 1.0 | — | Mid band Q factor (bandwidth control) |
+| 6 | `high_freq` | 1000–15000 | 5000.0 | Hz | High band center frequency (logarithmic scale) |
+| 7 | `high_gain` | -12–12 | 0.0 | dB | High band peaking gain |
+| 8 | `high_q` | 0.5–5.0 | 1.0 | — | High band Q factor (bandwidth control) |
+| 9 | `output` | -20–20 | 0.0 | dB | Output level |
 
 ### Tips
 

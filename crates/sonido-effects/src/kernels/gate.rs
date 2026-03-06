@@ -192,6 +192,7 @@ impl GateParams {
     /// | `hyst` | `hysteresis_db` | 0–1 → 0–12 dB |
     /// | `sc_hpf` | `sidechain_freq_hz` | 0–1 → 20–500 Hz |
     /// | `out` | `output_db` | 0–1 → −20–20 dB |
+    #[allow(clippy::too_many_arguments)]
     pub fn from_knobs(
         thresh: f32,
         atk: f32,

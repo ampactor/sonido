@@ -96,6 +96,36 @@ impl GraphEngine {
         }
     }
 
+    /// Creates a `GraphEngine` from a pre-compiled DAG with an effect manifest.
+    ///
+    /// `manifest` maps effect nodes to registry IDs, defining the slot ordering.
+    /// Slot-indexed methods ([`set_param_at`](Self::set_param_at),
+    /// [`set_bypass_at`](Self::set_bypass_at), [`snapshot`](Self::snapshot)) work
+    /// using this ordering. Chain mutation methods (`add_effect`, `remove_effect`,
+    /// `reorder`) are not supported in DAG mode — use topology replacement instead.
+    ///
+    /// The graph must already be compiled (via [`ProcessingGraph::compile()`]).
+    ///
+    /// # Arguments
+    ///
+    /// * `graph` — A compiled [`ProcessingGraph`] containing the full DAG topology.
+    /// * `manifest` — Effect nodes in slot order. Each entry is `(NodeId, registry_id)`.
+    ///   The manifest order becomes the slot index order for parameter access.
+    pub fn new_dag(graph: ProcessingGraph, manifest: Vec<(NodeId, &'static str)>) -> Self {
+        let block_size = graph.block_size();
+        let chain_order: Vec<NodeId> = manifest.iter().map(|(id, _)| *id).collect();
+        let effect_ids: Vec<&'static str> = manifest.iter().map(|(_, name)| *name).collect();
+        Self {
+            graph,
+            chain_order,
+            effect_ids,
+            input_node: NodeId::sentinel(),
+            output_node: NodeId::sentinel(),
+            scratch_left: vec![0.0; block_size],
+            scratch_right: vec![0.0; block_size],
+        }
+    }
+
     /// Creates a linear effect chain: Input → E1 → E2 → ... → En → Output.
     ///
     /// # Errors
@@ -302,6 +332,13 @@ impl GraphEngine {
     ///
     /// Panics if `order` length doesn't match slot count or indices are out of bounds.
     pub fn reorder_slots(&mut self, order: &[usize]) {
+        assert_eq!(
+            order.len(),
+            self.chain_order.len(),
+            "reorder_slots: order length ({}) must match slot count ({})",
+            order.len(),
+            self.chain_order.len()
+        );
         let node_ids: Vec<NodeId> = order.iter().map(|&slot| self.chain_order[slot]).collect();
         self.reorder(&node_ids);
     }
@@ -1152,5 +1189,105 @@ mod tests {
         let ewp = engine.effect_at_mut(0).unwrap();
         ewp.effect_set_param(0, 7.0);
         assert_eq!(engine.get_param_at(0, 0), Some(7.0));
+    }
+
+    // --- DAG mode tests ---
+
+    #[test]
+    fn test_new_dag_slot_access() {
+        // Build a split DAG manually: Input → Split → [Gain(2), Gain(3)] → Merge → Output
+        let mut graph = ProcessingGraph::new(48000.0, 4);
+        let input = graph.add_input();
+        let split = graph.add_split();
+        let a = graph.add_effect(gain(2.0));
+        let b = graph.add_effect(gain(3.0));
+        let merge = graph.add_merge();
+        let output = graph.add_output();
+
+        graph.connect(input, split).unwrap();
+        graph.connect(split, a).unwrap();
+        graph.connect(split, b).unwrap();
+        graph.connect(a, merge).unwrap();
+        graph.connect(b, merge).unwrap();
+        graph.connect(merge, output).unwrap();
+        graph.compile().unwrap();
+
+        let manifest = vec![(a, "gain_a"), (b, "gain_b")];
+        let mut engine = GraphEngine::new_dag(graph, manifest);
+
+        // Slot-indexed access works
+        assert_eq!(engine.slot_count(), 2);
+        assert_eq!(engine.effect_ids(), &["gain_a", "gain_b"]);
+        assert_eq!(engine.get_param_at(0, 0), Some(2.0));
+        assert_eq!(engine.get_param_at(1, 0), Some(3.0));
+
+        // set_param_at reaches the effect
+        assert!(engine.set_param_at(0, 0, 5.0));
+        assert_eq!(engine.get_param_at(0, 0), Some(5.0));
+
+        // bypass works
+        assert!(!engine.is_bypassed_at(0));
+        engine.set_bypass_at(0, true);
+        assert!(engine.is_bypassed_at(0));
+
+        // snapshot works
+        let snap = engine.snapshot();
+        assert_eq!(snap.entries.len(), 2);
+        assert_eq!(snap.entries[0].effect_id, "gain_a");
+        assert_eq!(snap.entries[0].params, vec![5.0]);
+        assert!(snap.entries[0].bypassed);
+        assert_eq!(snap.entries[1].effect_id, "gain_b");
+        assert_eq!(snap.entries[1].params, vec![3.0]);
+        assert!(!snap.entries[1].bypassed);
+    }
+
+    #[test]
+    fn test_new_dag_processes_audio() {
+        // Input → Split → [Gain(2), Gain(3)] → Merge → Output
+        // Merge sums paths, so output = input*2 + input*3 = input*5
+        let mut graph = ProcessingGraph::new(48000.0, 4);
+        let input = graph.add_input();
+        let split = graph.add_split();
+        let a = graph.add_effect(gain(2.0));
+        let b = graph.add_effect(gain(3.0));
+        let merge = graph.add_merge();
+        let output = graph.add_output();
+
+        graph.connect(input, split).unwrap();
+        graph.connect(split, a).unwrap();
+        graph.connect(split, b).unwrap();
+        graph.connect(a, merge).unwrap();
+        graph.connect(b, merge).unwrap();
+        graph.connect(merge, output).unwrap();
+        graph.compile().unwrap();
+
+        let manifest = vec![(a, "a"), (b, "b")];
+        let mut engine = GraphEngine::new_dag(graph, manifest);
+
+        let left_in = [1.0, 1.0, 1.0, 1.0];
+        let right_in = [0.5, 0.5, 0.5, 0.5];
+        let mut left_out = [0.0; 4];
+        let mut right_out = [0.0; 4];
+
+        engine.process_block_stereo(&left_in, &right_in, &mut left_out, &mut right_out);
+
+        // Split duplicates, each path multiplies, merge averages: (1*2 + 1*3)/2 = 2.5
+        for &s in &left_out {
+            assert!((s - 2.5).abs() < 0.02, "expected 2.5, got {s}");
+        }
+        for &s in &right_out {
+            assert!((s - 1.25).abs() < 0.02, "expected 1.25, got {s}");
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "reorder_slots: order length")]
+    fn test_reorder_slots_length_mismatch_panics() {
+        let mut engine = GraphEngine::new_linear(48000.0, 256);
+        engine.add_effect_named(gain(1.0), "a");
+        engine.add_effect_named(gain(2.0), "b");
+
+        // Wrong length — should panic
+        engine.reorder_slots(&[0]);
     }
 }

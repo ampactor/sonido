@@ -13,6 +13,7 @@ members = [
     "crates/sonido-config",
     "crates/sonido-synth",
     "crates/sonido-plugin",
+    "crates/sonido-graph-dsl",
 ]
 # sonido-plugin is excluded: it depends on clack (C FFI), which requires
 # unsafe_code — incompatible with the workspace-wide unsafe_code = "deny" lint.
@@ -29,6 +30,7 @@ default-members = [
     "crates/sonido-platform",
     "crates/sonido-config",
     "crates/sonido-synth",
+    "crates/sonido-graph-dsl",
 ]
 
 [workspace.package]
@@ -58,6 +60,7 @@ sonido-platform = { path = "crates/sonido-platform", default-features = false }
 sonido-config = { path = "crates/sonido-config", default-features = false }
 sonido-synth = { path = "crates/sonido-synth", default-features = false }
 sonido-gui-core = { path = "crates/sonido-gui-core" }
+sonido-graph-dsl = { path = "crates/sonido-graph-dsl" }
 
 # GUI framework
 egui = "0.31"

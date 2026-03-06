@@ -17,6 +17,7 @@ sonido-analysis = { workspace = true }
 sonido-io = { workspace = true }
 sonido-config = { workspace = true, features = ["std"] }
 sonido-synth = { workspace = true, features = ["std"] }
+sonido-graph-dsl = { workspace = true }
 
 clap = { workspace = true }
 serde = { workspace = true }

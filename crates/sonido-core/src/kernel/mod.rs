@@ -41,7 +41,8 @@
 //! rest of the system (graph, registry, plugin, GUI) consumes without knowing
 //! whether the underlying implementation is a classic `Effect` or a `DspKernel`.
 //!
-//! See `docs/KERNEL_MIGRATION.md` for the step-by-step migration guide.
+//! See `docs/KERNEL_ARCHITECTURE.md` for the full architecture reference and
+//! adding-new-effect checklist.
 //!
 //! # Example
 //!

@@ -1,0 +1,21 @@
+[package]
+name = "sonido-graph-dsl"
+description = "Graph topology DSL parser, builder, and effect factory for Sonido"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+sonido-core = { workspace = true, features = ["std"] }
+sonido-registry = { workspace = true, features = ["std"] }
+
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+# Tests use HashMap
+# (std is already available via sonido-core std feature)
+
+[lints]
+workspace = true

@@ -8,7 +8,7 @@
 
 use crate::atomic_param_bridge::AtomicParamBridge;
 use crate::audio_bridge::{AtomicParam, MeteringData};
-use crate::chain_manager::ChainCommand;
+use crate::chain_manager::GraphCommand;
 use crate::file_player::TransportCommand;
 use crossbeam_channel::{Receiver, Sender};
 use sonido_core::graph::GraphEngine;
@@ -96,7 +96,7 @@ pub(crate) struct AudioProcessor {
     master_volume: Arc<AtomicParam>,
     chain_bypass: Arc<AtomicBool>,
     bypass_fade: sonido_core::SmoothedParam,
-    command_rx: Receiver<ChainCommand>,
+    command_rx: Receiver<GraphCommand>,
     transport_rx: Receiver<TransportCommand>,
     metering_tx: Sender<MeteringData>,
     /// Receiver for mic input samples from the input stream.
@@ -183,7 +183,7 @@ impl AudioProcessor {
         // Drain dynamic chain commands (transactional add/remove)
         while let Ok(cmd) = self.command_rx.try_recv() {
             match cmd {
-                ChainCommand::Add {
+                GraphCommand::Add {
                     id,
                     effect,
                     descriptors,
@@ -192,11 +192,25 @@ impl AudioProcessor {
                     self.bridge.add_slot(id, descriptors);
                     tracing::info!(effect_id = id, slot, "effect added to graph");
                 }
-                ChainCommand::Remove { slot } => {
+                GraphCommand::Remove { slot } => {
                     if self.graph.remove_at(slot.0).is_some() {
                         self.bridge.remove_slot(slot);
                         tracing::info!(slot = slot.0, "effect removed from graph");
                     }
+                }
+                GraphCommand::ReplaceTopology {
+                    engine,
+                    effect_ids,
+                    slot_descriptors,
+                } => {
+                    self.bridge
+                        .rebuild_from_manifest(&effect_ids, &slot_descriptors);
+                    self.graph = *engine;
+                    self.cached_order.clear();
+                    tracing::info!(
+                        effects = effect_ids.len(),
+                        "topology replaced via ReplaceTopology"
+                    );
                 }
             }
         }
@@ -360,7 +374,7 @@ pub(crate) fn build_audio_streams(
     master_volume: Arc<AtomicParam>,
     running: Arc<AtomicBool>,
     metering_tx: Sender<MeteringData>,
-    command_rx: Receiver<ChainCommand>,
+    command_rx: Receiver<GraphCommand>,
     transport_rx: Receiver<TransportCommand>,
     chain_bypass: Arc<AtomicBool>,
     error_count: Arc<AtomicU32>,

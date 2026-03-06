@@ -5,7 +5,7 @@
 //! handled by [`AtomicParamBridge`](super::atomic_param_bridge) — this module
 //! only owns the two global gain knobs that live outside the effect chain.
 
-use crate::chain_manager::ChainCommand;
+use crate::chain_manager::GraphCommand;
 use crate::file_player::TransportCommand;
 use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
 use std::sync::Arc;
@@ -116,9 +116,9 @@ pub struct AudioBridge {
     /// Receiver for metering data (GUI thread reads)
     metering_rx: Receiver<MeteringData>,
     /// Sender for chain mutation commands (GUI → audio thread)
-    command_tx: Sender<ChainCommand>,
+    command_tx: Sender<GraphCommand>,
     /// Receiver for chain mutation commands (audio thread drains)
-    command_rx: Receiver<ChainCommand>,
+    command_rx: Receiver<GraphCommand>,
     /// Sender for transport commands (GUI → audio thread)
     transport_tx: Sender<TransportCommand>,
     /// Receiver for transport commands (audio thread drains)
@@ -200,7 +200,7 @@ impl AudioBridge {
     ///
     /// Commands are drained by the audio thread at the start of each buffer
     /// via the receiver obtained from [`command_receiver`](Self::command_receiver).
-    pub fn send_command(&self, cmd: ChainCommand) {
+    pub fn send_command(&self, cmd: GraphCommand) {
         let _ = self.command_tx.send(cmd);
     }
 
@@ -208,7 +208,7 @@ impl AudioBridge {
     ///
     /// `crossbeam` receivers are cheaply cloneable. In practice only one
     /// audio thread should drain the channel.
-    pub fn command_receiver(&self) -> Receiver<ChainCommand> {
+    pub fn command_receiver(&self) -> Receiver<GraphCommand> {
         self.command_rx.clone()
     }
 
@@ -282,12 +282,12 @@ mod tests {
 
         let registry = EffectRegistry::new();
         let effect = registry.create("distortion", 48000.0).unwrap();
-        bridge.send_command(ChainCommand::Add {
+        bridge.send_command(GraphCommand::Add {
             id: "distortion",
             effect,
             descriptors: Vec::new(),
         });
-        bridge.send_command(ChainCommand::Remove {
+        bridge.send_command(GraphCommand::Remove {
             slot: sonido_gui_core::SlotIndex(0),
         });
 
@@ -295,7 +295,7 @@ mod tests {
         let cmd1 = rx.try_recv().unwrap();
         assert!(matches!(
             cmd1,
-            ChainCommand::Add {
+            GraphCommand::Add {
                 id: "distortion",
                 ..
             }
@@ -304,7 +304,7 @@ mod tests {
         let cmd2 = rx.try_recv().unwrap();
         assert!(matches!(
             cmd2,
-            ChainCommand::Remove { slot } if slot == sonido_gui_core::SlotIndex(0)
+            GraphCommand::Remove { slot } if slot == sonido_gui_core::SlotIndex(0)
         ));
 
         assert!(rx.try_recv().is_err());

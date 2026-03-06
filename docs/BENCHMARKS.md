@@ -449,4 +449,4 @@ High outlier counts may indicate system interference.
 - [Testing](TESTING.md) - Test guide
 - [Contributing](CONTRIBUTING.md) - Development guidelines
 - [Architecture](ARCHITECTURE.md) - System design
-- [Hardware](HARDWARE.md) - Embedded target details
+- [Embedded](EMBEDDED.md) - Embedded target details

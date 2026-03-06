@@ -3885,6 +3885,7 @@ dependencies = [
  "sonido-analysis",
  "sonido-config",
  "sonido-core",
+ "sonido-graph-dsl",
  "sonido-io",
  "sonido-registry",
  "sonido-synth",
@@ -3932,6 +3933,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sonido-graph-dsl"
+version = "0.1.0"
+dependencies = [
+ "sonido-core",
+ "sonido-registry",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "sonido-gui"
 version = "0.1.0"
 dependencies = [
@@ -3951,6 +3962,7 @@ dependencies = [
  "sonido-config",
  "sonido-core",
  "sonido-effects",
+ "sonido-graph-dsl",
  "sonido-gui-core",
  "sonido-io",
  "sonido-registry",

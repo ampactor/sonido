@@ -886,5 +886,5 @@ If audio processing changed intentionally, regenerate golden files and verify th
 - [CLI Guide](CLI_GUIDE.md) — Full command reference
 - [Effects Reference](EFFECTS_REFERENCE.md) — All 19 effects with parameters and DSP theory
 - [GUI Documentation](GUI.md) — GUI user guide
-- [Library Testing Guide](LIBRARY_TESTING.md) — Testing guide for library consumers
+- [Testing Guide](TESTING.md) — Testing guide (includes library consumer testing)
 - [DSP Fundamentals](DSP_FUNDAMENTALS.md) — Theory behind the implementations

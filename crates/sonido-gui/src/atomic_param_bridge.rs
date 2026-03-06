@@ -112,7 +112,7 @@ impl AtomicParamBridge {
 
     /// Appends a new slot, returning its index.
     ///
-    /// Called on the audio thread when processing a `ChainCommand::Add`.
+    /// Called on the audio thread when processing a `GraphCommand::Add`.
     /// Uses RCU — existing readers see the old snapshot until they reload.
     /// Parameter values are initialized to each descriptor's default.
     pub fn add_slot(&self, id: &'static str, descriptors: Vec<ParamDescriptor>) -> SlotIndex {
@@ -142,7 +142,7 @@ impl AtomicParamBridge {
 
     /// Removes a slot at the given position, shifting remaining slots left.
     ///
-    /// Called on the audio thread when processing a `ChainCommand::Remove`.
+    /// Called on the audio thread when processing a `GraphCommand::Remove`.
     /// Uses RCU. The order vector is updated to remove the slot and decrement
     /// all indices greater than the removed slot.
     pub(crate) fn remove_slot(&self, slot: SlotIndex) {
@@ -163,6 +163,39 @@ impl AtomicParamBridge {
             }
             Arc::new(SharedAudioState { slots, order })
         });
+        self.order_dirty.store(true, Ordering::Release);
+    }
+
+    /// Rebuilds all slots from a topology manifest.
+    ///
+    /// Called on the audio thread when processing a `GraphCommand::ReplaceTopology`.
+    /// Replaces the entire slot list atomically. Readers see the old snapshot
+    /// until they reload.
+    pub(crate) fn rebuild_from_manifest(
+        &self,
+        effect_ids: &[&'static str],
+        slot_descriptors: &[Vec<ParamDescriptor>],
+    ) {
+        let slots: Vec<Arc<SlotState>> = effect_ids
+            .iter()
+            .zip(slot_descriptors.iter())
+            .map(|(&id, descs)| {
+                let values = descs
+                    .iter()
+                    .map(|d| AtomicU32::new(d.default.to_bits()))
+                    .collect();
+                Arc::new(SlotState {
+                    effect_id: id,
+                    values,
+                    descriptors: descs.clone(),
+                    bypassed: AtomicBool::new(false),
+                    dirty: AtomicBool::new(true),
+                })
+            })
+            .collect();
+        let order: Vec<usize> = (0..slots.len()).collect();
+        self.state
+            .store(Arc::new(SharedAudioState { slots, order }));
         self.order_dirty.store(true, Ordering::Release);
     }
 

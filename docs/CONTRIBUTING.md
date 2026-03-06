@@ -67,11 +67,11 @@ When you change code in the "Source Files" column, you **must** update the corre
 | `CLAUDE.md` (Key Patterns) | `effect.rs`, `param.rs`, `modulation.rs`, `tempo.rs` | Update code examples if API changes |
 | `README.md` (features list) | Any user-facing feature | Update bullet points |
 | `README.md` (Why Sonido table) | Test count, feature additions | Update comparison table |
-| `docs/EFFECTS_REFERENCE.md` | `crates/sonido-effects/src/*.rs` | Add/update effect entry with parameters, ranges, DSP theory |
+| `docs/EFFECTS_REFERENCE.md` | `crates/sonido-effects/src/kernels/*.rs` | Add/update effect entry with parameters, ranges, DSP theory |
 | `docs/SYNTHESIS.md` | `crates/sonido-synth/src/*.rs` | Update oscillator, envelope, voice, mod matrix docs |
 | `docs/ARCHITECTURE.md` | Crate structure, dependency graph | Update crate diagram and dependency descriptions |
 | `docs/CLI_GUIDE.md` | `crates/sonido-cli/src/**/*.rs` | Update command examples, add new subcommands |
-| `docs/HARDWARE.md` | `crates/sonido-platform/src/*.rs` | Update platform traits, control mapping |
+| `docs/EMBEDDED.md` | `crates/sonido-platform/src/*.rs` | Update platform traits, control mapping |
 | `docs/BIOSIGNAL_ANALYSIS.md` | `crates/sonido-analysis/src/cfc.rs`, `filterbank.rs`, `hilbert.rs` | Update analysis pipeline docs |
 | `docs/BENCHMARKS.md` | `benches/*.rs` | Update benchmark results after optimization |
 | `docs/CHANGELOG.md` | Any user-visible change | Add entry under current version |
