@@ -149,6 +149,7 @@ impl FlangerParams {
     /// - `sync`: Sync toggle → 0.0 = Off, 1.0 = On
     /// - `division`: Division selector → 0.0–1.0 maps to index 0–11
     /// - `output`: Output knob → −20–+20 dB
+    #[allow(clippy::too_many_arguments)]
     pub fn from_knobs(
         rate: f32,
         depth: f32,

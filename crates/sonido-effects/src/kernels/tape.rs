@@ -248,6 +248,7 @@ impl TapeParams {
     /// - `head_bump`: Head bump level knob (0-1) -> 0-1
     /// - `bump_freq`: Bump freq knob (0-1) -> 40-200 Hz (linear)
     /// - `output`: Output knob (0-1) -> -12 to 12 dB
+    #[allow(clippy::too_many_arguments)]
     pub fn from_knobs(
         drive: f32,
         saturation: f32,

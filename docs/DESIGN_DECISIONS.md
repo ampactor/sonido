@@ -1199,3 +1199,4 @@ Introduce a three-layer kernel architecture:
 - `crates/sonido-core/src/kernel/adapter.rs` — `KernelAdapter`
 - `crates/sonido-effects/src/kernels/` — 19 kernel implementations (one per effect)
 - `crates/sonido-registry/src/lib.rs` — registry creates `KernelAdapter<XxxKernel>`
+- `docs/KERNEL_ARCHITECTURE.md` — full architecture reference, patterns, and new-effect checklist

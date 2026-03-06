@@ -20,7 +20,7 @@
 //!    slowly when the peak passes):
 //!    - `if target < g[n-1]: g[n] = target`
 //!    - `else: g[n] = α · g[n-1] + (1 − α) · target`
-//!    where `α = exp(-1 / (release_ms · sr / 1000))`.
+//!      where `α = exp(-1 / (release_ms · sr / 1000))`.
 //! 5. **Output**: Delayed sample × smoothed gain × output_level.
 //!
 //! # Stereo Linking

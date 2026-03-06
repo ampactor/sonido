@@ -681,7 +681,7 @@ TOGGLE_2: Preset within bank (1 / 2 / 3)
 TOGGLE_3: Mode (normal / alt / dev)
 ```
 
-See `docs/HARDWARE.md` for detailed pin mappings and design patterns.
+See `docs/EMBEDDED.md` for detailed pin mappings and design patterns.
 
 ## Build Targets
 
