@@ -3,7 +3,7 @@
 Production-grade DSP framework in Rust — 19 audio effects built on a three-layer kernel architecture that runs identically on desktop plugins, CLI tools, and bare-metal ARM (Cortex-M7). Five `no_std` crates, zero-heap audio paths, `libm` for all math, `from_knobs()` on every effect for direct ADC-to-parameter mapping.
 
 [![CI](https://github.com/ampactor-labs/sonido/actions/workflows/ci.yml/badge.svg)](https://github.com/ampactor-labs/sonido/actions/workflows/ci.yml)
-[![License: AGPL-3.0-or-later](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue.svg)](LICENSE)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
 [![Rust Edition](https://img.shields.io/badge/Rust-Edition%202024-orange.svg)](https://doc.rust-lang.org/edition-guide/)
 
 12-crate Rust workspace: 19 effects, synthesis engine, spectral analysis, real-time GUI, 20 CLAP plugins — all from a shared `no_std` DSP core targeting Electrosmith Daisy Seed (STM32H750, 480 MHz Cortex-M7).
@@ -421,4 +421,4 @@ Effect algorithms are informed by clean-room analysis of commercial DSP hardware
 
 ## License
 
-Sonido is licensed under [AGPL-3.0-or-later](LICENSE). A commercial license is available for proprietary integration (DAW plugins, embedded hardware, closed-source products). See [LICENSING.md](LICENSING.md) for details.
+Sonido is dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option. See [docs/LICENSING.md](docs/LICENSING.md) for the rationale.
