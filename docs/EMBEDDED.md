@@ -77,8 +77,9 @@ cargo check -p sonido-daisy \
 
 | Tier | Example | What It Validates | Hardware Needed |
 |:----:|---------|-------------------|-----------------|
-| 1 | `blinky.rs` | Toolchain, flash, Embassy runtime | Seed + USB |
-| 2 | `bench_kernels.rs` | DWT cycle counts for all 19 kernels | Seed + USB + probe |
+| 1 | `blinky_bare.rs` | Toolchain, flash, BOOT_SRAM path | Seed + USB |
+| 1 | `blinky.rs` | Embassy runtime + clock init | Seed + USB |
+| 2 | `bench_kernels.rs` | DWT cycle counts for all 19 kernels | Seed + USB |
 | 3 | `passthrough.rs` *(stub)* | Codec, DMA, audio path | Seed + audio I/O |
 | 4 | `single_effect.rs` *(stub)* | Real-time DSP, ADC parameter mapping | Seed + audio I/O + pot |
 
@@ -98,15 +99,16 @@ cargo check -p sonido-daisy \
 
 | Crate | Version | Purpose |
 |-------|:-------:|---------|
-| `embassy-stm32` | 0.4 | Async HAL — SAI, DMA, GPIO, ADC |
-| `embassy-executor` | 0.7 | Async task executor for Cortex-M |
-| `embassy-time` | 0.4 | Timer and delay utilities |
+| `embassy-stm32` | 0.5 | Async HAL — SAI, DMA, GPIO, ADC |
+| `embassy-executor` | 0.9 | Async task executor for Cortex-M |
+| `embassy-time` | 0.5 | Timer and delay utilities |
 | `daisy-embassy` | 0.2 | Daisy Seed BSP — codec init, audio interface |
 | `cortex-m` | 0.7 | Low-level Cortex-M access — DWT, SCB |
 | `cortex-m-rt` | 0.7 | Runtime — vector table, entry point |
-| `defmt` | 0.3 | Efficient embedded logging |
-| `defmt-rtt` | 0.4 | RTT transport for defmt |
-| `panic-probe` | 0.3 | Panic handler with defmt output |
+| `embedded-alloc` | 0.6 | Heap allocator for DSP buffer allocations |
+| `defmt` | 1.0 | Efficient embedded logging |
+| `defmt-rtt` | 1.1 | RTT transport for defmt |
+| `panic-probe` | 1.0 | Panic handler with defmt output |
 
 **Feature flags:**
 - `seed_1_2` *(default)* — Rev 7 PCM3060 codec
@@ -170,59 +172,50 @@ cargo check -p sonido-daisy \
 4. Click **Connect** → select **DFU in FS Mode** → **Flash Blink**
 5. LED blinks = hardware works
 
-#### Option B — Sonido blinky (validates full toolchain)
+#### Option B — Sonido blinky (validates full toolchain + BOOT_SRAM)
 
-Build:
+All examples use **BOOT_SRAM** mode: the Electrosmith bootloader copies firmware
+from QSPI flash to AXI SRAM on each boot. Code executes from zero-wait-state
+SRAM, allowing Embassy to safely reconfigure clocks.
 
-```bash
-cargo build -p sonido-daisy \
-    --example blinky \
-    --target thumbv7em-none-eabihf \
-    --release
-```
-
-Convert ELF to raw binary for DFU:
+Build from the crate directory (picks up `.cargo/config.toml` target):
 
 ```bash
-cargo objcopy -p sonido-daisy \
-    --example blinky \
-    --target thumbv7em-none-eabihf \
-    --release \
-    -- -O binary blinky.bin
+cd crates/sonido-daisy
+cargo objcopy --example blinky_bare --release -- -O binary blinky.bin
 ```
 
-Enter DFU mode, then flash:
+Enter DFU mode, then flash to QSPI (bootloader copies to SRAM on boot):
 
 ```bash
-dfu-util -a 0 -s 0x08000000:leave -D blinky.bin
+dfu-util -a 0 -s 0x90040000:leave -D blinky.bin
 ```
 
-LED blinks at 500ms = Embassy runtime + toolchain + flash all working.
+LED blinks = BOOT_SRAM path + toolchain + flash all working.
+
+For Embassy runtime validation (async timer, GPIO HAL):
+
+```bash
+cargo objcopy --example blinky --release -- -O binary blinky.bin
+dfu-util -a 0 -s 0x90040000:leave -D blinky.bin
+```
 
 ### Phase 2: Kernel Benchmarks
 
-*Bare Seed + USB + SWD probe. Requires an ST-Link V3 Mini (~$12) or compatible
-probe for defmt RTT output.*
+*Bare Seed + USB. SWD probe optional (for live RTT output).*
 
-One-time probe udev setup:
+Flash via DFU:
 
 ```bash
-curl -L https://probe.rs/files/69-probe-rs.rules \
-    | sudo tee /etc/udev/rules.d/69-probe-rs.rules
+cd crates/sonido-daisy
+cargo objcopy --example bench_kernels --release -- -O binary bench.bin
+dfu-util -a 0 -s 0x90040000:leave -D bench.bin
 ```
 
-```bash
-sudo udevadm control --reload
-sudo udevadm trigger
-```
-
-Flash and run with live defmt output:
+With an SWD probe (ST-Link V3 Mini, ~$12), you get live defmt RTT output:
 
 ```bash
-cargo run -p sonido-daisy \
-    --example bench_kernels \
-    --target thumbv7em-none-eabihf \
-    --release
+cargo run --example bench_kernels --release
 ```
 
 Expected output (via RTT):
@@ -237,9 +230,8 @@ kernel=compressor   cycles=XXXXX  budget=1280000  pct=X.XX%
 === Benchmarks complete ===
 ```
 
-> **Without a probe:** Flash via DFU using the same objcopy + dfu-util pattern
-> from Phase 1. The benchmarks run but defmt output won't be visible. LED
-> staying on after boot confirms completion without panic.
+> **Without a probe:** benchmarks run but defmt output isn't visible.
+> LED staying on after boot confirms completion without panic.
 
 ### Phase 3: Audio Passthrough
 
@@ -259,36 +251,25 @@ mapping ADC readings to parameters.
 
 ### Build & Flash Reference
 
+All commands run from `crates/sonido-daisy/` (picks up `.cargo/config.toml`).
+
 **Build** (any example):
 
 ```bash
-cargo build -p sonido-daisy \
-    --example <name> \
-    --target thumbv7em-none-eabihf \
-    --release
+cargo build --example <name> --release
 ```
 
-**Flash via DFU** (USB, no probe):
+**Flash via DFU** (USB, no probe — BOOT_SRAM):
 
 ```bash
-cargo objcopy -p sonido-daisy \
-    --example <name> \
-    --target thumbv7em-none-eabihf \
-    --release \
-    -- -O binary <name>.bin
-```
-
-```bash
-dfu-util -a 0 -s 0x08000000:leave -D <name>.bin
+cargo objcopy --example <name> --release -- -O binary <name>.bin
+dfu-util -a 0 -s 0x90040000:leave -D <name>.bin
 ```
 
 **Flash via SWD probe** (supports defmt RTT):
 
 ```bash
-cargo run -p sonido-daisy \
-    --example <name> \
-    --target thumbv7em-none-eabihf \
-    --release
+cargo run --example <name> --release
 ```
 
 > **Power:** USB alone is sufficient for development. External VIN (5–17V DC)
@@ -311,21 +292,22 @@ Each `InterpolatedDelay` buffer = `max_delay_samples * 4` bytes (f32).
 | Flanger | ~4 KB | ~10ms max delay |
 | All others | < 1 KB each | Phaser, Distortion, Compressor, Gate, etc. |
 
-### Memory Placement
+### Memory Placement (BOOT_SRAM)
 
 ```
-DTCM (128 KB, 0-wait)
+AXI SRAM (480 KB usable, 0-wait — code executes here)
+├── .text + .rodata (firmware code, ~90 KB for full bench)
+└── ~390 KB headroom
+
+DTCM (128 KB, 0-wait — data)
 ├── Stack (8–16 KB)
-├── Audio DMA buffers (2 KB)
-├── Filter coefficients, envelope state
+├── .bss + .data (globals, filter state)
 └── ~100 KB for hot per-sample DSP state
 
-AXI SRAM (512 KB, 0–1 wait)
-├── Reverb buffers (~110 KB stereo)
-├── Short delay lines (< 500ms)
-├── Chorus / flanger delay lines
-├── Heap allocator for dynamic chains
-└── ~200 KB headroom
+D2 SRAM (288 KB, 1–2 wait — heap + DMA)
+├── Heap allocator (~256 KB) — delay lines, comb buffers
+├── Audio DMA buffers (SAI, 2 KB)
+└── ~30 KB headroom
 
 SDRAM (64 MB, 4–8 wait)
 ├── Long delay lines (> 500ms)
@@ -441,8 +423,7 @@ hardware controls to effect parameters. The Daisy/Hothouse firmware:
 
 | Gap | Detail |
 |-----|--------|
-| Global allocator | `embedded-alloc` pointing at AXI SRAM (512 KB) |
-| Memory placement | Large buffers may need linker sections for SDRAM |
+| Memory placement | Large buffers (delay >500ms) need linker sections for SDRAM |
 | Block processing | Biquad/SVF have per-sample `process()` only — block version would improve CM7 cache behavior |
 
 ---

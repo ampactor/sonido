@@ -11,6 +11,13 @@
 //! - **Audio**: 24-bit stereo codec via SAI + DMA, 48 kHz default
 //! - **Memory**: 128 KB DTCM (0-wait), 512 KB AXI SRAM, 64 MB SDRAM
 //!
+//! # Boot Mode
+//!
+//! All examples use BOOT_SRAM mode: the Electrosmith bootloader copies
+//! firmware from QSPI flash to AXI SRAM (`0x24000000`) on each boot.
+//! Code executes from zero-wait-state SRAM, allowing Embassy to safely
+//! reconfigure clocks without disrupting QSPI memory-mapped mode.
+//!
 //! # Usage Tiers
 //!
 //! - **Tier 1**: Blinky (validate toolchain + flash)

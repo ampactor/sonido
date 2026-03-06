@@ -1,12 +1,11 @@
 //! Build script for sonido-daisy.
 //!
-//! The Electrosmith bootloader runs from internal flash and expects user
-//! programs in QSPI at 0x90040000 (XIP). Both embassy-stm32 and daisy-embassy
-//! generate a `memory.x` with FLASH at 0x08000000, which would overwrite the
-//! bootloader if flashed there.
+//! The Electrosmith bootloader copies user firmware from QSPI flash to AXI SRAM
+//! (BOOT_SRAM mode). Both embassy-stm32 and daisy-embassy generate a `memory.x`
+//! with FLASH at 0x08000000, which conflicts with our SRAM layout.
 //!
 //! Since Cargo features are additive and we can't disable their `memory-x`
-//! generation, we overwrite all generated `memory.x` files with our QSPI layout.
+//! generation, we overwrite all generated `memory.x` files with our BOOT_SRAM layout.
 
 fn main() {
     let target_dir = std::env::var("OUT_DIR")

@@ -3,29 +3,17 @@
 //! Toggles the Daisy Seed's onboard LED at 500ms intervals using
 //! Embassy's async timer and GPIO abstractions.
 //!
-//! # QSPI XIP Limitation
+//! Uses BOOT_SRAM mode: the Electrosmith bootloader copies firmware from
+//! QSPI flash to AXI SRAM before jumping. Code runs from SRAM, so
+//! `embassy_stm32::init()` can safely reconfigure clocks.
 //!
-//! This example calls `embassy_stm32::init()` which reconfigures clocks,
-//! disrupting QSPI memory-mapped mode. It will **hard fault** when flashed
-//! via the Electrosmith bootloader (QSPI XIP at 0x90040000).
-//!
-//! Use `blinky_bare` for QSPI XIP validation instead.
-//!
-//! This example works with:
-//! - SWD probe (`cargo run --example blinky --release`)
-//! - Internal flash DFU (`dfu-util -a 0 -s 0x08000000:leave -D blinky.bin`)
-//!
-//! # Flash via DFU (internal flash)
+//! # Build & Flash
 //!
 //! ```bash
+//! cd crates/sonido-daisy
 //! cargo objcopy --example blinky --release -- -O binary blinky.bin
-//! dfu-util -a 0 -s 0x08000000:leave -D blinky.bin
-//! ```
-//!
-//! # Flash via SWD probe
-//!
-//! ```bash
-//! cargo run --example blinky --release
+//! # Enter bootloader (hold BOOT, tap RESET, release BOOT — LED pulses)
+//! dfu-util -a 0 -s 0x90040000:leave -D blinky.bin
 //! ```
 
 #![no_std]

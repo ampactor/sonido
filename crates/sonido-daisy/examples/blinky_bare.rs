@@ -1,9 +1,17 @@
 //! Bare-metal blinky — no clock reinit, no Embassy runtime.
 //!
-//! Validates that QSPI XIP works with the Electrosmith bootloader.
-//! Toggles PC7 (onboard LED) using only raw register writes and
-//! a busy-wait delay, avoiding any clock reconfiguration that could
-//! disrupt QSPI memory-mapped mode.
+//! Minimal validation that the Electrosmith bootloader BOOT_SRAM path
+//! works: copies firmware from QSPI to AXI SRAM, jumps, LED blinks.
+//! Uses only raw register writes and a busy-wait delay.
+//!
+//! # Build & Flash
+//!
+//! ```bash
+//! cd crates/sonido-daisy
+//! cargo objcopy --example blinky_bare --release -- -O binary blinky.bin
+//! # Enter bootloader (hold BOOT, tap RESET, release BOOT — LED pulses)
+//! dfu-util -a 0 -s 0x90040000:leave -D blinky.bin
+//! ```
 
 #![no_std]
 #![no_main]
