@@ -1,6 +1,9 @@
 //! Bypass toggle widget for effects.
 
-use egui::{Color32, Response, Sense, Stroke, StrokeKind, Ui, Widget, pos2, vec2};
+use egui::{Response, Sense, Stroke, StrokeKind, Ui, Widget, pos2, vec2};
+
+use crate::theme::SonidoTheme;
+use crate::widgets::glow;
 
 /// A bypass toggle button for effects.
 pub struct BypassToggle<'a> {
@@ -33,7 +36,7 @@ impl Widget for BypassToggle<'_> {
         let total_width = self.size
             + 8.0
             + ui.fonts(|f| {
-                f.glyph_width(&egui::FontId::proportional(12.0), 'M') * self.label.len() as f32
+                f.glyph_width(&egui::FontId::monospace(12.0), 'M') * self.label.len() as f32
             });
         let size = vec2(total_width.max(60.0), self.size + 4.0);
 
@@ -45,49 +48,45 @@ impl Widget for BypassToggle<'_> {
         }
 
         if ui.is_rect_visible(rect) {
+            let theme = SonidoTheme::get(ui.ctx());
             let painter = ui.painter();
 
             // Toggle indicator (circle)
-            let indicator_center = pos2(rect.left() + self.size / 2.0 + 2.0, rect.center().y);
-            let indicator_radius = self.size / 2.0 - 2.0;
+            let center = pos2(rect.left() + self.size / 2.0 + 2.0, rect.center().y);
+            let radius = self.size / 2.0 - 2.0;
 
-            // Background ring
-            painter.circle_stroke(
-                indicator_center,
-                indicator_radius,
-                Stroke::new(2.0, Color32::from_rgb(60, 60, 70)),
-            );
-
-            // Filled circle when active
             if *self.active {
-                painter.circle_filled(
-                    indicator_center,
-                    indicator_radius - 3.0,
-                    Color32::from_rgb(80, 200, 80),
+                // ON — filled green circle with phosphor bloom
+                glow::glow_circle(painter, center, radius, theme.colors.green, &theme);
+            } else {
+                // OFF — dim ring outline
+                glow::glow_circle_stroke(
+                    painter, center, radius, theme.colors.dim, 1.5, &theme,
                 );
             }
 
-            // Hover effect
+            // Hover ring
             if response.hovered() {
+                let hover_color = theme.colors.cyan.gamma_multiply(0.4);
                 painter.circle_stroke(
-                    indicator_center,
-                    indicator_radius + 2.0,
-                    Stroke::new(1.0, Color32::from_rgb(100, 180, 255).gamma_multiply(0.5)),
+                    center,
+                    radius + 2.0,
+                    Stroke::new(1.0, hover_color),
                 );
             }
 
             // Label
             let label_pos = pos2(rect.left() + self.size + 8.0, rect.center().y);
             let text_color = if *self.active {
-                Color32::from_rgb(200, 200, 210)
+                theme.colors.cyan
             } else {
-                Color32::from_rgb(120, 120, 130)
+                theme.colors.dim
             };
             painter.text(
                 label_pos,
                 egui::Align2::LEFT_CENTER,
                 self.label,
-                egui::FontId::proportional(12.0),
+                egui::FontId::monospace(12.0),
                 text_color,
             );
         }
@@ -120,47 +119,41 @@ impl Widget for FootswitchToggle<'_> {
         }
 
         if ui.is_rect_visible(rect) {
+            let theme = SonidoTheme::get(ui.ctx());
             let painter = ui.painter();
 
-            // Pedal body
-            let body_color = if *self.active {
-                Color32::from_rgb(50, 60, 55)
-            } else {
-                Color32::from_rgb(40, 40, 48)
-            };
-            painter.rect_filled(rect, 6.0, body_color);
+            // Pedal body — void fill with dim border
+            painter.rect_filled(rect, 6.0, theme.colors.void);
             painter.rect_stroke(
                 rect,
                 6.0,
-                Stroke::new(1.0, Color32::from_rgb(70, 70, 80)),
+                Stroke::new(1.0, theme.colors.dim),
                 StrokeKind::Inside,
             );
 
-            // LED indicator
+            // LED indicator dot
             let led_pos = pos2(rect.center().x, rect.top() + 12.0);
-            let led_color = if *self.active {
-                Color32::from_rgb(100, 255, 100)
-            } else {
-                Color32::from_rgb(50, 60, 50)
-            };
-            painter.circle_filled(led_pos, 5.0, led_color);
             if *self.active {
-                // Glow effect
-                painter.circle_filled(led_pos, 8.0, led_color.gamma_multiply(0.3));
+                // ON — green with phosphor bloom
+                glow::glow_circle(painter, led_pos, 5.0, theme.colors.green, &theme);
+            } else {
+                // OFF — ghosted green
+                let ghost_color = glow::ghost(theme.colors.green, &theme);
+                painter.circle_filled(led_pos, 5.0, ghost_color);
             }
 
             // Label
             let label_pos = pos2(rect.center().x, rect.bottom() - 12.0);
             let text_color = if *self.active {
-                Color32::from_rgb(200, 200, 210)
+                theme.colors.cyan
             } else {
-                Color32::from_rgb(100, 100, 110)
+                theme.colors.dim
             };
             painter.text(
                 label_pos,
                 egui::Align2::CENTER_CENTER,
                 self.label,
-                egui::FontId::proportional(10.0),
+                egui::FontId::monospace(10.0),
                 text_color,
             );
         }
