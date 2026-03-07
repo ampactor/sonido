@@ -11,6 +11,7 @@ pub mod chain_manager;
 pub mod chain_view;
 pub mod dsl_console;
 pub mod file_player;
+pub mod graph_view;
 pub mod preset_manager;
 pub mod theme;
 pub mod widgets;
