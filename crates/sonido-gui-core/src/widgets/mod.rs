@@ -12,6 +12,7 @@
 //! - [`FootswitchToggle`] — Large pedal-style toggle for the chain view
 
 mod bridged_knob;
+pub mod glow;
 mod knob;
 mod meter;
 mod morph_bar;
