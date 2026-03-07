@@ -8,12 +8,13 @@
 
 use std::collections::HashMap;
 
-use egui::{Color32, Ui};
+use egui::{Color32, FontId, RichText, Stroke, Ui};
 use egui_snarl::ui::{PinInfo, SnarlStyle, SnarlViewer};
 use egui_snarl::{InPin, NodeId, OutPin, Snarl};
 
 use sonido_core::graph::{GraphEngine, MAX_SPLIT_TARGETS, ProcessingGraph};
 use sonido_core::{ParamDescriptor, SmoothingStyle};
+use sonido_gui_core::theme::SonidoTheme;
 use sonido_registry::{EffectCategory, EffectRegistry};
 
 use crate::chain_manager::GraphCommand;
@@ -99,8 +100,10 @@ impl GraphView {
     /// The returned `usize` corresponds to the effect's position among
     /// all Effect nodes in the graph (useful for param-bridge indexing).
     pub fn show(&mut self, ui: &mut Ui) -> Option<usize> {
+        let theme = SonidoTheme::get(ui.ctx());
         let mut viewer = SonidoViewer {
             selected_node: &mut self.selected_node,
+            theme,
         };
         self.snarl
             .show(&mut viewer, &self.style, "sonido_graph", ui);
@@ -215,28 +218,53 @@ impl Default for GraphView {
     }
 }
 
-/// Returns a category-based color for effect node tinting.
-fn category_color(cat: EffectCategory) -> Color32 {
+/// Returns a category-based color from the arcade CRT theme palette.
+///
+/// Mapping:
+/// - Dynamics  -> cyan (info / signal labels)
+/// - Distortion -> red (danger / clip)
+/// - Modulation -> magenta (modulation category)
+/// - Filter    -> yellow (caution / filter)
+/// - TimeBased -> purple (delay / reverb)
+/// - Utility   -> amber (brand primary / default)
+fn category_color(cat: EffectCategory, theme: &SonidoTheme) -> Color32 {
     match cat {
-        EffectCategory::Dynamics => Color32::from_rgb(70, 130, 180),
-        EffectCategory::Distortion => Color32::from_rgb(205, 92, 92),
-        EffectCategory::Modulation => Color32::from_rgb(34, 139, 34),
-        EffectCategory::Filter => Color32::from_rgb(218, 165, 32),
-        EffectCategory::TimeBased => Color32::from_rgb(147, 112, 219),
-        EffectCategory::Utility => Color32::from_rgb(112, 128, 144),
+        EffectCategory::Dynamics => theme.colors.cyan,
+        EffectCategory::Distortion => theme.colors.red,
+        EffectCategory::Modulation => theme.colors.magenta,
+        EffectCategory::Filter => theme.colors.yellow,
+        EffectCategory::TimeBased => theme.colors.purple,
+        EffectCategory::Utility => theme.colors.amber,
     }
 }
 
-/// Color for structural nodes (Input, Output, Split, Merge).
-const STRUCTURAL_COLOR: Color32 = Color32::from_rgb(160, 160, 160);
+/// Color for structural nodes (Input, Output, Split, Merge) — uses theme dim.
+fn structural_color(theme: &SonidoTheme) -> Color32 {
+    theme.colors.text_secondary
+}
 
 /// [`SnarlViewer`] implementation for [`SonidoNode`].
 ///
 /// Handles rendering, context menus, and connection logic for the
-/// Sonido audio graph editor.
+/// Sonido audio graph editor. Carries a snapshot of [`SonidoTheme`]
+/// so that `node_frame` / `header_frame` (which lack a `Ui` handle)
+/// can still read the arcade CRT palette.
 struct SonidoViewer<'a> {
     /// Mutable reference to the selected-node state in [`GraphView`].
     selected_node: &'a mut Option<NodeId>,
+    /// Arcade CRT theme snapshot for palette access.
+    theme: SonidoTheme,
+}
+
+impl SonidoViewer<'_> {
+    /// Resolve the accent color for a node (category color for effects,
+    /// structural color for Input/Output/Split/Merge).
+    fn node_accent(&self, node: &SonidoNode) -> Color32 {
+        match node {
+            SonidoNode::Effect { category, .. } => category_color(*category, &self.theme),
+            _ => structural_color(&self.theme),
+        }
+    }
 }
 
 impl SnarlViewer<SonidoNode> for SonidoViewer<'_> {
@@ -248,6 +276,58 @@ impl SnarlViewer<SonidoNode> for SonidoViewer<'_> {
             SonidoNode::Split => "Split".to_string(),
             SonidoNode::Merge => "Merge".to_string(),
         }
+    }
+
+    fn node_frame(
+        &mut self,
+        _default: egui::Frame,
+        node: NodeId,
+        _inputs: &[InPin],
+        _outputs: &[OutPin],
+        snarl: &Snarl<SonidoNode>,
+    ) -> egui::Frame {
+        let accent = self.node_accent(&snarl[node]);
+        egui::Frame::new()
+            .fill(self.theme.colors.void)
+            .stroke(Stroke::new(1.0, accent))
+            .corner_radius(4.0)
+            .inner_margin(6.0)
+    }
+
+    fn header_frame(
+        &mut self,
+        _default: egui::Frame,
+        node: NodeId,
+        _inputs: &[InPin],
+        _outputs: &[OutPin],
+        snarl: &Snarl<SonidoNode>,
+    ) -> egui::Frame {
+        let accent = self.node_accent(&snarl[node]);
+        // Subtle tinted header background — the accent at very low alpha
+        let header_bg = accent.gamma_multiply(0.10);
+        egui::Frame::new()
+            .fill(header_bg)
+            .stroke(Stroke::NONE)
+            .corner_radius(4.0)
+            .inner_margin(4.0)
+    }
+
+    fn show_header(
+        &mut self,
+        node: NodeId,
+        _inputs: &[InPin],
+        _outputs: &[OutPin],
+        ui: &mut Ui,
+        _scale: f32,
+        snarl: &mut Snarl<SonidoNode>,
+    ) {
+        let accent = self.node_accent(&snarl[node]);
+        let title = self.title(&snarl[node]);
+        ui.label(
+            RichText::new(title)
+                .font(FontId::monospace(11.0))
+                .color(accent),
+        );
     }
 
     fn inputs(&mut self, node: &SonidoNode) -> usize {
@@ -277,11 +357,10 @@ impl SnarlViewer<SonidoNode> for SonidoViewer<'_> {
         _scale: f32,
         snarl: &mut Snarl<SonidoNode>,
     ) -> impl egui_snarl::ui::SnarlPin + 'static {
-        let color = match &snarl[pin.id.node] {
-            SonidoNode::Effect { category, .. } => category_color(*category),
-            _ => STRUCTURAL_COLOR,
-        };
-        PinInfo::circle().with_fill(color)
+        let color = self.node_accent(&snarl[pin.id.node]);
+        PinInfo::circle()
+            .with_fill(color)
+            .with_wire_color(color)
     }
 
     fn show_output(
@@ -291,11 +370,11 @@ impl SnarlViewer<SonidoNode> for SonidoViewer<'_> {
         _scale: f32,
         snarl: &mut Snarl<SonidoNode>,
     ) -> impl egui_snarl::ui::SnarlPin + 'static {
-        let color = match &snarl[pin.id.node] {
-            SonidoNode::Effect { category, .. } => category_color(*category),
-            _ => STRUCTURAL_COLOR,
-        };
-        PinInfo::circle().with_fill(color)
+        // Wire color follows the source (output) node's category.
+        let color = self.node_accent(&snarl[pin.id.node]);
+        PinInfo::circle()
+            .with_fill(color)
+            .with_wire_color(color)
     }
 
     fn has_body(&mut self, node: &SonidoNode) -> bool {
@@ -317,8 +396,17 @@ impl SnarlViewer<SonidoNode> for SonidoViewer<'_> {
             ..
         } = &snarl[node]
         {
-            ui.label(category.name());
-            ui.label(format!("{} params", descriptors.len()));
+            let dim = self.theme.colors.text_secondary;
+            ui.label(
+                RichText::new(category.name())
+                    .font(FontId::monospace(9.0))
+                    .color(dim),
+            );
+            ui.label(
+                RichText::new(format!("{} params", descriptors.len()))
+                    .font(FontId::monospace(9.0))
+                    .color(dim),
+            );
         }
     }
 
