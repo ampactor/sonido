@@ -49,8 +49,8 @@ cd crates/sonido-gui
 trunk serve
 
 # 4. Browser: http://127.0.0.1:8080 (Ctrl+Shift+R to hard-refresh)
-#    - Three columns visible: INPUT | EFFECT CHAIN | OUTPUT
-#    - Click effect in chain → parameter panel renders below
+#    - Three columns visible: INPUT | GRAPH EDITOR | OUTPUT
+#    - Click effect node in graph → parameter panel renders below
 #    - Resize window → center column flexes, I/O columns stay fixed
 #    - Click anywhere to resume audio (browser autoplay policy)
 ```
@@ -99,17 +99,19 @@ sonido-gui --effect reverb
 
 ```
 +------------------------------------------------------------------+
-| SONIDO         [Preset Selector v] [Save]        [Audio Status]  |
+| SONIDO  [Preset v] [Compile]                     [Audio Status]  |
 +------------------------------------------------------------------+
 |                                                                  |
-| INPUT  |  EFFECT CHAIN                              |  OUTPUT    |
-| [Meter]|  [PRE]->[DIST]->[COMP]->[CHO]->[DLY]->... |  [Meter]   |
-| [Gain] |  [FLT]->[VIB]->[TAPE]->[REV]              |  [Master]  |
-|        |                                            |            |
-|        +--------------------------------------------+            |
-|        | SELECTED EFFECT PANEL                      |            |
-|        | (Parameters for currently selected effect) |            |
-|        +--------------------------------------------+            |
+| INPUT  |  GRAPH EDITOR                              |  OUTPUT    |
+| [Meter]|  [Input]──>[Dist]──>[Rev]──>[Output]       |  [Meter]   |
+| [Gain] |            (visual node graph, egui-snarl)  |  [Master]  |
+|        |                                             |            |
+|        +---------------------------------------------+            |
+|        | SELECTED EFFECT PANEL                       |            |
+|        | (Parameters for currently selected node)    |            |
+|        +---------------------------------------------+            |
++------------------------------------------------------------------+
+| [A] ─────────── morph slider ─────────── [B]                     |
 +------------------------------------------------------------------+
 | 48000 Hz | [Buffer ▼] | 10.7 ms | CPU: 2.3% ▁▂▃▄▅▆▇▆▅▄▃▁        |
 +------------------------------------------------------------------+
@@ -119,7 +121,8 @@ sonido-gui --effect reverb
 
 - **SONIDO**: Application title
 - **Preset Selector**: Drop-down to choose presets (asterisk * indicates unsaved changes)
-- **Save**: Save current settings as a preset
+- **Compile**: Compile the current graph topology to the audio engine
+- **Save**: Save current settings as a preset (native only)
 - **Audio Status**: Green dot = audio running, red dot = audio error
 
 ### Input/Output Sections
@@ -129,41 +132,37 @@ sonido-gui --effect reverb
 - **Output Meter**: Real-time peak and RMS level display
 - **Master Volume**: -40 to +6 dB master output control
 
-### Effect Chain Strip
+### Graph Editor
 
-The chain strip shows all 19 effects in processing order:
+The center panel contains a visual node-graph editor powered by [egui-snarl](https://crates.io/crates/egui-snarl). Nodes represent audio processing elements; wires represent audio signal flow.
 
-| Effect | Short Name | Description |
-|--------|------------|-------------|
-| Preamp | PRE | Clean gain stage |
-| Distortion | DIST | Waveshaping distortion |
-| Compressor | COMP | Dynamics compressor |
-| Gate | GATE | Noise gate |
-| Parametric EQ | EQ | 3-band parametric equalizer |
-| Filter | FLT | Resonant lowpass filter |
-| Wah | WAH | Auto-wah / manual wah |
-| Tremolo | TREM | Amplitude modulation |
-| Chorus | CHO | Modulated delay chorus |
-| Flanger | FLG | Classic flanger effect |
-| Phaser | PHAS | Multi-stage phaser |
-| Vibrato | VIB | 6-unit tape wow/flutter |
-| Delay | DLY | Tape-style feedback delay |
-| Tape | TAPE | Tape saturation |
-| Reverb | REV | Freeverb-style reverb |
-| Limiter | LIM | Brickwall lookahead peak limiter |
-| Bitcrusher | CRUSH | Lo-fi bit depth and sample rate reduction |
-| Ring Modulator | RING | Ring modulation with sine/triangle/square carriers |
-| Stage | STG | Signal conditioning and stereo utility |
+**Node types:**
+- **Input**: Audio source (microphone or file). One per graph.
+- **Output**: Audio sink (speakers). One per graph.
+- **Effect**: Any of the 19 registered effects. Shows category, parameter count.
+- **Split**: Fan-out node (1 input, up to 4 outputs) for parallel paths.
+- **Merge**: Fan-in node (up to 4 inputs, 1 output) for recombining paths.
 
-The chain strip is wrapped in a horizontal `ScrollArea` that activates when the chain overflows the available width. When the chain fits, it is centered.
+Effect nodes are color-coded by category:
+
+| Category | Color | Effects |
+|----------|-------|---------|
+| Dynamics | Steel blue | compressor, gate, limiter |
+| Distortion | Warm red | distortion, preamp, bitcrusher |
+| Modulation | Forest green | chorus, flanger, phaser, tremolo, vibrato, ringmod |
+| Filter | Amber | filter, eq, wah |
+| Time-based | Purple | delay, reverb |
+| Utility | Slate gray | tape, stage |
 
 **Interactions:**
-- **Click**: Select effect to show its parameter panel below
-- **Double-click**: Toggle effect bypass (LED indicator: green = active, dim = bypassed)
-- **Drag**: Reorder effects in the chain (drag left/right)
-- **Right-click**: Context menu with "Remove Effect" and "Bypass"/"Enable" toggle
-- **Hover**: Tooltip showing effect short name (from registry descriptors)
-- **"+" button**: Opens a popup menu listing all registered effects for dynamic addition
+- **Right-click canvas**: Context menu to add nodes (organized by effect category)
+- **Click node**: Select node to show its parameter panel below
+- **Right-click node**: Remove or duplicate
+- **Drag wire**: Connect output pin to input pin
+- **Compile button**: Compiles the graph topology to the audio engine
+
+**Compilation:**
+The Compile button walks the Snarl topology, builds a `ProcessingGraph` (Kahn sort, latency compensation), creates effects via the registry, and produces a `GraphCommand::ReplaceTopology` for atomic swap on the audio thread.
 
 ### Effect Panels
 
@@ -177,6 +176,20 @@ When an effect is selected, its parameter panel appears below the chain. Each pa
 **Common Controls:**
 - **Knob drag**: Vertical drag to adjust value
 - **Knob double-click**: Reset to default value
+
+### A/B Morph Crossfader
+
+The morph bar appears at the bottom of the window (above the status bar). It enables A/B parameter interpolation across all effect slots:
+
+- **[A] button**: Click to capture current parameters as snapshot A (filled circle = captured)
+- **[B] button**: Click to capture current parameters as snapshot B
+- **Crossfader**: Drag to interpolate between A and B (enabled when both captured)
+- **Recall**: Right-click or double-click A/B to recall that snapshot
+
+The interpolation mirrors `KernelParams::lerp()`:
+- Continuous parameters: linear interpolation `va + (vb - va) * t`
+- STEPPED parameters (enum/discrete): snap at `t = 0.5`
+- Bypass state: snap at `t = 0.5`
 
 ### Status Bar
 
@@ -360,10 +373,6 @@ Bypass toggling uses `SmoothedParam::fast` (5ms exponential smoothing) per slot 
 
 When un-bypassing, all effect parameters are re-set to their current values so internal `SmoothedParam`s settle before audio reaches the effect.
 
-### Effect Order Caching
-
-The `EffectOrder` (shared between GUI and audio thread via `parking_lot::RwLock<Vec<usize>>`) has a dirty flag. The audio thread only reads and caches the order when the flag is set, using `clone_from` for heap reuse (avoids reallocation when the Vec capacity is sufficient). This prevents the audio thread from acquiring the RwLock on every buffer.
-
 ## Audio Thread Architecture
 
 ```
@@ -382,14 +391,15 @@ The audio output callback delegates to `AudioProcessor`, a testable struct extra
 
 The `AudioProcessor` owns the `GraphEngine`, `AtomicParamBridge`, effect order cache, file playback state, and metering sender. This extraction enables unit testing of the audio path without a live audio stream.
 
-### Dynamic Effect Chain
+### Graph Topology Changes
 
-Effects are added and removed at runtime via `ChainCommand` messages sent through a `crossbeam_channel`. The audio thread drains commands and applies them to the `GraphEngine`:
+Topology changes are sent via `GraphCommand` messages through a `crossbeam_channel`:
 
-- `ChainCommand::Add { id, effect, descriptors }` — adds the effect to the graph, registers parameter descriptors in the bridge
-- `ChainCommand::Remove { slot }` — removes the effect from the graph, deregisters from the bridge
+- `GraphCommand::Add { id, effect, descriptors }` — adds an effect to the linear chain
+- `GraphCommand::Remove { slot }` — removes an effect from the chain
+- `GraphCommand::ReplaceTopology { engine, effect_ids, slot_descriptors }` — replaces the entire engine with a compiled DAG (used by graph view's Compile button)
 
-The `GraphEngine` handles topology mutations (add/remove/reorder) with automatic recompilation. The `AtomicParamBridge` maintains slot-level parameter storage in lock-free atomics.
+The `AtomicParamBridge::rebuild_from_manifest()` atomically swaps the parameter slot list on `ReplaceTopology`.
 
 ### Widget and Effect UI Consolidation
 
@@ -490,8 +500,11 @@ The level meters now display a combined Peak and RMS visualization:
 
 This design provides clearer visual feedback for level monitoring, inspired by professional DAW meters.
 
-### Drag-and-Drop Reordering
-Effects in the chain can now be dragged to any slot in a single motion. A translucent drop target indicator appears when hovering over a slot. The effect moves directly to the drop location when the mouse is released, making chain rearrangement faster and more intuitive.
+### Visual Node-Graph Editor
+The chain view and DSL console have been replaced by a visual node-graph editor (egui-snarl 0.7.1). Users build audio graphs by adding nodes and connecting them visually, then compile to the audio engine. This subsumes the linear chain view — a linear chain is simply nodes connected left-to-right.
+
+### A/B Morph System
+A crossfade bar at the bottom enables capturing two parameter snapshots and morphing between them in real-time. The interpolation mirrors `KernelParams::lerp()` — continuous params interpolate linearly while stepped params snap at the midpoint.
 
 ## See Also
 
