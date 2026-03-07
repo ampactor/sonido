@@ -373,10 +373,11 @@ Standalone real-time audio effects processor built on egui + cpal.
 
 **Key modules:**
 - `app.rs`: Main application state, UI layout, audio thread management
-- `audio_bridge.rs`: Lock-free communication between UI and audio thread (EffectOrder, AtomicParam)
+- `audio_bridge.rs`: Lock-free communication between UI and audio thread (AtomicParam, metering)
 - `atomic_param_bridge.rs`: `ParamBridge` implementation using AtomicU32 per parameter
-- `chain_view.rs`: Drag-and-drop effect chain with reorder, bypass, add/remove
-- `chain_manager.rs`: `ChainCommand` enum for GUI→audio thread chain mutations
+- `graph_view.rs`: Visual node-graph editor (egui-snarl) with compile-to-engine
+- `morph_state.rs`: A/B morph snapshot capture and lerp-powered crossfade
+- `chain_manager.rs`: `GraphCommand` enum for GUI→audio thread topology mutations
 - `preset_manager.rs`: Preset save/load with categories
 - `file_player.rs`: WAV file playback (native + wasm)
 

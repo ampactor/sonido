@@ -2,7 +2,7 @@
 //!
 //! Uses [`egui_snarl`] to render a draggable, connectable graph of audio
 //! processing nodes. The Snarl topology compiles down to a
-//! [`ProcessingGraph`](sonido_core::graph::ProcessingGraph) via
+//! [`ProcessingGraph`] via
 //! [`compile_to_engine()`](GraphView::compile_to_engine), producing a
 //! [`GraphCommand::ReplaceTopology`] for atomic swap on the audio thread.
 
@@ -41,9 +41,9 @@ pub enum SonidoNode {
         /// Per-parameter smoothing hints.
         smoothing: Vec<SmoothingStyle>,
     },
-    /// Signal splitter: 1 input, up to [`MAX_PORTS`] outputs.
+    /// Signal splitter: 1 input, up to 8 outputs.
     Split,
-    /// Signal merger: up to [`MAX_PORTS`] inputs, 1 output.
+    /// Signal merger: up to 8 inputs, 1 output.
     Merge,
 }
 
