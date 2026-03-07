@@ -13,6 +13,7 @@
 
 mod bridged_knob;
 pub mod glow;
+pub mod led_display;
 mod knob;
 mod meter;
 mod morph_bar;
@@ -22,6 +23,7 @@ pub use bridged_knob::{
     bridged_combo, bridged_knob, bridged_knob_fmt, bridged_knob_with_morph, gesture_wrap,
 };
 pub use knob::Knob;
+pub use led_display::LedDisplay;
 pub use meter::{GainReductionMeter, LevelMeter};
 pub use morph_bar::{MorphBarResponse, morph_bar};
 pub use toggle::{BypassToggle, FootswitchToggle};
