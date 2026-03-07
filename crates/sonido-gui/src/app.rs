@@ -14,14 +14,14 @@ use crate::preset_manager::PresetManager;
 use crate::theme::Theme;
 use crate::widgets::{Knob, LevelMeter};
 use egui::{
-    Align, CentralPanel, Color32, Context, FontId, Frame, Layout, Margin, Rect, Stroke,
-    TopBottomPanel, UiBuilder, pos2, vec2,
+    Align, CentralPanel, Context, FontId, Frame, Layout, Margin, Rect, Stroke, TopBottomPanel,
+    UiBuilder, pos2, vec2,
 };
 use sonido_gui_core::effects_ui;
 use sonido_gui_core::theme::SonidoTheme;
 use sonido_gui_core::widgets::glow;
 use sonido_gui_core::widgets::morph_bar;
-use sonido_gui_core::{ParamBridge, SlotIndex};
+use sonido_gui_core::{LedDisplay, ParamBridge, SlotIndex};
 use sonido_registry::EffectRegistry;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -337,10 +337,13 @@ impl SonidoApp {
 
     /// Render the header/toolbar.
     fn render_header(&mut self, ui: &mut egui::Ui) {
+        let theme = SonidoTheme::get(ui.ctx());
+
         ui.horizontal(|ui| {
             ui.heading(
                 egui::RichText::new("SONIDO")
-                    .color(Color32::from_rgb(100, 180, 255))
+                    .font(FontId::monospace(18.0))
+                    .color(theme.colors.amber)
                     .strong(),
             );
 
@@ -370,7 +373,11 @@ impl SonidoApp {
 
             let mut selected_preset = None;
             egui::ComboBox::from_id_salt("preset_selector")
-                .selected_text(&display_name)
+                .selected_text(
+                    egui::RichText::new(&display_name)
+                        .font(FontId::monospace(12.0))
+                        .color(theme.colors.text_primary),
+                )
                 .width(150.0)
                 .show_ui(ui, |ui| {
                     for (i, name) in &preset_names {
@@ -396,7 +403,8 @@ impl SonidoApp {
 
                 let compile_btn = ui.button(
                     egui::RichText::new("Compile")
-                        .color(Color32::from_rgb(100, 200, 100))
+                        .font(FontId::monospace(12.0))
+                        .color(theme.colors.green)
                         .strong(),
                 );
                 if compile_btn.clicked() {
@@ -417,7 +425,8 @@ impl SonidoApp {
                 if let Some(ref err) = self.compile_error {
                     ui.label(
                         egui::RichText::new(err)
-                            .color(Color32::from_rgb(220, 100, 100))
+                            .font(FontId::monospace(10.0))
+                            .color(theme.colors.red)
                             .small(),
                     );
                 }
@@ -425,7 +434,14 @@ impl SonidoApp {
 
             // Save button (native only — no filesystem on wasm)
             #[cfg(not(target_arch = "wasm32"))]
-            if ui.button("Save").clicked() {
+            if ui
+                .button(
+                    egui::RichText::new("Save")
+                        .font(FontId::monospace(12.0))
+                        .color(theme.colors.text_primary),
+                )
+                .clicked()
+            {
                 self.show_save_dialog = true;
                 self.new_preset_name = self
                     .preset_manager
@@ -435,20 +451,28 @@ impl SonidoApp {
             }
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // Audio status indicator
+                // Audio status indicator — glowing circle
                 let status_color = if self.audio_bridge.is_running() {
-                    Color32::from_rgb(80, 200, 80)
+                    theme.colors.green
                 } else {
-                    Color32::from_rgb(200, 80, 80)
+                    theme.colors.red
                 };
-                ui.label(egui::RichText::new("●").color(status_color).size(12.0));
+                let (indicator_rect, _) =
+                    ui.allocate_exact_size(vec2(14.0, 14.0), egui::Sense::hover());
+                glow::glow_circle(
+                    ui.painter(),
+                    indicator_rect.center(),
+                    4.0,
+                    status_color,
+                    &theme,
+                );
 
                 let err_count = self.audio_bridge.error_count().load(Ordering::Relaxed);
                 if err_count > 0 {
                     ui.label(
                         egui::RichText::new(format!("audio errors: {err_count}"))
-                            .color(Color32::from_rgb(220, 100, 100))
-                            .small(),
+                            .font(FontId::monospace(10.0))
+                            .color(theme.colors.red),
                     );
                 }
 
@@ -456,8 +480,8 @@ impl SonidoApp {
                 if let Some(ref error) = self.audio_error {
                     ui.label(
                         egui::RichText::new(error)
-                            .color(Color32::from_rgb(220, 100, 100))
-                            .small(),
+                            .font(FontId::monospace(10.0))
+                            .color(theme.colors.red),
                     );
                     retry = ui.small_button("Retry").clicked();
                 }
@@ -518,13 +542,15 @@ impl SonidoApp {
 
     /// Render the I/O section with meters and gain controls.
     fn render_io_section(&mut self, ui: &mut egui::Ui) {
+        let theme = SonidoTheme::get(ui.ctx());
+
         ui.group(|ui| {
             ui.set_min_width(80.0);
             ui.vertical_centered(|ui| {
                 ui.label(
                     egui::RichText::new("INPUT")
-                        .small()
-                        .color(Color32::from_rgb(150, 150, 160)),
+                        .font(FontId::monospace(12.0))
+                        .color(theme.colors.cyan),
                 );
 
                 ui.add_space(4.0);
@@ -558,13 +584,15 @@ impl SonidoApp {
 
     /// Render the output section.
     fn render_output_section(&mut self, ui: &mut egui::Ui) {
+        let theme = SonidoTheme::get(ui.ctx());
+
         ui.group(|ui| {
             ui.set_min_width(80.0);
             ui.vertical_centered(|ui| {
                 ui.label(
                     egui::RichText::new("OUTPUT")
-                        .small()
-                        .color(Color32::from_rgb(150, 150, 160)),
+                        .font(FontId::monospace(12.0))
+                        .color(theme.colors.cyan),
                 );
 
                 ui.add_space(4.0);
@@ -685,23 +713,42 @@ impl SonidoApp {
 
     /// Render the status bar.
     fn render_status_bar(&mut self, ui: &mut egui::Ui) {
+        let theme = SonidoTheme::get(ui.ctx());
+
         ui.horizontal(|ui| {
+            // BYPASS button with glow indicator
             let chain_bypassed = self.audio_bridge.chain_bypass().load(Ordering::Relaxed);
-            let bypass_text = if chain_bypassed {
-                egui::RichText::new("BYPASS")
-                    .color(Color32::from_rgb(255, 80, 80))
-                    .strong()
+            let bypass_color = if chain_bypassed {
+                theme.colors.red
             } else {
-                egui::RichText::new("BYPASS").color(Color32::from_rgb(100, 100, 110))
+                theme.colors.dim
             };
-            if ui.button(bypass_text).clicked() {
+
+            let bypass_btn = ui.button(
+                egui::RichText::new("BYPASS")
+                    .font(FontId::monospace(11.0))
+                    .color(bypass_color)
+                    .strong(),
+            );
+
+            // Draw glow circle next to the bypass button
+            let circle_center = pos2(
+                bypass_btn.rect.right() + 8.0,
+                bypass_btn.rect.center().y,
+            );
+            glow::glow_circle(ui.painter(), circle_center, 3.0, bypass_color, &theme);
+            // Reserve space for the glow indicator
+            ui.add_space(10.0);
+
+            if bypass_btn.clicked() {
                 self.audio_bridge
                     .chain_bypass()
                     .store(!chain_bypassed, Ordering::SeqCst);
             }
             ui.separator();
 
-            ui.label(format!("{:.0} Hz", self.sample_rate));
+            // Sample rate — LED display
+            ui.add(LedDisplay::new(format!("{:.0}Hz", self.sample_rate)).color(theme.colors.amber));
             ui.separator();
 
             // Buffer size selector
@@ -718,10 +765,14 @@ impl SonidoApp {
             let mut selected_preset = None;
             egui::ComboBox::from_id_salt("buffer_size_selector")
                 .selected_text(
-                    preset_names
-                        .get(current_idx)
-                        .cloned()
-                        .unwrap_or_else(|| "Unknown".to_string()),
+                    egui::RichText::new(
+                        preset_names
+                            .get(current_idx)
+                            .cloned()
+                            .unwrap_or_else(|| "Unknown".to_string()),
+                    )
+                    .font(FontId::monospace(10.0))
+                    .color(theme.colors.text_secondary),
                 )
                 .width(200.0)
                 .show_ui(ui, |ui| {
@@ -737,22 +788,32 @@ impl SonidoApp {
             }
 
             ui.separator();
+
+            // Latency — LED display
             let latency_ms = self.buffer_size as f32 / self.sample_rate * 1000.0;
-            ui.label(format!("{:.1} ms", latency_ms));
+            ui.add(
+                LedDisplay::new(format!("{:.1}ms", latency_ms)).color(theme.colors.amber),
+            );
             ui.separator();
+
+            // CPU meter — color-coded by load
             let cpu_text = format!("CPU: {:.1}%", self.cpu_usage);
             #[cfg(debug_assertions)]
             let cpu_text = format!("{cpu_text} (debug)");
             let cpu_color = if self.cpu_usage > 100.0 {
-                Color32::from_rgb(255, 80, 80)
+                theme.colors.red
             } else if self.cpu_usage > 80.0 {
-                Color32::from_rgb(255, 200, 80)
+                theme.colors.yellow
             } else {
-                Color32::from_rgb(150, 150, 160)
+                theme.colors.green
             };
-            ui.label(egui::RichText::new(&cpu_text).color(cpu_color));
+            ui.label(
+                egui::RichText::new(&cpu_text)
+                    .font(FontId::monospace(11.0))
+                    .color(cpu_color),
+            );
 
-            // CPU usage sparkline graph (custom drawn)
+            // CPU usage sparkline graph (glow oscilloscope style)
             if !self.cpu_history.is_empty() {
                 draw_sparkline(ui, &self.cpu_history, cpu_color, 100.0, 24.0);
             }
@@ -807,11 +868,13 @@ impl SonidoApp {
     }
 }
 
-/// Draw a simple sparkline graph from a history of values.
-fn draw_sparkline(ui: &mut egui::Ui, history: &[f32], color: Color32, width: f32, height: f32) {
+/// Draw a sparkline graph with phosphor glow from a history of values.
+fn draw_sparkline(ui: &mut egui::Ui, history: &[f32], color: egui::Color32, width: f32, height: f32) {
     if history.is_empty() {
         return;
     }
+
+    let theme = SonidoTheme::get(ui.ctx());
 
     let (graph_rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
     let painter = ui.painter();
@@ -821,8 +884,8 @@ fn draw_sparkline(ui: &mut egui::Ui, history: &[f32], color: Color32, width: f32
     let max_val = history.iter().copied().fold(f32::NEG_INFINITY, f32::max);
     let range = (max_val - min_val).max(1.0); // Avoid division by zero
 
-    // Draw background area (semi-transparent)
-    painter.rect_filled(graph_rect, 2.0, Color32::from_black_alpha(20));
+    // Draw background area (void)
+    painter.rect_filled(graph_rect, 2.0, theme.colors.void);
 
     // Draw polyline
     let mut points = Vec::new();
@@ -835,15 +898,16 @@ fn draw_sparkline(ui: &mut egui::Ui, history: &[f32], color: Color32, width: f32
         points.push(pos2(x, y));
     }
 
+    // Glow line segments for CRT oscilloscope look
     if points.len() >= 2 {
-        painter.extend(points.windows(2).map(|window| {
-            egui::Shape::line_segment([window[0], window[1]], egui::Stroke::new(1.5, color))
-        }));
+        for window in points.windows(2) {
+            glow::glow_line(painter, window[0], window[1], color, 1.5, &theme);
+        }
     }
 
-    // Draw dots at data points (small)
+    // Glow dots at data points
     for point in &points {
-        painter.circle_filled(*point, 1.5, color);
+        glow::glow_circle(painter, *point, 1.0, color, &theme);
     }
 }
 
@@ -981,13 +1045,14 @@ impl eframe::App for SonidoApp {
                     self.render_effect_panel(&mut child, SlotIndex(0));
                 } else {
                     // Graph editor fills the upper portion
+                    let theme = SonidoTheme::get(child.ctx());
                     let selected_slot = child
                         .group(|ui| {
                             ui.vertical_centered(|ui| {
                                 ui.label(
                                     egui::RichText::new("GRAPH EDITOR")
-                                        .small()
-                                        .color(Color32::from_rgb(150, 150, 160)),
+                                        .font(FontId::monospace(12.0))
+                                        .color(theme.colors.cyan),
                                 );
                                 ui.add_space(4.0);
                                 self.graph_view.show(ui)
