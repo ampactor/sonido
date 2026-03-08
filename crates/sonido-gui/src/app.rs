@@ -643,7 +643,8 @@ impl SonidoApp {
     /// Render the effect panel for the selected slot.
     ///
     /// The panel widget is cached in `self.cached_panel` and only reconstructed
-    /// when the selected slot or effect type changes.
+    /// when the selected slot or effect type changes. Includes an inline morph
+    /// bar in the title row when in multi-effect mode.
     fn render_effect_panel(&mut self, ui: &mut egui::Ui, slot: sonido_gui_core::SlotIndex) {
         let effect_id = self.bridge.effect_id(slot);
         let panel_name = self
@@ -664,7 +665,6 @@ impl SonidoApp {
 
         let theme = SonidoTheme::get(ui.ctx());
 
-        // Hardware module enclosure — arcade CRT chassis
         let panel_frame = Frame::new()
             .fill(theme.colors.void)
             .stroke(Stroke::new(2.0, theme.colors.amber))
@@ -672,56 +672,72 @@ impl SonidoApp {
             .inner_margin(Margin::same(theme.sizing.panel_padding as i8));
 
         let panel_response = panel_frame.show(ui, |ui| {
-            // Module title — monospace amber, centered
-            ui.vertical_centered(|ui| {
+            // Title row: effect name + morph bar + bypass
+            ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(panel_name)
-                        .font(FontId::monospace(14.0))
+                        .font(FontId::monospace(12.0))
                         .color(theme.colors.amber)
                         .strong(),
                 );
-            });
-            ui.add_space(4.0);
-            ui.separator();
-            ui.add_space(8.0);
 
-            // Effect controls — no ScrollArea, all controls visible
+                // Inline morph bar
+                if !self.single_effect {
+                    ui.add_space(8.0);
+                    let has_a = self.morph_state.a.is_some();
+                    let has_b = self.morph_state.b.is_some();
+                    let resp = morph_bar(ui, &mut self.morph_state.t, has_a, has_b);
+                    if resp.capture_a {
+                        self.morph_state.capture_a(&*self.bridge);
+                    }
+                    if resp.capture_b {
+                        self.morph_state.capture_b(&*self.bridge);
+                    }
+                    if resp.recall_a {
+                        self.morph_state.recall_a(&*self.bridge);
+                    }
+                    if resp.recall_b {
+                        self.morph_state.recall_b(&*self.bridge);
+                    }
+                    if resp.t_changed {
+                        self.morph_state.active = true;
+                        self.morph_state.apply(&*self.bridge);
+                    }
+                }
+
+                // Bypass toggle right-aligned
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let is_bypassed = self.bridge.is_bypassed(slot);
+                    let bypass_text = if is_bypassed { "BYP" } else { "ON" };
+                    let bypass_color = if is_bypassed {
+                        theme.colors.red
+                    } else {
+                        theme.colors.green
+                    };
+                    if ui
+                        .button(
+                            egui::RichText::new(bypass_text)
+                                .font(FontId::monospace(10.0))
+                                .color(bypass_color),
+                        )
+                        .clicked()
+                    {
+                        self.bridge.set_bypassed(slot, !is_bypassed);
+                    }
+                });
+            });
+
+            ui.add_space(4.0);
+
+            // Effect controls
             if let Some((_, _, ref mut panel)) = self.cached_panel {
                 let bridge: &dyn ParamBridge = &*self.bridge;
                 panel.ui(ui, bridge, slot);
             }
         });
 
-        // Scanline overlay on the effect panel
         let panel_rect = panel_response.response.rect;
         glow::scanlines(ui.painter(), panel_rect, &theme);
-    }
-
-    /// Render the morph crossfader bar.
-    ///
-    /// Only shown when not in single-effect mode.
-    fn render_morph_bar(&mut self, ui: &mut egui::Ui) {
-        let has_a = self.morph_state.a.is_some();
-        let has_b = self.morph_state.b.is_some();
-
-        let resp = morph_bar(ui, &mut self.morph_state.t, has_a, has_b);
-
-        if resp.capture_a {
-            self.morph_state.capture_a(&*self.bridge);
-        }
-        if resp.capture_b {
-            self.morph_state.capture_b(&*self.bridge);
-        }
-        if resp.recall_a {
-            self.morph_state.recall_a(&*self.bridge);
-        }
-        if resp.recall_b {
-            self.morph_state.recall_b(&*self.bridge);
-        }
-        if resp.t_changed {
-            self.morph_state.active = true;
-            self.morph_state.apply(&*self.bridge);
-        }
     }
 
     /// Render the status bar.
