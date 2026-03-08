@@ -13,6 +13,7 @@ pub mod graph_view;
 pub mod morph_state;
 pub mod preset_manager;
 pub mod session;
+pub mod signal_generator;
 pub mod theme;
 pub mod widgets;
 
