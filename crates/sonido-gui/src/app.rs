@@ -692,83 +692,16 @@ impl SonidoApp {
         let theme = SonidoTheme::get(ui.ctx());
 
         ui.horizontal(|ui| {
-            // BYPASS button with glow indicator
-            let chain_bypassed = self.audio_bridge.chain_bypass().load(Ordering::Relaxed);
-            let bypass_color = if chain_bypassed {
-                theme.colors.red
-            } else {
-                theme.colors.dim
-            };
-
-            let bypass_btn = ui.button(
-                egui::RichText::new("BYPASS")
-                    .font(FontId::monospace(11.0))
-                    .color(bypass_color)
-                    .strong(),
+            // Sample rate LED
+            ui.add(
+                LedDisplay::new(format!("{:.0}Hz", self.sample_rate)).color(theme.colors.amber),
             );
-
-            // Draw glow circle next to the bypass button
-            let circle_center = pos2(
-                bypass_btn.rect.right() + 8.0,
-                bypass_btn.rect.center().y,
-            );
-            glow::glow_circle(ui.painter(), circle_center, 3.0, bypass_color, &theme);
-            // Reserve space for the glow indicator
-            ui.add_space(10.0);
-
-            if bypass_btn.clicked() {
-                self.audio_bridge
-                    .chain_bypass()
-                    .store(!chain_bypassed, Ordering::SeqCst);
-            }
             ui.separator();
 
-            // Sample rate — LED display
-            ui.add(LedDisplay::new(format!("{:.0}Hz", self.sample_rate)).color(theme.colors.amber));
-            ui.separator();
-
-            // Buffer size selector
-            let presets = self.get_buffer_presets();
-            let preset_names: Vec<String> = presets
-                .iter()
-                .map(|(_, desc, _)| desc.to_string())
-                .collect();
-            let current_idx = presets
-                .iter()
-                .position(|&(size, _, _)| size == self.buffer_size)
-                .unwrap_or(2); // Default to "Stable"
-
-            let mut selected_preset = None;
-            egui::ComboBox::from_id_salt("buffer_size_selector")
-                .selected_text(
-                    egui::RichText::new(
-                        preset_names
-                            .get(current_idx)
-                            .cloned()
-                            .unwrap_or_else(|| "Unknown".to_string()),
-                    )
-                    .font(FontId::monospace(10.0))
-                    .color(theme.colors.text_secondary),
-                )
-                .width(200.0)
-                .show_ui(ui, |ui| {
-                    for (idx, name) in preset_names.iter().enumerate() {
-                        if ui.selectable_label(idx == current_idx, name).clicked() {
-                            selected_preset = Some(idx);
-                        }
-                    }
-                });
-
-            if let Some((size, _, _)) = selected_preset.and_then(|i| presets.get(i)) {
-                self.set_buffer_size(*size);
-            }
-
-            ui.separator();
-
-            // Latency — LED display
+            // Latency LED
             let latency_ms = self.buffer_size as f32 / self.sample_rate * 1000.0;
             ui.add(
-                LedDisplay::new(format!("{:.1}ms", latency_ms)).color(theme.colors.amber),
+                LedDisplay::new(format!("{latency_ms:.1}ms")).color(theme.colors.amber),
             );
             ui.separator();
 
@@ -784,7 +717,6 @@ impl SonidoApp {
                 theme.colors.green
             };
 
-            // Fixed-width container: sparkline stays put regardless of text width
             ui.allocate_ui_with_layout(
                 vec2(240.0, 24.0),
                 Layout::left_to_right(Align::Center),
@@ -800,6 +732,12 @@ impl SonidoApp {
                     }
                 },
             );
+
+            // File player transport (inline, only when file input active)
+            if self.file_player.use_file_input() {
+                ui.separator();
+                self.file_player.render_compact(ui);
+            }
         });
     }
 
@@ -915,24 +853,6 @@ impl eframe::App for SonidoApp {
             self.render_status_bar(ui);
             ui.add_space(2.0);
         });
-
-        // File player bar (above status bar when file input active)
-        if self.file_player.use_file_input() {
-            TopBottomPanel::bottom("file_player").show(ctx, |ui| {
-                ui.add_space(2.0);
-                self.file_player.ui(ui);
-                ui.add_space(2.0);
-            });
-        }
-
-        // Morph bar (above file player, only in multi-effect mode)
-        if !self.single_effect {
-            TopBottomPanel::bottom("morph_bar").show(ctx, |ui| {
-                ui.add_space(2.0);
-                self.render_morph_bar(ui);
-                ui.add_space(2.0);
-            });
-        }
 
         // Main content
         CentralPanel::default().show(ctx, |ui| {
