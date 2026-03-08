@@ -2,6 +2,7 @@
 //!
 //! Reusable widgets for building audio effect interfaces:
 //! - [`Knob`] — Rotary control with drag, fine control, and double-click reset
+//! - [`Fader`] — Vertical slot fader with LED-segment fill
 //! - [`bridged_knob`] — Bridge-aware knob with auto-format and gesture protocol
 //! - [`bridged_knob_fmt`] — Bridge-aware knob with custom formatter
 //! - [`bridged_combo`] — Bridge-aware combo box for enum parameters
@@ -12,6 +13,7 @@
 //! - [`FootswitchToggle`] — Large pedal-style toggle for the chain view
 
 mod bridged_knob;
+pub mod fader;
 pub mod glow;
 pub mod led_display;
 mod knob;
@@ -22,6 +24,7 @@ mod toggle;
 pub use bridged_knob::{
     bridged_combo, bridged_knob, bridged_knob_fmt, bridged_knob_with_morph, gesture_wrap,
 };
+pub use fader::Fader;
 pub use knob::Knob;
 pub use led_display::LedDisplay;
 pub use meter::{GainReductionMeter, LevelMeter};
