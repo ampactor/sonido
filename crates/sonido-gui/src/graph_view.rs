@@ -702,46 +702,99 @@ impl SnarlViewer<SonidoNode> for SonidoViewer<'_> {
         _scale: f32,
         snarl: &mut Snarl<SonidoNode>,
     ) {
-        ui.label("Add Node");
+        // Search filter — persisted across frames via egui temp data
+        let filter_id = egui::Id::new("graph_menu_filter");
+        let mut filter: String = ui
+            .data(|d| d.get_temp::<String>(filter_id))
+            .unwrap_or_default();
+
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new("Search")
+                    .font(FontId::monospace(10.0))
+                    .color(self.theme.colors.text_secondary),
+            );
+            let response = ui.text_edit_singleline(&mut filter);
+            // Auto-focus the search field when the menu opens
+            if response.gained_focus() || ui.memory(|m| m.focused().is_none()) {
+                response.request_focus();
+            }
+        });
+        ui.data_mut(|d| d.insert_temp(filter_id, filter.clone()));
+
+        let filter_lower = filter.to_lowercase();
         ui.separator();
 
-        if ui.button("Input").clicked() {
-            snarl.insert_node(pos, SonidoNode::Input);
-            *self.topology_changed = true;
-            ui.close_menu();
-        }
-        if ui.button("Output").clicked() {
-            snarl.insert_node(pos, SonidoNode::Output);
-            *self.topology_changed = true;
-            ui.close_menu();
-        }
-        if ui.button("Split").clicked() {
-            snarl.insert_node(pos, SonidoNode::Split);
-            *self.topology_changed = true;
-            ui.close_menu();
-        }
-        if ui.button("Merge").clicked() {
-            snarl.insert_node(pos, SonidoNode::Merge);
-            *self.topology_changed = true;
-            ui.close_menu();
-        }
+        if filter.is_empty() {
+            // Structural nodes (only shown when no filter is active)
+            if ui.button("Input").clicked() {
+                snarl.insert_node(pos, SonidoNode::Input);
+                *self.topology_changed = true;
+                ui.close_menu();
+            }
+            if ui.button("Output").clicked() {
+                snarl.insert_node(pos, SonidoNode::Output);
+                *self.topology_changed = true;
+                ui.close_menu();
+            }
+            if ui.button("Split").clicked() {
+                snarl.insert_node(pos, SonidoNode::Split);
+                *self.topology_changed = true;
+                ui.close_menu();
+            }
+            if ui.button("Merge").clicked() {
+                snarl.insert_node(pos, SonidoNode::Merge);
+                *self.topology_changed = true;
+                ui.close_menu();
+            }
 
-        ui.separator();
+            ui.separator();
 
-        let registry = EffectRegistry::new();
-        let categories = [
-            EffectCategory::Dynamics,
-            EffectCategory::Distortion,
-            EffectCategory::Modulation,
-            EffectCategory::Filter,
-            EffectCategory::TimeBased,
-            EffectCategory::Utility,
-        ];
+            // Category submenus (existing behavior when no filter)
+            let registry = EffectRegistry::new();
+            let categories = [
+                EffectCategory::Dynamics,
+                EffectCategory::Distortion,
+                EffectCategory::Modulation,
+                EffectCategory::Filter,
+                EffectCategory::TimeBased,
+                EffectCategory::Utility,
+            ];
 
-        for cat in categories {
-            ui.menu_button(cat.name(), |ui| {
-                for desc in registry.effects_in_category(cat) {
-                    if ui.button(desc.name).clicked() {
+            for cat in categories {
+                ui.menu_button(cat.name(), |ui| {
+                    for desc in registry.effects_in_category(cat) {
+                        if ui.button(desc.name).clicked() {
+                            let descriptors = collect_descriptors(desc.id, 48000.0);
+                            let smoothing = collect_smoothing(desc.id, 48000.0);
+                            snarl.insert_node(
+                                pos,
+                                SonidoNode::Effect {
+                                    effect_id: desc.id,
+                                    name: desc.name,
+                                    category: desc.category,
+                                    descriptors,
+                                    smoothing,
+                                },
+                            );
+                            *self.topology_changed = true;
+                            ui.close_menu();
+                        }
+                    }
+                });
+            }
+        } else {
+            // Flat filtered list — show matching effects with category color
+            let registry = EffectRegistry::new();
+            for desc in registry.all_effects() {
+                if desc.name.to_lowercase().contains(&filter_lower)
+                    || desc.id.contains(&filter_lower)
+                {
+                    let cat_color = category_color(desc.category, &self.theme);
+                    if ui
+                        .button(RichText::new(desc.name).color(cat_color))
+                        .clicked()
+                    {
                         let descriptors = collect_descriptors(desc.id, 48000.0);
                         let smoothing = collect_smoothing(desc.id, 48000.0);
                         snarl.insert_node(
@@ -755,10 +808,12 @@ impl SnarlViewer<SonidoNode> for SonidoViewer<'_> {
                             },
                         );
                         *self.topology_changed = true;
+                        // Clear filter for next open
+                        ui.data_mut(|d| d.insert_temp::<String>(filter_id, String::new()));
                         ui.close_menu();
                     }
                 }
-            });
+            }
         }
     }
 
