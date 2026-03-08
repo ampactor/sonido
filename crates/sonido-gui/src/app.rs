@@ -173,7 +173,7 @@ impl SonidoApp {
         if !single_effect {
             match app
                 .graph_view
-                .compile_to_engine(app.sample_rate, app.buffer_size)
+                .compile_to_engine(app.sample_rate, app.buffer_size, &app.registry)
             {
                 Ok(cmd) => app.audio_bridge.send_command(cmd),
                 Err(e) => tracing::warn!("initial graph compile failed: {e}"),
@@ -426,7 +426,7 @@ impl SonidoApp {
                 if compile_btn.clicked() {
                     match self
                         .graph_view
-                        .compile_to_engine(self.sample_rate, self.buffer_size)
+                        .compile_to_engine(self.sample_rate, self.buffer_size, &self.registry)
                     {
                         Ok(cmd) => {
                             self.audio_bridge.send_command(cmd);
@@ -1089,6 +1089,24 @@ impl eframe::App for SonidoApp {
                             .inner
                         })
                         .inner;
+
+                    // Auto-compile when topology changes (connect/disconnect/insert/remove)
+                    if self.graph_view.topology_changed {
+                        match self
+                            .graph_view
+                            .compile_to_engine(self.sample_rate, self.buffer_size, &self.registry)
+                        {
+                            Ok(cmd) => {
+                                self.audio_bridge.send_command(cmd);
+                                self.compile_error = None;
+                                self.compile_success_frames = 90;
+                            }
+                            Err(e) => {
+                                self.compile_error = Some(e.to_string());
+                                self.compile_success_frames = 0;
+                            }
+                        }
+                    }
 
                     child.add_space(16.0);
 

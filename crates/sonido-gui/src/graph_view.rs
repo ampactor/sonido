@@ -82,6 +82,9 @@ pub struct GraphView {
     pub selected_node: Option<NodeId>,
     /// Visual style configuration.
     pub style: SnarlStyle,
+    /// Set to `true` when a connect/disconnect/remove/insert changes the
+    /// topology. Checked by the app after `show()` to trigger auto-compile.
+    pub topology_changed: bool,
 }
 
 impl GraphView {
@@ -104,10 +107,16 @@ impl GraphView {
                 input: 0,
             },
         );
+        let mut style = SnarlStyle::new();
+        // Audio graph nodes should never collapse — collapsing hides pins
+        // and body, breaking visual wire connections and confusing the layout.
+        style.collapsible = Some(false);
+
         Self {
             snarl,
             selected_node: None,
-            style: SnarlStyle::new(),
+            style,
+            topology_changed: false,
         }
     }
 
@@ -117,19 +126,27 @@ impl GraphView {
     /// The returned `usize` corresponds to the effect's position among
     /// all Effect nodes in the graph (useful for param-bridge indexing).
     pub fn show(&mut self, ui: &mut Ui) -> Option<usize> {
+        self.topology_changed = false;
         let theme = SonidoTheme::get(ui.ctx());
         let mut click_handled = false;
         let mut viewer = SonidoViewer {
             selected_node: &mut self.selected_node,
             click_handled: &mut click_handled,
+            topology_changed: &mut self.topology_changed,
             theme,
         };
         self.snarl
             .show(&mut viewer, &self.style, "sonido_graph", ui);
 
-        // Click on empty space deselects
+        // Click on empty space deselects — only within the graph area.
+        // Without the rect check, clicks on the effect panel (below the graph)
+        // would deselect the node and hide the panel.
         if !click_handled && ui.input(|i| i.pointer.primary_pressed()) {
-            self.selected_node = None;
+            if let Some(pos) = ui.input(|i| i.pointer.interact_pos()) {
+                if ui.max_rect().contains(pos) {
+                    self.selected_node = None;
+                }
+            }
         }
 
         // Map selected NodeId to an effect slot index.
@@ -160,8 +177,8 @@ impl GraphView {
         &self,
         sample_rate: f32,
         block_size: usize,
+        registry: &EffectRegistry,
     ) -> Result<GraphCommand, CompileError> {
-        let registry = EffectRegistry::new();
         let mut graph = ProcessingGraph::new(sample_rate, block_size);
 
         // Map Snarl NodeIds to ProcessingGraph NodeIds.
@@ -279,6 +296,9 @@ struct SonidoViewer<'a> {
     /// Set to `true` when a node click is detected, preventing empty-space
     /// deselection on the same frame.
     click_handled: &'a mut bool,
+    /// Set to `true` when a connect/disconnect/remove/insert changes the
+    /// topology, signalling the app to auto-compile.
+    topology_changed: &'a mut bool,
     /// Arcade CRT theme snapshot for palette access.
     theme: SonidoTheme,
 }
@@ -313,7 +333,18 @@ impl SnarlViewer<SonidoNode> for SonidoViewer<'_> {
         _outputs: &[OutPin],
         snarl: &Snarl<SonidoNode>,
     ) -> egui::Frame {
-        let accent = self.node_accent(&snarl[node]);
+        let node_data = &snarl[node];
+
+        // I/O nodes are represented by the sidebar strips — render minimal
+        if matches!(node_data, SonidoNode::Input | SonidoNode::Output) {
+            return egui::Frame::new()
+                .fill(Color32::TRANSPARENT)
+                .stroke(Stroke::NONE)
+                .corner_radius(0.0)
+                .inner_margin(2.0);
+        }
+
+        let accent = self.node_accent(node_data);
         let is_selected = *self.selected_node == Some(node);
         let (stroke_width, fill) = if is_selected {
             (2.0, accent.gamma_multiply(0.08))
@@ -335,7 +366,18 @@ impl SnarlViewer<SonidoNode> for SonidoViewer<'_> {
         _outputs: &[OutPin],
         snarl: &Snarl<SonidoNode>,
     ) -> egui::Frame {
-        let accent = self.node_accent(&snarl[node]);
+        let node_data = &snarl[node];
+
+        // I/O nodes: minimal transparent header
+        if matches!(node_data, SonidoNode::Input | SonidoNode::Output) {
+            return egui::Frame::new()
+                .fill(Color32::TRANSPARENT)
+                .stroke(Stroke::NONE)
+                .corner_radius(0.0)
+                .inner_margin(1.0);
+        }
+
+        let accent = self.node_accent(node_data);
         // Subtle tinted header background — the accent at very low alpha
         let header_bg = accent.gamma_multiply(0.10);
         egui::Frame::new()
@@ -354,9 +396,22 @@ impl SnarlViewer<SonidoNode> for SonidoViewer<'_> {
         _scale: f32,
         snarl: &mut Snarl<SonidoNode>,
     ) {
-        let accent = self.node_accent(&snarl[node]);
+        let node_data = &snarl[node];
+
+        // I/O nodes: tiny label, they're implicit in the sidebar
+        if matches!(node_data, SonidoNode::Input | SonidoNode::Output) {
+            let title = self.title(node_data);
+            ui.label(
+                RichText::new(title)
+                    .font(FontId::monospace(8.0))
+                    .color(self.theme.colors.text_secondary.gamma_multiply(0.5)),
+            );
+            return;
+        }
+
+        let accent = self.node_accent(node_data);
         let is_selected = *self.selected_node == Some(node);
-        let title = self.title(&snarl[node]);
+        let title = self.title(node_data);
 
         // Bold the title if selected — plain label (no Sense) to avoid
         // stealing pointer events from snarl's node drag system.
@@ -421,8 +476,8 @@ impl SnarlViewer<SonidoNode> for SonidoViewer<'_> {
             .with_wire_color(color)
     }
 
-    fn has_body(&mut self, node: &SonidoNode) -> bool {
-        matches!(node, SonidoNode::Effect { .. })
+    fn has_body(&mut self, _node: &SonidoNode) -> bool {
+        false
     }
 
     fn show_body(
@@ -471,18 +526,22 @@ impl SnarlViewer<SonidoNode> for SonidoViewer<'_> {
 
         if ui.button("Input").clicked() {
             snarl.insert_node(pos, SonidoNode::Input);
+            *self.topology_changed = true;
             ui.close_menu();
         }
         if ui.button("Output").clicked() {
             snarl.insert_node(pos, SonidoNode::Output);
+            *self.topology_changed = true;
             ui.close_menu();
         }
         if ui.button("Split").clicked() {
             snarl.insert_node(pos, SonidoNode::Split);
+            *self.topology_changed = true;
             ui.close_menu();
         }
         if ui.button("Merge").clicked() {
             snarl.insert_node(pos, SonidoNode::Merge);
+            *self.topology_changed = true;
             ui.close_menu();
         }
 
@@ -514,6 +573,7 @@ impl SnarlViewer<SonidoNode> for SonidoViewer<'_> {
                                 smoothing,
                             },
                         );
+                        *self.topology_changed = true;
                         ui.close_menu();
                     }
                 }
@@ -540,6 +600,7 @@ impl SnarlViewer<SonidoNode> for SonidoViewer<'_> {
                 *self.selected_node = None;
             }
             snarl.remove_node(node);
+            *self.topology_changed = true;
             ui.close_menu();
             return;
         }
@@ -551,6 +612,7 @@ impl SnarlViewer<SonidoNode> for SonidoViewer<'_> {
                 .map_or(egui::pos2(0.0, 0.0), |n| n.pos);
             let offset = egui::vec2(30.0, 30.0);
             snarl.insert_node(original_pos + offset, original);
+            *self.topology_changed = true;
             ui.close_menu();
         }
     }
@@ -571,12 +633,15 @@ impl SnarlViewer<SonidoNode> for SonidoViewer<'_> {
         // during a click. Allow all overlapping nodes to set themselves as
         // selected; since snarl iterates in draw order (back-to-front), the
         // topmost (last-drawn) node wins.
-        if ui.input(|i| i.pointer.primary_pressed()) {
-            if let Some(pos) = ui.input(|i| i.pointer.interact_pos()) {
-                if ui_rect.contains(pos) {
-                    *self.selected_node = Some(node);
-                    *self.click_handled = true;
-                }
+        if let Some(pos) = ui.input(|i| {
+            i.pointer
+                .primary_pressed()
+                .then(|| i.pointer.interact_pos())
+                .flatten()
+        }) {
+            if ui_rect.contains(pos) {
+                *self.selected_node = Some(node);
+                *self.click_handled = true;
             }
         }
     }
@@ -589,6 +654,22 @@ impl SnarlViewer<SonidoNode> for SonidoViewer<'_> {
             snarl.drop_inputs(to.id);
         }
         snarl.connect(from.id, to.id);
+        *self.topology_changed = true;
+    }
+
+    fn disconnect(&mut self, from: &OutPin, to: &InPin, snarl: &mut Snarl<SonidoNode>) {
+        snarl.disconnect(from.id, to.id);
+        *self.topology_changed = true;
+    }
+
+    fn drop_outputs(&mut self, pin: &OutPin, snarl: &mut Snarl<SonidoNode>) {
+        snarl.drop_outputs(pin.id);
+        *self.topology_changed = true;
+    }
+
+    fn drop_inputs(&mut self, pin: &InPin, snarl: &mut Snarl<SonidoNode>) {
+        snarl.drop_inputs(pin.id);
+        *self.topology_changed = true;
     }
 }
 
