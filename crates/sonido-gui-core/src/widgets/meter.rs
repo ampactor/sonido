@@ -127,10 +127,10 @@ impl Widget for LevelMeter<'_> {
 
         // Handle clip latch reset on click
         let mut clip_latched = self.clip_latched;
-        if response.clicked() {
-            if let Some(ref mut latched) = clip_latched {
-                **latched = false;
-            }
+        if response.clicked()
+            && let Some(ref mut latched) = clip_latched
+        {
+            **latched = false;
         }
 
         if ui.is_rect_visible(rect) {
@@ -283,10 +283,10 @@ impl Widget for LevelMeter<'_> {
                 };
 
                 // Update latch state (after click reset above)
-                if let Some(latched) = clip_latched {
-                    if self.peak > 1.0 {
-                        *latched = true;
-                    }
+                if let Some(latched) = clip_latched
+                    && self.peak > 1.0
+                {
+                    *latched = true;
                 }
 
                 if clip_active {

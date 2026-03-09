@@ -40,6 +40,7 @@ impl ParametricEqPanel {
     }
 
     /// Render a single EQ band (freq, gain, Q) as a labeled fader row.
+    #[allow(clippy::too_many_arguments)]
     fn render_band(
         ui: &mut Ui,
         bridge: &dyn ParamBridge,

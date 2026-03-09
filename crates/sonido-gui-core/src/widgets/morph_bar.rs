@@ -160,11 +160,12 @@ fn led_segment_bar(
     let (bar_rect, bar_response) = ui.allocate_exact_size(bar_size, sense);
 
     // Update t from drag/click interaction
-    if enabled && (bar_response.dragged() || bar_response.clicked()) {
-        if let Some(pointer) = bar_response.interact_pointer_pos() {
-            *t = ((pointer.x - bar_rect.left()) / bar_rect.width()).clamp(0.0, 1.0);
-            response.t_changed = true;
-        }
+    if enabled
+        && (bar_response.dragged() || bar_response.clicked())
+        && let Some(pointer) = bar_response.interact_pointer_pos()
+    {
+        *t = ((pointer.x - bar_rect.left()) / bar_rect.width()).clamp(0.0, 1.0);
+        response.t_changed = true;
     }
 
     if !ui.is_rect_visible(bar_rect) {
