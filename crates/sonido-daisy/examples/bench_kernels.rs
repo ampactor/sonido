@@ -48,7 +48,7 @@ use sonido_core::kernel::DspKernel;
 static HEAP: Heap = Heap::empty();
 
 use sonido_daisy::{
-    BLOCK_SIZE, CYCLES_PER_BLOCK, SAMPLE_RATE, enable_cycle_counter, measure_cycles,
+    BLOCK_SIZE, CYCLES_PER_BLOCK, SAMPLE_RATE, enable_cycle_counter, heartbeat, measure_cycles,
 };
 
 use sonido_effects::kernels::{
@@ -168,6 +168,9 @@ async fn main(spawner: Spawner) {
 
     let config = daisy_embassy::default_rcc();
     let p = embassy_stm32::init(config);
+
+    let led = daisy_embassy::led::UserLed::new(p.PC7);
+    spawner.spawn(heartbeat(led)).unwrap();
 
     let mut cp = cortex_m::Peripherals::take().unwrap();
     enable_cycle_counter(&mut cp.DCB, &mut cp.DWT);

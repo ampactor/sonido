@@ -29,26 +29,14 @@ use daisy_embassy::new_daisy_board;
 use defmt_rtt as _;
 use embassy_executor::Spawner;
 use embassy_stm32 as hal;
-use embassy_time::Timer;
 use panic_probe as _;
 
-use sonido_daisy::{SAMPLE_RATE, f32_to_u24};
+use sonido_daisy::{SAMPLE_RATE, f32_to_u24, heartbeat};
 
 /// Phase increment per sample for 440 Hz at 48 kHz.
 ///
 /// `2π × 440 / 48000 ≈ 0.05759586`
 const PHASE_INC: f32 = 2.0 * PI * 440.0 / SAMPLE_RATE;
-
-/// Blinks the user LED at 1 Hz (500ms on / 500ms off) — identical to blinky.
-#[embassy_executor::task]
-async fn heartbeat(mut led: daisy_embassy::led::UserLed<'static>) {
-    loop {
-        led.on();
-        Timer::after_millis(500).await;
-        led.off();
-        Timer::after_millis(500).await;
-    }
-}
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {

@@ -89,7 +89,7 @@ cargo check -p sonido-daisy \
 **daisy-embassy** is the canonical approach. Key patterns:
 
 - **Audio**: `start_callback()` loop — async, yields every DMA transfer (~0.667 ms at 48 kHz, 32-sample blocks). Other tasks run between transfers.
-- **LED / UI**: `#[embassy_executor::task]` spawned before audio init. Extract to local binding first: `let led = board.user_led; spawner.spawn(task(led)).unwrap();`
+- **LED / UI**: Use `sonido_daisy::heartbeat` — the shared 1 Hz blink task in `src/lib.rs`. Every binary spawns it before audio init: `let led = board.user_led; spawner.spawn(heartbeat(led)).unwrap();`. Never define a local heartbeat.
 - **USB / Serial**: Same spawned-task pattern. See `audio_input_diag.rs`.
 - **Audio callback runs in executor context** (not ISR) — it is safe to call Embassy primitives from the callback.
 - **Task return type**: Use `async fn task(...) { }` (implicit `()` return), not `-> !`. Embassy 0.9 task macro behavior with `-> !` is unverified on STM32H750.

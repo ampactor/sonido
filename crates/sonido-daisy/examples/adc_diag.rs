@@ -69,6 +69,7 @@ use core::fmt::Write as FmtWrite;
 use defmt_rtt as _;
 use embassy_executor::Spawner;
 use embassy_stm32 as hal;
+use sonido_daisy::heartbeat;
 use embassy_stm32::adc::{Adc, SampleTime};
 use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::usb::Driver;
@@ -154,6 +155,10 @@ async fn main(spawner: Spawner) {
     let p = hal::init(config);
 
     defmt::info!("adc_diag: initializing ADC and USB...");
+
+    // Spawn LED heartbeat so the user LED blinks while diagnostics run
+    let led = daisy_embassy::led::UserLed::new(p.PC7);
+    spawner.spawn(heartbeat(led)).unwrap();
 
     // --- LED output (active-high) ---
     let mut led1 = Output::new(p.PA5, Level::Low, Speed::Low);

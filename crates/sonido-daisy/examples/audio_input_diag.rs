@@ -50,7 +50,7 @@ use embassy_usb::UsbDevice;
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use panic_probe as _;
 
-use sonido_daisy::{BLOCK_SIZE, u24_to_f32};
+use sonido_daisy::{BLOCK_SIZE, heartbeat, u24_to_f32};
 
 bind_interrupts!(struct Irqs {
     OTG_FS => usb::InterruptHandler<peripherals::USB_OTG_FS>;
@@ -74,17 +74,6 @@ const BLOCKS_PER_WINDOW: u32 = 1500;
 
 /// Minimum RMS for valid dBFS calculation (below this, report -96.0).
 const RMS_FLOOR: f32 = 1e-10;
-
-/// Blinks the user LED at 1 Hz (500ms on / 500ms off) — identical to blinky.
-#[embassy_executor::task]
-async fn heartbeat(mut led: daisy_embassy::led::UserLed<'static>) {
-    loop {
-        led.on();
-        Timer::after_millis(500).await;
-        led.off();
-        Timer::after_millis(500).await;
-    }
-}
 
 /// Formats measurement results into USB output buffer.
 ///

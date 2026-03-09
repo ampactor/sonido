@@ -60,7 +60,7 @@ use embedded_alloc::LlffHeap as Heap;
 use panic_probe as _;
 
 use sonido_core::kernel::DspKernel;
-use sonido_daisy::{SAMPLE_RATE, f32_to_u24, u24_to_f32};
+use sonido_daisy::{SAMPLE_RATE, f32_to_u24, heartbeat, u24_to_f32};
 use sonido_effects::kernels::{DistortionKernel, DistortionParams};
 
 // ── Heap allocator (DistortionKernel needs alloc for ADAA state) ─────────
@@ -95,7 +95,7 @@ const KNOB_SAMPLE_TIME: SampleTime = SampleTime::CYCLES32_5;
 // ── Main ─────────────────────────────────────────────────────────────────
 
 #[embassy_executor::main]
-async fn main(_spawner: embassy_executor::Spawner) {
+async fn main(spawner: embassy_executor::Spawner) {
     // Initialize heap at D2 SRAM (256 KB)
     unsafe {
         HEAP.init(0x3000_8000, 256 * 1024);
@@ -103,6 +103,9 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     let config = daisy_embassy::default_rcc();
     let p = hal::init(config);
+
+    let led = daisy_embassy::led::UserLed::new(p.PC7);
+    spawner.spawn(heartbeat(led)).unwrap();
 
     defmt::info!("sonido-daisy single_effect: initializing...");
 
