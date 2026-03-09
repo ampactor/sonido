@@ -218,26 +218,25 @@ impl FilePlayer {
 
         // Re-send file data and restore playback state
         #[cfg(not(target_arch = "wasm32"))]
-        if let Some(ref path) = self.file_path {
-            if self.has_file {
-                if let Ok((samples, _spec)) = read_wav_stereo(path) {
-                    let _ = self.transport_tx.send(TransportCommand::LoadFile {
-                        left: samples.left,
-                        right: samples.right,
-                        sample_rate: self.sample_rate,
-                    });
-                    let _ = self
-                        .transport_tx
-                        .send(TransportCommand::SetLoop(self.is_looping));
-                    if self.position_secs > 0.0 {
-                        let _ = self
-                            .transport_tx
-                            .send(TransportCommand::Seek(self.position_secs));
-                    }
-                    if self.is_playing {
-                        let _ = self.transport_tx.send(TransportCommand::Play);
-                    }
-                }
+        if let Some(ref path) = self.file_path
+            && self.has_file
+            && let Ok((samples, _spec)) = read_wav_stereo(path)
+        {
+            let _ = self.transport_tx.send(TransportCommand::LoadFile {
+                left: samples.left,
+                right: samples.right,
+                sample_rate: self.sample_rate,
+            });
+            let _ = self
+                .transport_tx
+                .send(TransportCommand::SetLoop(self.is_looping));
+            if self.position_secs > 0.0 {
+                let _ = self
+                    .transport_tx
+                    .send(TransportCommand::Seek(self.position_secs));
+            }
+            if self.is_playing {
+                let _ = self.transport_tx.send(TransportCommand::Play);
             }
         }
     }

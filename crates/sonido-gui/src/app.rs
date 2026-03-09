@@ -593,7 +593,7 @@ impl SonidoApp {
             .map(|(slot, _, _)| self.bridge.param_count(*slot))
             .unwrap_or(6);
         // Rough estimate: title row + ~40px per row of 4-5 knobs
-        let rows = ((param_count + 4) / 5).max(1);
+        let rows = param_count.div_ceil(5).max(1);
         80.0 + rows as f32 * 60.0
     }
 
