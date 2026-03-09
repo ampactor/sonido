@@ -476,21 +476,57 @@ benchmarks will provide real measurements to validate these.
 ## Hothouse
 
 The Cleveland Music Co. Hothouse is a DIY pedal enclosure for Daisy Seed.
+Open-source hardware (CC BY-SA 4.0). Stereo version (Sep 2024+): 6 knobs, 3 toggles, 2 footswitches, 2 LEDs.
 
-> **Not yet available** — this section is reference for Phases 3–4.
+- **Repo**: [clevelandmusicco/HothouseExamples](https://github.com/clevelandmusicco/HothouseExamples)
+- **Hardware**: [clevelandmusicco/open-source-pedals](https://github.com/clevelandmusicco/open-source-pedals/tree/main/hothouse)
+- **Wiki**: [10-Minute Quick Start](https://github.com/clevelandmusicco/HothouseExamples/wiki/10%E2%80%90Minute-Quick-Start)
 
-### Controls
+### Controls — Pin Mappings
 
-| Control | Type | Daisy Pin | sonido Mapping |
-|---------|------|-----------|----------------|
-| KNOB 1–6 | 10K pot (ADC) | PIN 21–25, 28 | `ControlId::hardware(0x00..0x05)` |
-| TOGGLE 1–3 | 3-way (GPIO) | PIN 5–10 | `ControlId::hardware(0x10..0x12)` |
-| FOOTSWITCH 1–2 | Momentary (GPIO) | PIN 27, 14 | `ControlId::hardware(0x20..0x21)` |
-| LED 1–2 | Status (GPIO) | PIN 4, 3 | `ControlId::hardware(0x30..0x31)` |
+**Knobs** (10K potentiometers, ADC analog inputs):
+
+| Hothouse | Daisy Pin | STM32 GPIO | ADC Channel | sonido Mapping |
+|----------|-----------|------------|:-----------:|----------------|
+| KNOB_1 | D16 | PA3 | 1 | `ControlId::hardware(0x00)` |
+| KNOB_2 | D17 | PB1 | 2 | `ControlId::hardware(0x01)` |
+| KNOB_3 | D18 | PA7 | 3 | `ControlId::hardware(0x02)` |
+| KNOB_4 | D19 | PA6 | 4 | `ControlId::hardware(0x03)` |
+| KNOB_5 | D20 | PC1 | 5 | `ControlId::hardware(0x04)` |
+| KNOB_6 | D21 | PC4 | 6 | `ControlId::hardware(0x05)` |
+
+**Toggle Switches** (3-way, 2 GPIO pins each):
+
+| Hothouse | Up Pin | Down Pin | sonido Mapping |
+|----------|--------|----------|----------------|
+| SWITCH_1 | D9 (PB4) | D10 (PB5) | `ControlId::hardware(0x10)` |
+| SWITCH_2 | D7 (PG10) | D8 (PG11) | `ControlId::hardware(0x11)` |
+| SWITCH_3 | D5 (PD2) | D6 (PC12) | `ControlId::hardware(0x12)` |
+
+**Footswitches** (momentary, active-low GPIO):
+
+| Hothouse | Daisy Pin | STM32 GPIO | sonido Mapping |
+|----------|-----------|------------|----------------|
+| FOOTSWITCH_1 (left) | D25 | PA0 | `ControlId::hardware(0x20)` |
+| FOOTSWITCH_2 (right) | D26 | PD11 | `ControlId::hardware(0x21)` |
+
+**LEDs** (GPIO output):
+
+| Hothouse | Daisy Pin | STM32 GPIO | sonido Mapping |
+|----------|-----------|------------|----------------|
+| LED_1 | D22 | PA5 | `ControlId::hardware(0x30)` |
+| LED_2 | D23 | PA4 | `ControlId::hardware(0x31)` |
 
 - **Audio** — 1/4" TRS stereo I/O, instrument level (200mV–1V p-p).
   Synth line out (~2.8V) needs padding; Eurorack (5–10V) will clip.
-- **Free pins** — D11/D12 (I2C for OLED), D13/D14 (UART for MIDI)
+- **Free pins** — D11/D12 (PB8/PB9, I2C for OLED), D13/D14 (PB6/PB7, UART for MIDI)
+
+### Bootloader Shortcut
+
+Hold left footswitch (FOOTSWITCH_1) for 2 seconds → LEDs flash 3x alternately →
+Daisy resets to DFU bootloader. No need to open enclosure after first flash.
+Implemented via `CheckResetToBootloader()` in the C++ examples; Rust equivalent
+needed in sonido-daisy.
 
 ### Control Combinatorics
 
@@ -649,10 +685,18 @@ Applied in `ControlMapper::map_control()` after calibration, before dispatch.
   Production Rust DSP on Daisy
 - [probe-rs](https://probe.rs/docs/getting-started/installation/)
 
+### Cleveland Music Co.
+
+- [Hothouse Product Page](https://clevelandmusicco.com/hothouse-diy-digital-signal-processing-platform-kit/)
+- [HothouseExamples](https://github.com/clevelandmusicco/HothouseExamples) — C++/PureData examples
+- [Open Source Hardware](https://github.com/clevelandmusicco/open-source-pedals/tree/main/hothouse) — Gerber, BOM, CPL
+- [USB Noise Wiki](https://github.com/clevelandmusicco/HothouseExamples/wiki/About-USB-Noise)
+
 ### Community
 
 - [Daisy Forum: Rust development](https://forum.electro-smith.com/t/rust-starter-for-daisy-seed/684)
 - [Daisy Forum: Rev 7 noise floor](https://forum.electro-smith.com/t/rev-7-noise-floor-vs-rev-4/4943)
+- [Daisy Forum: Hothouse thread](https://forum.electro-smith.com/t/hothouse-dsp-pedal-kit/5631)
 
 ### Sonido Internal
 
