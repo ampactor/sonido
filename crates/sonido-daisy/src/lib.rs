@@ -28,6 +28,31 @@
 #![no_std]
 
 use cortex_m::peripheral::DWT;
+use embassy_time::Timer;
+
+/// Blinks the Daisy Seed user LED (PC7) at 1 Hz — universal "firmware is alive" signal.
+///
+/// Spawn this task in every firmware binary before starting the audio loop so the
+/// LED confirms the firmware is running regardless of whether audio initialises
+/// successfully.
+///
+/// # Example
+///
+/// ```ignore
+/// use sonido_daisy::heartbeat;
+///
+/// let led = board.user_led;
+/// spawner.spawn(heartbeat(led)).unwrap();
+/// ```
+#[embassy_executor::task]
+pub async fn heartbeat(mut led: daisy_embassy::led::UserLed<'static>) {
+    loop {
+        led.on();
+        Timer::after_millis(500).await;
+        led.off();
+        Timer::after_millis(500).await;
+    }
+}
 
 /// Default audio sample rate in Hz.
 pub const SAMPLE_RATE: f32 = 48_000.0;

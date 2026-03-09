@@ -69,6 +69,8 @@ use embassy_stm32::gpio::{Input, Level, Output, Pull, Speed};
 use embassy_time::Timer;
 use panic_probe as _;
 
+use sonido_daisy::heartbeat;
+
 /// 3-position toggle switch state.
 ///
 /// Derived from two GPIO pins (up and down). The middle position is detected
@@ -168,9 +170,12 @@ async fn show_toggle_leds(
 }
 
 #[embassy_executor::main]
-async fn main(_spawner: Spawner) {
+async fn main(spawner: Spawner) {
     let config = daisy_embassy::default_rcc();
     let p = hal::init(config);
+
+    let led = daisy_embassy::led::UserLed::new(p.PC7);
+    spawner.spawn(heartbeat(led)).unwrap();
 
     // --- LEDs (active-high outputs) ---
     let mut led1 = Output::new(p.PA5, Level::Low, Speed::Low);

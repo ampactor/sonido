@@ -21,18 +21,9 @@ use daisy_embassy::new_daisy_board;
 use defmt_rtt as _;
 use embassy_executor::Spawner;
 use embassy_stm32 as hal;
-use embassy_time::Timer;
 use panic_probe as _;
 
-#[embassy_executor::task]
-async fn heartbeat(mut led: daisy_embassy::led::UserLed<'static>) {
-    loop {
-        led.on();
-        Timer::after_millis(500).await;
-        led.off();
-        Timer::after_millis(500).await;
-    }
-}
+use sonido_daisy::heartbeat;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {

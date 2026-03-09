@@ -36,11 +36,16 @@ use embassy_executor::Spawner;
 use embassy_stm32 as hal;
 use panic_probe as _;
 
+use sonido_daisy::heartbeat;
+
 #[embassy_executor::main]
-async fn main(_spawner: Spawner) {
+async fn main(spawner: Spawner) {
     let config = daisy_embassy::default_rcc();
     let p = hal::init(config);
     let board = new_daisy_board!(p);
+
+    let led = board.user_led;
+    spawner.spawn(heartbeat(led)).unwrap();
 
     defmt::info!("sonido-daisy passthrough starting");
 
