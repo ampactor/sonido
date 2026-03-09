@@ -8,7 +8,7 @@
 //! ```bash
 //! cd crates/sonido-daisy
 //! cargo objcopy --example bench_kernels --release -- -O binary bench.bin
-//! # Enter bootloader (hold BOOT, tap RESET, release BOOT — LED pulses)
+//! # Press RESET — LED pulses (2.5s grace period). Hold BOOT to extend.
 //! dfu-util -a 0 -s 0x90040000:leave -D bench.bin
 //! ```
 //!
