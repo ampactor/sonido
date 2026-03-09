@@ -43,7 +43,7 @@ fn denormalize(desc: Option<&ParamDescriptor>, normalized: f32, min: f32, max: f
 }
 
 /// Format a plain parameter value for LED display based on its unit.
-fn format_plain_value(value: f32, unit: &ParamUnit) -> String {
+fn format_plain_value(value: f32, unit: ParamUnit) -> String {
     match unit {
         ParamUnit::Decibels => {
             if value >= 0.0 {
@@ -151,7 +151,7 @@ pub fn bridged_knob(
 
     // Build the formatted text for the LED display.
     let unit = desc.as_ref().map_or(ParamUnit::None, |d| d.unit);
-    let formatted = format_plain_value(plain_value, &unit);
+    let formatted = format_plain_value(plain_value, unit);
 
     // Format: denormalize back to plain value, then apply unit formatting
     let knob = if let Some(d) = desc {
@@ -408,7 +408,7 @@ pub fn bridged_fader(
     let default_normalized = normalize(desc.as_ref(), default, min, max);
 
     let unit = desc.as_ref().map_or(ParamUnit::None, |d| d.unit);
-    let formatted = format_plain_value(plain_value, &unit);
+    let formatted = format_plain_value(plain_value, unit);
 
     let theme = SonidoTheme::get(ui.ctx());
     let color = theme.colors.amber;

@@ -11,7 +11,7 @@ use egui::{
 };
 
 /// Complete arcade CRT theme — single source of truth for all visual parameters.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct SonidoTheme {
     /// Color palette.
     pub colors: ThemeColors,
@@ -133,18 +133,6 @@ pub struct ThemeLayout {
     pub fader_max_h: f32,
 }
 
-impl Default for SonidoTheme {
-    fn default() -> Self {
-        Self {
-            colors: ThemeColors::default(),
-            sizing: ThemeSizing::default(),
-            glow: GlowConfig::default(),
-            scanlines: ScanlineConfig::default(),
-            layout: ThemeLayout::default(),
-            reduced_fx: false,
-        }
-    }
-}
 
 impl Default for ThemeColors {
     fn default() -> Self {

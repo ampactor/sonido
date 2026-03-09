@@ -98,6 +98,7 @@ pub fn glow_rect(
 ///
 /// The arc sweeps from `start_angle` to `end_angle` (radians) at the given
 /// radius from `center`. Uses 32 segments for smooth appearance.
+#[allow(clippy::too_many_arguments)]
 pub fn glow_arc(
     painter: &Painter,
     center: Pos2,

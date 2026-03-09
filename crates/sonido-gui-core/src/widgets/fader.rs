@@ -136,14 +136,13 @@ impl Widget for Fader<'_> {
         }
 
         // Handle click-to-set (not drag, just single click)
-        if response.clicked() {
-            if let Some(pos) = ui.input(|i| i.pointer.interact_pos()) {
-                if track_rect.contains(pos) {
-                    let normalized = 1.0 - (pos.y - track_rect.top()) / track_rect.height();
-                    *self.value = normalized.clamp(0.0, 1.0);
-                    response.mark_changed();
-                }
-            }
+        if response.clicked()
+            && let Some(pos) = ui.input(|i| i.pointer.interact_pos())
+            && track_rect.contains(pos)
+        {
+            let normalized = 1.0 - (pos.y - track_rect.top()) / track_rect.height();
+            *self.value = normalized.clamp(0.0, 1.0);
+            response.mark_changed();
         }
 
         if ui.is_rect_visible(rect) {
