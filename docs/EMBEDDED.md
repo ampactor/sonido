@@ -84,6 +84,18 @@ cargo check -p sonido-daisy \
 | 3 | `passthrough.rs` *(stub)* | Codec, DMA, audio path | Seed + audio I/O |
 | 4 | `single_effect.rs` *(stub)* | Real-time DSP, ADC parameter mapping | Seed + audio I/O + pot |
 
+### Modern Rust on Daisy Seed
+
+**daisy-embassy** is the canonical approach. Key patterns:
+
+- **Audio**: `start_callback()` loop — async, yields every DMA transfer (~0.667 ms at 48 kHz, 32-sample blocks). Other tasks run between transfers.
+- **LED / UI**: `#[embassy_executor::task]` spawned before audio init. Extract to local binding first: `let led = board.user_led; spawner.spawn(task(led)).unwrap();`
+- **USB / Serial**: Same spawned-task pattern. See `audio_input_diag.rs`.
+- **Audio callback runs in executor context** (not ISR) — it is safe to call Embassy primitives from the callback.
+- **Task return type**: Use `async fn task(...) { }` (implicit `()` return), not `-> !`. Embassy 0.9 task macro behavior with `-> !` is unverified on STM32H750.
+
+Reference implementation: `~/.cargo/registry/src/.../daisy-embassy-0.2.3/examples/passthrough.rs`
+
 ### Library — `src/lib.rs`
 
 | Symbol | Value | Purpose |
@@ -180,10 +192,24 @@ power-on or reset, it runs for a **2.5-second grace period**:
 
 To enter DFU mode for flashing:
 
-1. **Hold BOOT** button
-2. **Press and release RESET** button
-3. **Release BOOT** button
-4. LED should pulse — bootloader is in DFU mode
+1. **Press RESET** — LED pulses sinusoidally for 2.5 seconds (grace period)
+2. **Run `dfu-util`** within the grace period
+3. That's it — the bootloader accepts DFU transfers during the grace period
+
+If you need more time (e.g., typing the command), hold **BOOT** while pressing
+RESET to extend the grace period indefinitely. Release BOOT when ready.
+
+> **Important:** The BOOT button is **PG3** (a GPIO pin read by the Electrosmith
+> bootloader), **not** the STM32's BOOT0 pin. Both "just RESET" and "BOOT+RESET"
+> enter the same Electrosmith bootloader — BOOT simply extends the window.
+> There is no separate "STM32 System DFU" mode accessible via these buttons.
+
+Verify DFU is active before flashing:
+
+```bash
+lsusb | grep "0483:df11"
+# Should show: STMicroelectronics STM Device in DFU Mode
+```
 
 > **First-time Daisy:** The bootloader comes pre-flashed from the factory.
 > If your Seed has never been used, it will sit in the grace period with
@@ -192,7 +218,7 @@ To enter DFU mode for flashing:
 #### Option A — Browser flash (fastest, no Rust needed)
 
 1. Enter DFU mode:
-   **hold BOOT** → **press/release RESET** → **release BOOT**
+   **press RESET** (or **hold BOOT** → **press RESET** → **release BOOT** for extended window)
 2. Verify DFU detection:
    ```bash
    lsusb | grep "0483:df11"
@@ -218,7 +244,7 @@ cd crates/sonido-daisy
 cargo objcopy --example blinky_bare --release -- -O binary blinky.bin
 ```
 
-Enter DFU mode, then flash to QSPI (bootloader copies to SRAM on boot):
+Press RESET, then flash to QSPI within the 2.5s grace period (bootloader copies to SRAM on boot):
 
 ```bash
 dfu-util -a 0 -s 0x90040000:leave -D blinky.bin
@@ -317,6 +343,77 @@ Wire one ADC pin to a pot, process audio through a kernel with `from_knobs()`
 mapping ADC readings to parameters.
 `examples/single_effect.rs` is a stub.
 
+### Diagnostics
+
+Audio output and input diagnostic tools for isolating hardware issues on the
+Hothouse. These are not numbered tiers — use them when the audio path is
+misbehaving and you need to determine whether the problem is digital, analog,
+input-side, or output-side.
+
+| Example | What It Tests | Output |
+|---------|---------------|--------|
+| `tone_out.rs` | DAC → analog output path | 440 Hz sine wave to output jack |
+| `square_out.rs` | DAC → analog output path (max amplitude) | 1 kHz full-scale square wave to output jack |
+| `audio_input_diag.rs` | Codec ADC input noise floor | RMS/peak/dBFS via USB serial every 1 second |
+
+#### Build & Flash
+
+All three diagnostics follow the same pattern. From `crates/sonido-daisy/`:
+
+```bash
+cd crates/sonido-daisy
+cargo objcopy --example <name> --release -- -O binary -R .sram1_bss <name>.bin
+dfu-util -a 0 -s 0x90040000:leave -D <name>.bin
+```
+
+For example, to flash `tone_out`:
+
+```bash
+cargo objcopy --example tone_out --release -- -O binary -R .sram1_bss tone_out.bin
+dfu-util -a 0 -s 0x90040000:leave -D tone_out.bin
+```
+
+`audio_input_diag` reports over USB serial after flashing:
+
+```bash
+cat /dev/ttyACM0
+# or: screen /dev/ttyACM0 115200
+```
+
+Output repeats every second:
+
+```
+IN: rms=0.0023 peak=0.0089 dBFS=-52.8
+```
+
+#### Diagnostic Test Sequence
+
+When debugging audio issues on the Hothouse, run these in order:
+
+1. **Flash `tone_out`** — plug headphones or an amp into the output jack and
+   listen for a 440 Hz sine tone. The onboard user LED (PC7) blinks at 1 Hz
+   (500ms on / 500ms off) — same pattern as `blinky` — to confirm firmware
+   is running. If the LED doesn't blink, the firmware didn't flash correctly.
+   - **Hear 440 Hz clearly** → DAC and output path work. Skip to step 3.
+   - **Hear 440 Hz underneath noise** → DAC works, analog stage is oscillating
+     on top of it. Output op-amp issue.
+   - **Hear only noise, no tone** → proceed to step 2.
+
+2. **Flash `square_out`** — outputs the loudest possible digital signal
+   (1 kHz full-scale square wave). Same 1 Hz blink heartbeat on user LED.
+   If you cannot hear this through the analog noise, the DAC output is
+   effectively disconnected from the output jack — the analog circuit is
+   completely overriding it.
+
+3. **Flash `audio_input_diag`** — with nothing plugged into the input jack,
+   read the USB serial output and check the RMS level.
+   - **High RMS with nothing plugged in** → noise is being injected before the
+     codec ADC (input op-amp oscillation, ground loop, or power supply issue).
+   - **Low RMS with nothing plugged in** → input side is clean; the problem is
+     output-only.
+   - **RMS changes when a cable/instrument is plugged in** → codec ADC is
+     reading real signal. The analog input path works.
+
 ### Build & Flash Reference
 
 All commands run from `crates/sonido-daisy/` (picks up `.cargo/config.toml`).
@@ -350,13 +447,22 @@ cargo run --example <name> --release
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | `lsusb` shows nothing in DFU mode | Charge-only USB cable (2 wires, no D+/D-) | Use a data cable (4 wires) |
-| `lsusb` shows nothing in DFU mode | DFU not entered | Hold BOOT → press/release RESET → release BOOT |
+| `lsusb` shows nothing in DFU mode | DFU not entered | Press RESET (LED should pulse), run `lsusb` within 2.5s |
 | `lsusb` shows nothing in DFU mode | Missing udev rule | See Prerequisites |
 | "Invalid DFU suffix signature" warning | `cargo objcopy` raw binary has no DFU metadata | **Benign** — ignore |
 | "Error during download get_status" | `:leave` flag resets device out of DFU | **Normal** — flash succeeded |
 | SOS blink pattern (3 short, 3 long, 3 short) | Invalid binary in QSPI | Use `--release` (debug too large for 480 KB SRAM) |
 | No `/dev/ttyACM*` after bench flash | USB re-enumeration delay | Wait 2-3s, check `dmesg \| tail`, replug USB |
 | Codec won't init on breadboard | DGND/AGND not connected | Bridge DGND↔AGND (carrier boards do this internally) |
+| Firmware flashed but doesn't run (no LED activity) | dfu-util QSPI write unreliable | Verify with `blinky` first; update bootloader to v6.3 via [flash.daisy.audio](https://flash.daisy.audio/) |
+| Firmware flashed but doesn't run (no LED activity) | Stale bootloader | Update to v6.3+ at [flash.daisy.audio](https://flash.daisy.audio/) (select "Flash Latest Bootloader") |
+
+> **dfu-util reliability:** Some versions of dfu-util (especially v0.11) have
+> reported QSPI write reliability issues with certain bootloader versions.
+> If flashing appears to succeed but firmware doesn't run, update the bootloader
+> to v6.3+ via [flash.daisy.audio](https://flash.daisy.audio/) (Chrome, WebUSB).
+> Always validate the flash pipeline by flashing `blinky` first — if blinky
+> doesn't blink, the issue is in the flash/boot path, not your firmware.
 
 ---
 
