@@ -133,7 +133,6 @@ pub struct ThemeLayout {
     pub fader_max_h: f32,
 }
 
-
 impl Default for ThemeColors {
     fn default() -> Self {
         Self {

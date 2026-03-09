@@ -213,12 +213,12 @@ impl GraphView {
         // Click on empty space deselects — only within the graph area.
         // Without the rect check, clicks on the effect panel (below the graph)
         // would deselect the node and hide the panel.
-        if !click_handled && ui.input(|i| i.pointer.primary_pressed()) {
-            if let Some(pos) = ui.input(|i| i.pointer.interact_pos()) {
-                if ui.max_rect().contains(pos) {
-                    self.selected_node = None;
-                }
-            }
+        if !click_handled
+            && ui.input(|i| i.pointer.primary_pressed())
+            && let Some(pos) = ui.input(|i| i.pointer.interact_pos())
+            && ui.max_rect().contains(pos)
+        {
+            self.selected_node = None;
         }
 
         // Map selected NodeId to an effect slot index.
@@ -949,11 +949,10 @@ impl SnarlViewer<SonidoNode> for SonidoViewer<'_> {
                 .primary_pressed()
                 .then(|| i.pointer.interact_pos())
                 .flatten()
-        }) {
-            if ui_rect.contains(pos) {
-                *self.selected_node = Some(node);
-                *self.click_handled = true;
-            }
+        }) && ui_rect.contains(pos)
+        {
+            *self.selected_node = Some(node);
+            *self.click_handled = true;
         }
     }
 
