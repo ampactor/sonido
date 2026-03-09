@@ -15,9 +15,8 @@
 //!
 //! ```bash
 //! cd crates/sonido-daisy
-//! cargo objcopy --example passthrough --release -- -O binary passthrough.bin
-//! # Enter bootloader (hold BOOT, tap RESET, release BOOT — LED pulses)
-//! # Flash via web flasher (flash.daisy.audio) or:
+//! cargo objcopy --example passthrough --release -- -O binary -R .sram1_bss passthrough.bin
+//! # Press RESET — LED pulses (2.5s grace period). Hold BOOT to extend.
 //! dfu-util -a 0 -s 0x90040000:leave -D passthrough.bin
 //! ```
 //!

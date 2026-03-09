@@ -34,7 +34,7 @@
 //! ```bash
 //! cd crates/sonido-daisy
 //! cargo objcopy --example adc_diag --release -- -O binary adc_diag.bin
-//! # Enter bootloader (hold BOOT, tap RESET, release BOOT — LED pulses)
+//! # Press RESET — LED pulses (2.5s grace period). Hold BOOT to extend.
 //! dfu-util -a 0 -s 0x90040000:leave -D adc_diag.bin
 //! ```
 //!
