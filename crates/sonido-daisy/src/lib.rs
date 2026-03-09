@@ -32,8 +32,12 @@ use cortex_m::peripheral::DWT;
 /// Default audio sample rate in Hz.
 pub const SAMPLE_RATE: f32 = 48_000.0;
 
-/// Default block size in samples (matches Daisy Seed DMA half-transfer).
-pub const BLOCK_SIZE: usize = 128;
+/// Default block size in stereo sample pairs.
+///
+/// Daisy-embassy hardcodes `BLOCK_LENGTH = 32` in its SAI DMA driver.
+/// The DMA callback receives `&[u32]` of length 64 (32 pairs × 2 channels,
+/// interleaved `[L0, R0, L1, R1, ...]`). This constant must match that value.
+pub const BLOCK_SIZE: usize = 32;
 
 /// Number of audio channels (stereo).
 pub const CHANNELS: usize = 2;
@@ -46,8 +50,8 @@ pub const CPU_CLOCK_HZ: u32 = 480_000_000;
 
 /// Available CPU cycles per audio block at 48 kHz.
 ///
-/// At 480 MHz and 48 kHz with 128-sample blocks:
-/// 480_000_000 / (48_000 / 128) = 1_280_000 cycles per block.
+/// At 480 MHz and 48 kHz with 32-sample blocks:
+/// 480_000_000 / (48_000 / 32) = 320_000 cycles per block.
 pub const CYCLES_PER_BLOCK: u32 = CPU_CLOCK_HZ / (SAMPLE_RATE as u32 / BLOCK_SIZE as u32);
 
 /// Measures the number of CPU cycles consumed by a closure using the DWT cycle counter.
@@ -90,8 +94,19 @@ pub fn enable_cycle_counter(dcb: &mut cortex_m::peripheral::DCB, dwt: &mut DWT) 
     dwt.enable_cycle_counter();
 }
 
-/// Audio callback signature for DMA double-buffered processing.
+/// Converts a u32 sample (24-bit signed, left-justified in 32 bits) to f32 [-1.0, 1.0].
 ///
-/// Called once per block (128 samples). Input and output are interleaved stereo:
-/// `[L0, R0, L1, R1, ...]`.
-pub type AudioCallback = fn(input: &[f32], output: &mut [f32]);
+/// The PCM3060 codec outputs 24-bit signed samples packed into 32-bit words.
+/// The value is treated as a signed 32-bit integer and divided by 2^31.
+#[inline]
+pub fn u24_to_f32(sample: u32) -> f32 {
+    (sample as i32) as f32 / 2_147_483_648.0
+}
+
+/// Converts an f32 sample [-1.0, 1.0] to u32 (24-bit signed, left-justified in 32 bits).
+///
+/// Inverse of [`u24_to_f32`]. Output is suitable for the PCM3060 codec DAC input.
+#[inline]
+pub fn f32_to_u24(sample: f32) -> u32 {
+    (sample * 2_147_483_648.0) as i32 as u32
+}
