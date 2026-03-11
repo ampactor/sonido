@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Sample rate mismatch: effects now initialize at device-detected rate instead of hardcoded 48000 Hz
+- **Morph pedal**: switched from D2 SRAM heap (256 KB, DMA-contended) to SDRAM heap (64 MB via FMC) — canonical pattern matching bench_kernels. Fixed EOF syntax error and Box deref in preset save. Added deferred D-cache task. DIAG_PHASE=0 for safe first boot.
 - CLI `--sample-rate` and `--buffer-size` arguments now wired through to app initialization
 
 ### Added
