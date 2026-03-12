@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Morph Pedal v2**: Complete firmware rewrite (`morph_pedal.rs`)
+  - Boot to passthrough — no pre-populated effects, Input→Output only
+  - `EmbeddedAdapter<K>` — zero-smoothing `Effect + ParameterInfo` bridge for `DspKernel`, replaces `KernelAdapter` and `EffectRegistry` on embedded
+  - Incremental effect building — scroll 14 curated effects into 3 independent slots via footswitches
+  - Curated 6-knob mapping per effect (K1=Primary, K2=Secondary, K3=Color, K4=Character, K5=Mix, K6=Level)
+  - Scale-aware `adc_to_param()` — logarithmic for frequency knobs, linear for dB/mix, via `ParamDescriptor::scale`
+  - `ProcessingGraph` DAG routing — serial/parallel/fan topology via Toggle 2
+  - Empty slots skipped in graph — adjacent populated nodes connect directly
+  - Build mode — sequential per-slot Sound B capture with FS1/FS2 navigation, T1 preview (A/50%/B)
+  - Morph mode — dual-footswitch arrow ramp with `interpolate_and_apply()`, STEPPED param snapping at t=0.5
+  - Preset save/load — 9-slot in-memory ring buffer (both-FS tap in Build/Explore)
+  - LED2 patterns — scroll pulse (Explore), slot-number blink (Build), PWM morph position (Morph)
+
 ### Added
 - **Signal generator**: Built-in test tone source with 6 signal types (sine, sweep, white noise, pink noise, impulse train, sawtooth chord)
 - Generator is default audio source — app opens ready to play on spacebar

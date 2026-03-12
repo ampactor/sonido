@@ -263,7 +263,7 @@ impl EffectRegistry {
                 id: "vibrato",
                 name: "Vibrato",
                 short_name: "VIB",
-                description: "10-unit tape wow/flutter simulation",
+                description: "6-unit tape wow/flutter simulation",
                 category: EffectCategory::Modulation,
                 param_count: 3,
             },

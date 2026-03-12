@@ -28,7 +28,7 @@ use sonido_daisy::ClockProfile;
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    let config = sonido_daisy::rcc_config(ClockProfile::Performance);
+    let config = sonido_daisy::rcc_config(ClockProfile::Efficient);
     let p = embassy_stm32::init(config);
 
     // Daisy Seed onboard LED is on PC7

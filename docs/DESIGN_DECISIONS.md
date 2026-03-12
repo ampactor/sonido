@@ -32,6 +32,7 @@ Architecture Decision Records (ADRs) for the Sonido DSP framework. Each record c
 - [ADR-026: Multi-Effect Chain CLAP Plugin](#adr-026-multi-effect-chain-clap-plugin)
 - [ADR-027: GraphEngine as Universal Chain Host](#adr-027-graphengine-as-universal-chain-host)
 - [ADR-028: Kernel Architecture — DSP/Parameter Separation](#adr-028-kernel-architecture--dspparameter-separation)
+- [ADR-029: Hardware Serves the Kernel — Embedded Design Principle](#adr-029-hardware-serves-the-kernel--embedded-design-principle)
 
 ---
 
