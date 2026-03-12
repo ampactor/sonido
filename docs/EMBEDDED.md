@@ -80,11 +80,17 @@ cargo check -p sonido-daisy \
 |:----:|---------|-------------------|-----------------|
 | 1 | `blinky_bare.rs` | Toolchain, flash, BOOT_SRAM path | Seed + USB |
 | 1 | `blinky.rs` | Embassy runtime + clock init | Seed + USB |
+| 1 | `heap_test.rs` | SRAM clock enable + heap allocation | Seed + USB |
+| 2 | `bench_mini.rs` | Single kernel DWT cycle benchmark (PreampKernel) | Seed + USB |
 | 2 | `bench_kernels.rs` | DWT cycle counts for all 19 kernels (dual-budget) | Seed + USB |
-| 3 | `passthrough.rs` | Codec, DMA, audio path | Seed + audio I/O |
+| 3 | `silence.rs` | Codec/SAI/DMA init — digital silence output | Hothouse |
+| 3 | `tone_out.rs` | DAC signal path health (440 Hz sine) | Hothouse |
+| 3 | `square_out.rs` | DAC health check (1 kHz full-scale square) | Hothouse |
+| 3 | `passthrough.rs` | Codec, DMA, audio passthrough | Seed + audio I/O |
+| 3 | `passthrough_blink.rs` | Audio passthrough + LED heartbeat task | Hothouse |
 | 3 | `hothouse_diag.rs` | All Hothouse hardware (knobs, toggles, FS, temp) | Hothouse |
 | 4 | `single_effect.rs` | Real-time DSP, ADC parameter mapping (distortion) | Hothouse |
-| 5 | `morph_pedal.rs` | ProcessingGraph + EffectRegistry on embedded | Hothouse |
+| 5 | `morph_pedal.rs` | EmbeddedAdapter + ProcessingGraph DAG + A/B morph | Hothouse |
 
 ### Modern Rust on Daisy Seed
 
@@ -392,17 +398,38 @@ cargo run --example bench_kernels --release
 
 *Requires audio I/O — Hothouse carrier board or breadboard wiring to SAI pins.*
 
-Not possible on bare Seed without wiring up the codec.
-`examples/passthrough.rs` is a stub awaiting the daisy-embassy audio interface
-builder (handles codec init and DMA setup).
+`examples/passthrough.rs` copies audio input directly to output with no
+processing. Validates the full audio path: codec ADC → SAI RX → DMA → CPU →
+DMA → SAI TX → codec DAC. The binary uses `output.copy_from_slice(input)` — no
+format conversion needed.
+
+`examples/passthrough_blink.rs` adds the heartbeat LED task on top of
+passthrough — confirms audio + Embassy multitasking coexist.
+
+```bash
+cd crates/sonido-daisy
+cargo objcopy --example passthrough --release -- -O binary -R .sram1_bss passthrough.bin
+dfu-util -a 0 -s 0x90040000:leave -D passthrough.bin
+```
 
 ### Phase 4: Single Effect
 
-*Requires audio I/O + potentiometer on an ADC pin.*
+*Requires Hothouse — uses knobs, toggle, footswitch, LED.*
 
-Wire one ADC pin to a pot, process audio through a kernel with `from_knobs()`
-mapping ADC readings to parameters.
-`examples/single_effect.rs` is a stub.
+`examples/single_effect.rs` processes audio through a distortion kernel with 4
+ADC knobs mapped to Drive, Tone, Output, and Mix. Toggle 1 selects clipping
+mode (Overdrive / Distortion / Fuzz). Footswitch 1 toggles bypass.
+
+This is the canonical pattern for **direct kernel usage** on embedded:
+`from_knobs(adc_0..adc_3)` maps ADC readings to a `DistortionParams` struct,
+which is passed directly to `DspKernel::process_stereo()`. No `KernelAdapter`,
+no smoothing.
+
+```bash
+cd crates/sonido-daisy
+cargo objcopy --example single_effect --release -- -O binary -R .sram1_bss single_effect.bin
+dfu-util -a 0 -s 0x90040000:leave -D single_effect.bin
+```
 
 ### Diagnostics
 
@@ -502,6 +529,377 @@ cargo run --example <name> --release
 
 > **Power:** USB alone is sufficient for development. External VIN (5–17V DC)
 > only needed inside the Hothouse enclosure.
+
+---
+
+## Morph Pedal v2
+
+The morph pedal (`examples/morph_pedal.rs`) is the flagship firmware — a
+3-slot, DAG-routed, A/B morphing guitar pedal with 14 curated effects. It
+demonstrates all of sonido's embedded capabilities: `ProcessingGraph` for
+routing, `EmbeddedAdapter` for zero-smoothing kernel access, and scale-aware
+ADC parameter mapping.
+
+### Architecture Overview
+
+```
+   ┌─────────┐     ┌───────────────────┐     ┌──────────┐
+   │ ADC × 6 │──→──│  adc_to_param()   │──→──│ Graph    │
+   │ Toggles  │     │  (ParamScale-     │     │ .effect_ │
+   │ Footsw   │     │   aware scaling)  │     │ set_param│
+   └─────────┘     └───────────────────┘     └──────────┘
+                                                   │
+                        ┌──────────────────────────┘
+                        ▼
+   ┌─────────────────────────────────────────────────────┐
+   │             ProcessingGraph (compiled DAG)           │
+   │  Input → [EmbeddedAdapter<K>] → ... → Output        │
+   │          (zero-smoothing kernel wrapper)             │
+   └─────────────────────────────────────────────────────┘
+```
+
+Two sonido pillars are used together:
+
+- **ProcessingGraph** — DAG routing with serial/parallel/fan topologies via
+  split/merge nodes. Zero-alloc per audio block after `compile()`.
+- **EmbeddedAdapter\<K: DspKernel\>** — wraps any kernel in `Effect + ParameterInfo`
+  (and thus `EffectWithParams` via blanket impl) with zero smoothing overhead.
+  `set_param()` writes directly to the kernel's typed params struct. The value
+  is live on the next `process_stereo()` call.
+
+Why not `KernelAdapter`? It adds per-sample `SmoothedParam::advance()` calls
+(~1.15M advances/sec for 24 params × 48kHz). On embedded, ADCs are
+hardware-filtered and params change at ~100Hz. Smoothing is redundant overhead.
+
+### EmbeddedAdapter Pattern
+
+`EmbeddedAdapter<K>` is defined locally in `morph_pedal.rs` (~55 lines):
+
+```rust
+struct EmbeddedAdapter<K: DspKernel> {
+    kernel: K,
+    params: K::Params,
+}
+
+impl<K: DspKernel> Effect for EmbeddedAdapter<K> {
+    fn process_stereo(&mut self, l: f32, r: f32) -> (f32, f32) {
+        self.kernel.process_stereo(l, r, &self.params)
+    }
+    fn set_sample_rate(&mut self, sr: f32) { self.kernel.set_sample_rate(sr); }
+    fn reset(&mut self) { self.kernel.reset(); self.params = K::Params::from_defaults(); }
+    // ... block processing, is_true_stereo(), latency_samples()
+}
+
+impl<K: DspKernel> ParameterInfo for EmbeddedAdapter<K> {
+    fn param_count(&self) -> usize { K::Params::COUNT }
+    fn param_info(&self, idx: usize) -> Option<ParamDescriptor> { K::Params::descriptor(idx) }
+    fn get_param(&self, idx: usize) -> f32 { self.params.get(idx) }
+    fn set_param(&mut self, idx: usize, val: f32) { self.params.set(idx, val); }
+}
+```
+
+Comparison with sonido's other DSP bridge patterns:
+
+| Pattern | Context | Smoothing | Trait impl |
+|---------|---------|-----------|------------|
+| `KernelAdapter<K>` | Desktop / Plugin | Yes (SmoothedParam per param) | Effect + ParameterInfo |
+| `EmbeddedAdapter<K>` | Morph pedal firmware | None (direct write) | Effect + ParameterInfo |
+| Direct `DspKernel` | `single_effect.rs` | None (`from_knobs()`) | No trait — call `process_stereo()` directly |
+
+Use `EmbeddedAdapter` when you need `ProcessingGraph` compatibility (the graph
+requires `Effect + ParameterInfo` behind `EffectWithParams`). Use direct kernel
+access when you have a single fixed effect and don't need the graph.
+
+### Three-Mode Interaction
+
+Toggle 3 selects the operating mode:
+
+| T3 | Mode | Purpose |
+|----|------|---------|
+| UP | Explore | Scroll effects into 3 slots, shape params with knobs |
+| MID | Build | Capture Sound A/B snapshots per-slot, preview with T1 |
+| DN | Morph | Footswitch-controlled crossfade between Sound A and B |
+
+Toggle 2 selects routing topology (in all modes):
+
+| T2 | Routing | Topology |
+|----|---------|----------|
+| UP | Serial | Input → E0 → E1 → E2 → Output |
+| MID | Parallel | Input → Split → E0,E1,E2 → Merge → Output |
+| DN | Fan | Input → E0 → Split → E1,E2 → Merge → Output |
+
+Toggle 1 has mode-dependent function:
+
+| Mode | T1 UP | T1 MID | T1 DN |
+|------|-------|--------|-------|
+| Explore | Focus slot 0 | Focus slot 1 | Focus slot 2 |
+| Build | Preview Sound A | Preview 50% lerp | Preview Sound B |
+| Morph | Speed 0.5s | Speed 2s | Speed 5s |
+
+**Explore mode** — Boot state. All slots empty (Input→Output passthrough).
+FS2 creates the first effect by scrolling right through the effect list. FS1
+scrolls left. T1 selects which slot (0/1/2) the footswitches and knobs
+control. Knobs set parameters via `adc_to_param()` with scale-aware mapping
+(log for frequencies, linear for dB). "Knob = truth" — the physical pot
+position is always the param value, no pickup logic.
+
+**Build mode** — On entry, captures current state as Sound A, copies to Sound
+B. `build_slot` starts at the first populated slot. Knobs always write to
+Sound B for the active `build_slot`. FS2 captures and advances to next
+populated slot. FS1 captures and goes back. T1 previews: UP = Sound A across
+all slots, MID = 50% lerp, DN = Sound B (live knobs for current slot, stored
+values for others). LED2 blinks slot number (1/2/3 pulses).
+
+**Morph mode** — FS1 held → morph_t ramps toward 0.0 (Sound A). FS2 held →
+toward 1.0 (Sound B). Neither → hold position. `interpolate_and_apply()`
+writes lerped params to all slots every control poll (~100Hz). STEPPED params
+snap at t=0.5 (same as `KernelParams::lerp()`). K6 overrides morph speed
+(0.2–10.0s). LED2 brightness tracks morph_t via PWM.
+
+### Curated Effect List and Knob Mapping
+
+14 effects ordered chillest → gnarliest, with consistent knob roles:
+
+| Role | Knob | Always means |
+|------|------|-------------|
+| K1 | Primary | The defining control (rate, cutoff, drive, threshold) |
+| K2 | Secondary | Next most important (depth, feedback, resonance, tone) |
+| K3 | Color | Texture modifier (damping, HF rolloff, stages, jitter) |
+| K4 | Character | Mode/shape, often STEPPED (voices, TZF, ping-pong) |
+| K5 | Mix | Wet/dry blend when available |
+| K6 | Level | Output/makeup gain |
+
+Mapping is stored in a `const` array:
+
+```rust
+const NULL_KNOB: u8 = 0xFF;  // sentinel for unmapped knobs
+
+struct EffectEntry {
+    id: &'static str,        // registry ID for logging
+    knobs: [u8; 6],          // knobs[k] = param index for knob K
+}
+
+const EFFECT_LIST: [EffectEntry; 14] = [
+    EffectEntry { id: "filter",     knobs: [0, 1, 0xFF, 0xFF, 0xFF, 2] },
+    EffectEntry { id: "tremolo",    knobs: [0, 1, 2, 3, 0xFF, 6] },
+    // ... 12 more entries
+];
+```
+
+The `create_effect(idx, sr)` factory creates the correct `EmbeddedAdapter`
+for each index:
+
+```rust
+fn create_effect(idx: usize, sr: f32) -> Option<Box<dyn EffectWithParams + Send>> {
+    match idx {
+        0  => Some(Box::new(EmbeddedAdapter::new(FilterKernel::new(sr)))),
+        1  => Some(Box::new(EmbeddedAdapter::new(TremoloKernel::new(sr)))),
+        // ... all 14
+        _ => None,
+    }
+}
+```
+
+### Scale-Aware ADC Conversion
+
+`adc_to_param()` uses `ParamDescriptor::scale` for proper knob curves:
+
+```rust
+fn adc_to_param(desc: &ParamDescriptor, norm: f32) -> f32 {
+    let val = match desc.scale {
+        ParamScale::Linear      => desc.min + norm * (desc.max - desc.min),
+        ParamScale::Logarithmic => exp2f(log2f(desc.min) + norm * (log2f(desc.max) - log2f(desc.min))),
+        ParamScale::Power(exp)  => desc.min + powf(norm, exp) * (desc.max - desc.min),
+    };
+    if desc.flags.contains(ParamFlags::STEPPED) { roundf(val) } else { val }
+}
+```
+
+This gives `from_knobs()`-quality response: log sweep for frequency knobs
+(cutoff, LFO rate), linear for dB/mix, power curves for custom params.
+
+### A/B Morphing
+
+`SoundSnapshot` captures all parameter values + STEPPED flags for 3 slots:
+
+```rust
+struct SoundSnapshot {
+    params: [[f32; MAX_PARAMS]; NUM_SLOTS],     // MAX_PARAMS=16, NUM_SLOTS=3
+    stepped: [[bool; MAX_PARAMS]; NUM_SLOTS],   // cached ParamFlags::STEPPED per param
+    param_counts: [usize; NUM_SLOTS],
+}
+```
+
+`interpolate_and_apply()` writes lerped values to the graph every control
+poll. STEPPED params snap at t=0.5 — the same logic as `KernelParams::lerp()`:
+
+```rust
+let val = if stepped { if t < 0.5 { a } else { b } } else { a + (b - a) * t };
+effect.effect_set_param(p, val);  // direct write via EmbeddedAdapter
+```
+
+### Presets
+
+9-slot in-memory ring buffer (`Vec<Preset>` on SDRAM heap). Presets survive
+until power-off. Save: both-FS tap in Build mode. Load: both-FS tap in
+Explore mode (cycles through occupied slots). Each `Preset` stores: effect
+indices, routing, Sound A, Sound B, morph speed.
+
+### How to Add a New Effect to the Morph Pedal
+
+1. **Add the kernel import** in the `use sonido_effects::{...}` block at the
+   top of `morph_pedal.rs`.
+
+2. **Add a new entry to `EFFECT_LIST`** at the desired position. Map the 6
+   knobs to parameter indices by checking the kernel's `KernelParams`
+   implementation (look at `descriptor(index)` calls in the kernel file).
+   Use `NULL_KNOB` (0xFF) for unused knobs. Follow the role convention:
+   K1=Primary, K2=Secondary, K3=Color, K4=Character, K5=Mix, K6=Level.
+
+3. **Add a match arm to `create_effect()`** at the matching index:
+   ```rust
+   N => Some(Box::new(EmbeddedAdapter::new(MyKernel::new(sr)))),
+   ```
+
+4. **Update `NUM_EFFECTS`** constant to match the new list length.
+
+5. **Build and verify:**
+   ```bash
+   cd crates/sonido-daisy
+   cargo check --example morph_pedal --release
+   ```
+
+### How to Modify Modes or Add Features
+
+The control logic lives in a single `start_callback` closure in `main()`.
+The structure is:
+
+```
+Audio callback (runs every block, ~1500Hz):
+├── Deinterleave u32 → f32
+├── graph.process_block() (compiled DAG, zero-alloc)
+├── Reinterleave f32 → u32
+└── Every POLL_EVERY blocks (~100Hz):
+    ├── Read 6 ADC knobs
+    ├── Decode 3 toggles + 2 footswitches
+    ├── Mode-specific control logic (match on current Mode)
+    │   ├── Explore: scroll effects, map knobs to focused slot
+    │   ├── Build: capture snapshots, navigate slots, preview
+    │   └── Morph: ramp morph_t, interpolate_and_apply()
+    └── Global bypass detection (both-FS hold)
+```
+
+Key state variables (all local to the callback closure):
+
+| Variable | Type | Purpose |
+|----------|------|---------|
+| `effect_indices` | `[Option<usize>; 3]` | Which effect is in each slot |
+| `node_ids` | `[Option<NodeId>; 3]` | Graph node per slot (None = empty) |
+| `graph` | `ProcessingGraph` | Compiled DAG |
+| `mode` | `Mode` | Current operating mode |
+| `routing` | `Routing` | Current topology |
+| `focused_slot` | `usize` | Which slot knobs/FS control |
+| `sound_a` / `sound_b` | `SoundSnapshot` | A/B parameter snapshots |
+| `build_slot` | `usize` | Which slot is being sculpted in Build |
+| `morph_t` | `f32` | Current morph position (0.0=A, 1.0=B) |
+
+Graph rebuild (via `build_graph()`) happens only on topology changes: effect
+scroll, slot population change, or T2 toggle. Parameter changes never rebuild
+— they go through `graph.effect_with_params_mut(nid).effect_set_param()`.
+
+---
+
+## Creating a New Firmware Example
+
+Step-by-step guide for adding a new binary to `crates/sonido-daisy/examples/`.
+
+### 1. Create the file
+
+```bash
+touch crates/sonido-daisy/examples/my_example.rs
+```
+
+### 2. Minimal template
+
+Every example needs these elements:
+
+```rust
+//! Tier N: One-line description of what it validates.
+//!
+//! Detailed explanation of the example's purpose and hardware requirements.
+
+#![no_std]
+#![no_main]
+
+use defmt_rtt as _;
+use embassy_stm32 as hal;
+use panic_probe as _;
+
+use sonido_daisy::{ClockProfile, heartbeat, led::UserLed};
+
+#[embassy_executor::main]
+async fn main(spawner: embassy_executor::Spawner) {
+    // Clock init (Performance = 480 MHz, Efficient = 400 MHz)
+    let config = sonido_daisy::rcc_config(ClockProfile::Performance);
+    let p = hal::init(config);
+
+    // Heartbeat LED (every example should have this)
+    let led = UserLed::new(p.PC7);
+    spawner.spawn(heartbeat(led)).unwrap();
+
+    // Your code here...
+}
+```
+
+### 3. If you need heap (delay lines, Box\<dyn Effect\>, Vec)
+
+Add SDRAM init before any allocations:
+
+```rust
+extern crate alloc;
+use embedded_alloc::LlffHeap as Heap;
+
+#[global_allocator]
+static HEAP: Heap = Heap::empty();
+
+// In main(), after hal::init():
+let mut cp = unsafe { cortex_m::Peripherals::steal() };
+let sdram_ptr = sonido_daisy::init_sdram!(p, &mut cp.MPU, &mut cp.SCB);
+unsafe { HEAP.init(sdram_ptr as usize, sonido_daisy::sdram::SDRAM_SIZE); }
+```
+
+### 4. If you need audio
+
+Use `AudioPeripherals` + `start_callback()`:
+
+```rust
+use sonido_daisy::audio::AudioPeripherals;
+
+// Build AudioPeripherals from pin assignments (see passthrough.rs for full list)
+let audio = AudioPeripherals { /* SAI1, DMA, codec pins */ };
+let mut interface = audio.start_interface(&mut cp.SCB).await;
+
+// D-cache: spawn deferred task BEFORE start_callback
+spawner.spawn(deferred_dcache()).unwrap();
+
+interface.start_callback(|input: &[u32], output: &mut [u32]| {
+    // Deinterleave, process, reinterleave
+}).await;
+```
+
+### 5. Build and flash
+
+```bash
+cd crates/sonido-daisy
+cargo objcopy --example my_example --release -- -O binary -R .sram1_bss my_example.bin
+dfu-util -a 0 -s 0x90040000:leave -D my_example.bin
+```
+
+### 6. Update documentation
+
+- Add the example to the Tier table in this file (EMBEDDED.md)
+- Add it to `docs/DOC_CODE_MAPPING.md` line 60 (daisy examples list)
+- Add it to `CLAUDE.md` Key Files table (sonido-daisy examples line)
 
 ---
 
@@ -789,6 +1187,10 @@ hardware controls to effect parameters. The Daisy/Hothouse firmware:
 | Gap | Detail |
 |-----|--------|
 | Block processing | Biquad/SVF have per-sample `process()` only — block version would improve CM7 cache behavior |
+| Flash persistence | Morph pedal presets are in-memory only (SDRAM) — lost on power cycle. Future: save to QSPI flash |
+| Expression pedal | No expression pedal / CV input support yet |
+| MIDI CC routing | No MIDI CC → parameter mapping |
+| Bootloader shortcut | Hothouse footswitch → DFU reset not yet implemented in Rust (C++ has `CheckResetToBootloader()`) |
 
 ---
 

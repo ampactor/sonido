@@ -73,7 +73,7 @@ sonido --help
 sonido --version
 ```
 
-- [ ] Help shows all 11 commands: process, realtime, play, generate, analyze, compare, devices, effects, presets, info, help
+- [ ] Help shows all 10 commands: process, realtime, play, generate, analyze, compare, devices, effects, presets, info
 
 ### 1.2 List Effects
 
