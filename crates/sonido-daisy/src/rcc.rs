@@ -86,6 +86,7 @@ pub fn rcc_config(profile: ClockProfile) -> hal::Config {
         divq: None,
         divr: Some(PllDiv::DIV2),
     });
+    config.rcc.mux.adcsel = hal::rcc::mux::Adcsel::PLL2_P;
     config.rcc.mux.fmcsel = hal::rcc::mux::Fmcsel::PLL2_R;
 
     // Bus prescalers — identical for both profiles.

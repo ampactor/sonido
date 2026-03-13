@@ -8,11 +8,16 @@
 //!
 //! # ADC clock
 //!
-//! The ADC clock comes from PLL2_P (100 MHz after `rcc_config()` fix).
-//! With `SampleTime::CYCLES810_5`, the temperature sensor sampling time
-//! is 810.5 / 100 MHz = 8.1 µs. The datasheet minimum is 9 µs — close
-//! enough for diagnostic use (within ~2 °C). For production accuracy,
-//! set the ADC3_COMMON prescaler to DIV2 (50 MHz → 16.2 µs).
+//! The ADC kernel clock comes from PLL2_P (100 MHz from `rcc_config()`).
+//! Embassy's `Adc::new()` automatically sets the ADC_CCR prescaler via
+//! `from_ker_ck()` to bring the clock under the 50 MHz H7 maximum:
+//! `Presc::DIV2` → effective ADC clock = **50 MHz**.
+//!
+//! At 50 MHz, `SampleTime::CYCLES810_5` gives 810.5 / 50 MHz = **16.2 µs**,
+//! well above the 9 µs minimum for the temperature sensor (RM0433 Table 167).
+//!
+//! ADC1/ADC2 share `ADC12_COMMON` (0x4002_2300); ADC3 has its own
+//! `ADC3_COMMON` (0x5802_6300). Prescalers are independent per block.
 
 use embassy_stm32::adc::{Adc, Temperature};
 use embassy_stm32::peripherals::ADC3;
@@ -39,7 +44,12 @@ pub fn enable_temperature(adc: &mut Adc<'_, ADC3>) -> Temperature {
 pub const TS_CAL1_ADDR: *const u16 = 0x1FF1_E820 as *const u16;
 
 /// STM32H750 factory calibration address: raw ADC at 110 °C (16-bit, 3.3 V).
-pub const TS_CAL2_ADDR: *const u16 = 0x1FF1_E824 as *const u16;
+///
+/// Per RM0433 Table 14 and confirmed by stm32h7xx-hal `signature.rs`.
+/// **Note:** a previous version used `0x1FF1_E824`, which is the wrong
+/// address and reads an unrelated calibration value, producing garbage
+/// temperature readings (e.g. -3 °C).
+pub const TS_CAL2_ADDR: *const u16 = 0x1FF1_E840 as *const u16;
 
 /// Reads factory calibration values for the temperature sensor.
 ///

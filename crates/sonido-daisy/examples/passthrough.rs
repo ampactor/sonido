@@ -39,6 +39,9 @@ use sonido_daisy::{ClockProfile, heartbeat, led::UserLed};
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
+    // D2 SRAM clocks off at reset — must enable before DMA buffers are touched.
+    sonido_daisy::enable_d2_sram();
+
     let config = sonido_daisy::rcc_config(ClockProfile::Performance);
     let p = hal::init(config);
 
