@@ -36,6 +36,8 @@ const HALF_PERIOD: u32 = 24;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
+    sonido_daisy::enable_d2_sram();
+
     let config = sonido_daisy::rcc_config(ClockProfile::Performance);
     let p = hal::init(config);
 

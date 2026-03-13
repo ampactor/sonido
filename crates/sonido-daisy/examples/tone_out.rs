@@ -39,6 +39,8 @@ const PHASE_INC: f32 = 2.0 * PI * 440.0 / SAMPLE_RATE;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
+    sonido_daisy::enable_d2_sram();
+
     let config = sonido_daisy::rcc_config(ClockProfile::Performance);
     let p = hal::init(config);
 
