@@ -136,6 +136,23 @@ Target hardware: **Electrosmith Daisy Seed** (STM32H750, Cortex-M7 @ 480 MHz, 64
 
 `no_std` across 6 crates (`sonido-core`, `sonido-effects`, `sonido-synth`, `sonido-registry`, `sonido-platform`, `sonido-daisy`). All math via `libm`. All 19 effects provide `from_knobs()` for direct 0.0–1.0 ADC-to-parameter mapping.
 
+### Morph Pedal Demo
+
+The `sonido_pedal` firmware is Sonido's flagship embedded demo — a 3-slot multi-effect with real-time morphing, running on the Hothouse at 48 kHz / 128 samples:
+
+- **3 effect slots** — scroll through all 19 effects per slot via footswitch
+- **Topology switching** — serial, parallel (split/merge), and fan routing, live via toggle
+- **Per-node A/B editing** — capture Sound A and Sound B independently for each slot
+- **Real-time morphing** — expression-ready sweep between A/B snapshots across all slots via `KernelParams::lerp()`
+- **Zero-allocation audio path** — DMA callback calls `kernel.process_stereo()` directly
+
+```bash
+# Build and flash
+cargo objcopy --release --example sonido_pedal --target thumbv7em-none-eabihf \
+  --features alloc -- -O binary sonido_pedal.bin
+dfu-util -a 0 -s 0x08000000:leave -D sonido_pedal.bin
+```
+
 ### DMA Audio Callback Example
 
 ```rust
@@ -220,6 +237,7 @@ graph.compile()?;  // Kahn sort → liveness analysis → latency compensation
 - **Atomic schedule swap**: Compiled schedules swap via `Arc` with ~5ms crossfade (click-free)
 - **Graph DSL**: `"preamp:gain=6 | distortion:drive=15 | reverb:mix=0.3"`
 - **Parallel split**: `"split(distortion:drive=20; -) | limiter"` (dry path via `-`)
+- **Fan topology**: `"split(chorus; reverb; delay)"` (one input fans to three independent outputs)
 
 ## Architecture
 
@@ -413,11 +431,19 @@ Effect algorithms are informed by clean-room analysis of commercial DSP hardware
 - [GUI Documentation](docs/GUI.md)
 - [Embedded Guide](docs/EMBEDDED.md)
 
+### Reference
+- [Biosignal Analysis](docs/reference/biosignal.md) — EEG/biosignal processing
+- [CFC Analysis](docs/reference/cfc-analysis.md) — cross-frequency coupling
+- [Hendrix Effects](docs/reference/hendrix-effects.md) — implementation brief
+- [Hendrix Signal Chain](docs/reference/hendrix-signal-chain.md) — reference chain
+- [Signature Sounds](docs/reference/signature-sounds.md) — creative DSP brainstorming
+
 ### Development
 - [Contributing](docs/CONTRIBUTING.md)
 - [Testing](docs/TESTING.md)
 - [Benchmarks](docs/BENCHMARKS.md)
 - [Changelog](docs/CHANGELOG.md)
+- [Roadmap](docs/ROADMAP.md) — current state, near-term priorities, and capability horizons
 
 ## License
 
