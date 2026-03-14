@@ -72,7 +72,7 @@ When you change code in the "Source Files" column, you **must** update the corre
 | `docs/ARCHITECTURE.md` | Crate structure, dependency graph | Update crate diagram and dependency descriptions |
 | `docs/CLI_GUIDE.md` | `crates/sonido-cli/src/**/*.rs` | Update command examples, add new subcommands |
 | `docs/EMBEDDED.md` | `crates/sonido-platform/src/*.rs` | Update platform traits, control mapping |
-| `docs/BIOSIGNAL_ANALYSIS.md` | `crates/sonido-analysis/src/cfc.rs`, `filterbank.rs`, `hilbert.rs` | Update analysis pipeline docs |
+| `docs/reference/biosignal.md` | `crates/sonido-analysis/src/cfc.rs`, `filterbank.rs`, `hilbert.rs` | Update analysis pipeline docs |
 | `docs/BENCHMARKS.md` | `benches/*.rs` | Update benchmark results after optimization |
 | `docs/CHANGELOG.md` | Any user-visible change | Add entry under current version |
 | `docs/TESTING.md` | Test infrastructure changes | Update test patterns, CI steps |
@@ -94,7 +94,7 @@ When you change code in the "Source Files" column, you **must** update the corre
 | New crate | `CLAUDE.md` Crates table, `ARCHITECTURE.md` diagram, workspace `Cargo.toml` |
 | Bug fix | `CHANGELOG.md` entry |
 | Performance improvement | `BENCHMARKS.md` with before/after numbers |
-| New analysis feature | `BIOSIGNAL_ANALYSIS.md` or `CFC_ANALYSIS.md` |
+| New analysis feature | `docs/reference/biosignal.md` or `docs/reference/cfc-analysis.md` |
 | Architectural decision | `DESIGN_DECISIONS.md` ADR entry |
 
 ### Doc Checklist (before PR merge)

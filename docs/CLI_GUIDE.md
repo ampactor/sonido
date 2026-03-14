@@ -647,7 +647,7 @@ Output includes:
 - Amplitude distribution by phase bin
 - p-value (if surrogates > 0)
 
-See [CFC_ANALYSIS.md](CFC_ANALYSIS.md) for detailed PAC analysis documentation.
+See [CFC Analysis](reference/cfc-analysis.md) for detailed PAC analysis documentation.
 
 #### comodulogram
 

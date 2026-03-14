@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Auto-insert Merge nodes**: GUI graph view auto-inserts Merge nodes for many-to-one connections — users wire directly to effect inputs, routing handles fan-in automatically
+
+### Changed
+- **Morph Pedal v3**: Complete UX redesign of embedded morph pedal firmware
+  - Per-node A/B editing — capture Sound A and Sound B independently for each effect slot
+  - Topology toggle controls for serial/parallel/fan routing
+  - DAG morphing — interpolates between full graph topologies, not just parameter snapshots
+- **Compressor/Limiter time params**: Attack/release (compressor) and release (limiter) now use `Power(2)` parameter scaling for finer control at small values. **Migration note**: existing presets' time parameter values will map to different absolute times at the same normalized position
+- **Distortion default drive**: Lowered from 12 dB to 8 dB for less aggressive out-of-box sound
+
+### Documentation
+- Updated `docs/EMBEDDED.md` with morph pedal v3 UX details and per-node editing workflow
+- Specialist reference docs moved to `docs/reference/` subdirectory
+- Completed plan files archived to `docs/archive/plans/`
+
+### Added
 - **sonido-daisy: Modular control/audio layer** — 4 new library modules extracted from example code:
   - `controls.rs` — lock-free `ControlBuffer` with IIR smoothing, change detection, LED bridge (pure `core`, no Embassy/alloc)
   - `hothouse.rs` — `HothouseControls`, `hothouse_control_task` (50 Hz Embassy task), `hothouse_pins!` macro, `decode_toggle`

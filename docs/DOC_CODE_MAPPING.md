@@ -34,9 +34,9 @@ Rows marked `<!-- PLANNED -->` are pre-reserved for v0.3+ features. Do not updat
 | `crates/sonido-synth/src/voice.rs` | `docs/SYNTHESIS.md` | Voice allocation, stealing policy |
 | `crates/sonido-synth/src/mod_matrix.rs` | `docs/SYNTHESIS.md` | Routing, source/destination IDs, depth scaling |
 | `crates/sonido-registry/src/lib.rs` | CLAUDE.md (Key Patterns: Effect Registry), `docs/DESIGN_DECISIONS.md` ADR-011 | Registration API, create-by-name pattern |
-| `crates/sonido-analysis/src/cfc.rs` | `docs/BIOSIGNAL_ANALYSIS.md`, `docs/CFC_ANALYSIS.md` | PAC algorithm, comodulogram, surrogate stats |
-| `crates/sonido-analysis/src/filterbank.rs` | `docs/BIOSIGNAL_ANALYSIS.md` | EEG band definitions, filter bank design |
-| `crates/sonido-analysis/src/hilbert.rs` | `docs/BIOSIGNAL_ANALYSIS.md` | Analytic signal, instantaneous phase/amplitude |
+| `crates/sonido-analysis/src/cfc.rs` | `docs/reference/biosignal.md`, `docs/reference/cfc-analysis.md` | PAC algorithm, comodulogram, surrogate stats |
+| `crates/sonido-analysis/src/filterbank.rs` | `docs/reference/biosignal.md` | EEG band definitions, filter bank design |
+| `crates/sonido-analysis/src/hilbert.rs` | `docs/reference/biosignal.md` | Analytic signal, instantaneous phase/amplitude |
 | `crates/sonido-analysis/src/lms.rs`, `xcorr.rs`, `ddc.rs`, `phase.rs`, `resample.rs` | CLAUDE.md (Key Files table), `docs/ARCHITECTURE.md` (sonido-analysis section) | LMS/NLMS API, xcorr functions, DDC struct, phase unwrapping, resampling |
 | `crates/sonido-platform/src/*.rs` | `docs/EMBEDDED.md`, `docs/DESIGN_DECISIONS.md` ADR-012 | PlatformController trait, ControlId namespaces, GraphMapper, ControlContext |
 | `crates/sonido-io/src/backend.rs`, `cpal_backend.rs` | `docs/ARCHITECTURE.md` (sonido-io section), `docs/DESIGN_DECISIONS.md` ADR-023 | AudioBackend trait, CpalBackend, StreamHandle, BackendStreamConfig |
@@ -59,4 +59,4 @@ Rows marked `<!-- PLANNED -->` are pre-reserved for v0.3+ features. Do not updat
 | `crates/sonido-daisy/src/*.rs` | `docs/EMBEDDED.md`, CLAUDE.md (Crates table, Key Files) | Firmware lib, DWT helpers, audio constants, `heartbeat` task, SDRAM init, clock profiles |
 | `crates/sonido-daisy/examples/*.rs` | `docs/EMBEDDED.md` (Tier System, Getting Started, Diagnostics) | bench_kernels, bench_mini, blinky, blinky_bare, heap_test, hothouse_diag, morph_pedal, passthrough, passthrough_blink, silence, single_effect, square_out, tone_out |
 | `LICENSE-MIT`, `LICENSE-APACHE` | `README.md` (License section), `docs/LICENSING.md` | License text, dual-license references |
-| `docs/SIGNATURE_SOUNDS.md` | `docs/ROADMAP.md` (cross-reference) | Brainstorming candidates, interaction patterns |
+| `docs/reference/signature-sounds.md` | `docs/ROADMAP.md` (cross-reference) | Brainstorming candidates, interaction patterns |

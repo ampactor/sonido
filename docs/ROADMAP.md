@@ -164,7 +164,7 @@ See ADR-028 in `docs/DESIGN_DECISIONS.md`.
 
 ## Near-Term Priorities (v0.3)
 
-Informed by analysis of DigiTech's design philosophy (Tom Cram era): musicality over technical correctness, dynamic response to playing dynamics ("volume knob cleanup"), and platform-appropriate design. These priorities target the gap between "correct DSP" and "inspiring instrument." See [Signature Sounds](SIGNATURE_SOUNDS.md) for the creative brainstorming behind these priorities.
+Informed by analysis of DigiTech's design philosophy (Tom Cram era): musicality over technical correctness, dynamic response to playing dynamics ("volume knob cleanup"), and platform-appropriate design. These priorities target the gap between "correct DSP" and "inspiring instrument." See [Signature Sounds](reference/signature-sounds.md) for the creative brainstorming behind these priorities.
 
 ### Dynamic Waveshaper Response
 
@@ -333,7 +333,7 @@ Additional capability expansions that require new crates or significant architec
 
 ### DAG Routing Engine
 
-**Status:** Complete (`a367fb7`)
+**Status:** Complete
 
 Directed acyclic graph replacing the linear `Vec<usize>` effect chain. Nodes are effects; edges are audio connections. Topological sort determines processing order; intermediate buffers accumulate branch outputs at merge nodes.
 
@@ -348,7 +348,7 @@ Directed acyclic graph replacing the linear `Vec<usize>` effect chain. Nodes are
 - **`linear()` convenience**: constructs Input→E1→...→En→Output chains
 - **no_std with alloc**: embeddable on Daisy Seed
 
-**Unblocks:** Multi-effect CLAP plugin, synth-effects hybrid (Space Station 2.0), spectral parallel processing.
+**Unblocked:** Multi-effect CLAP plugin (complete), synth-effects hybrid (Space Station 2.0), spectral parallel processing.
 
 See ADR-025 in `docs/DESIGN_DECISIONS.md` for full architectural rationale.
 
@@ -371,7 +371,7 @@ See ADR-025 in `docs/DESIGN_DECISIONS.md` for full architectural rationale.
 
 **Estimated scope:** ~500–800 LOC for pitch detector + bridge to synth engine. The rest is composition of existing components.
 
-**Status:** Not started. Depends on DAG routing.
+**Status:** Not started. DAG routing dependency resolved (complete). Pitch detector is the remaining prerequisite.
 
 **References:**
 - Alain de Cheveigné, Hideki Kawahara, "YIN, a fundamental frequency estimator for speech and music" (JASA 2002)
@@ -400,6 +400,33 @@ See ADR-025 in `docs/DESIGN_DECISIONS.md` for full architectural rationale.
 **Dependencies:** Move FFT processing from offline-analysis path to real-time audio path. No new dependencies needed.
 
 **Status:** Not started.
+
+---
+
+### Morph Pedal v3
+
+**Status:** Complete
+
+Full UX redesign of the embedded morph pedal firmware on Hothouse/Daisy Seed. Per-node A/B editing: capture Sound A and Sound B independently for each effect slot. Topology toggles for serial/parallel/fan routing. DAG morphing interpolates between full graph topologies (not just parameter snapshots). LED patterns indicate mode (scroll pulse for Explore, slot-number blink for Build, PWM morph position for Morph).
+
+---
+
+### Performance Optimization
+
+**Status:** Not started
+
+CPU budget targets for the most expensive effects, informed by embedded real-time constraints.
+
+**Targets:**
+- Reverb: M7 CPU budget target — Hadamard FDN must stay under 40% of Cortex-M7 budget at 48 kHz/128 samples
+- Tape: M7 CPU budget target — hysteresis + wow/flutter + head bump + HF rolloff within 35% budget
+- Graph overhead: schedule compilation + buffer allocation overhead < 5% per block
+
+**Approach:**
+- Profile with `cargo bench` (CI-only, manual dispatch)
+- SIMD-friendly inner loops (aligned buffers, batch processing)
+- Minimize branch misprediction in per-sample hot paths
+- Cache-line-aware data layout for delay buffers
 
 ---
 
@@ -453,9 +480,9 @@ Combine neural capture for amp/preamp stages (where algorithmic models fall shor
 DI → Neural Amp Capture → Algorithmic Reverb → Cabinet IR (convolution)
 ```
 
-**Dependencies:** Neural capture crate (v0.3), DAG routing (v0.3).
+**Dependencies:** Neural capture crate (v0.3). DAG routing is complete.
 
-**Status:** Not started. Trivially composable once the v0.3 primitives exist.
+**Status:** Not started. Trivially composable once the neural capture crate exists.
 
 ---
 
