@@ -497,6 +497,10 @@ impl<K: DspKernel, S: SmoothingPolicy> Effect for Adapter<K, S> {
     fn set_tempo_context(&mut self, ctx: &TempoContext) {
         self.kernel.set_tempo_context(ctx);
     }
+
+    fn tail_samples(&self) -> usize {
+        self.kernel.tail_samples()
+    }
 }
 
 // ── TailReporting impl ───────────────────────────────────────────────────────
@@ -960,18 +964,18 @@ mod tests {
     #[test]
     fn tail_reporting_delegates_to_kernel() {
         let adapter = KernelAdapter::new(TailKernel { tail: 96000 }, 48000.0);
-        assert_eq!(adapter.tail_samples(), 96000);
+        assert_eq!(TailReporting::tail_samples(&adapter), 96000);
     }
 
     #[test]
     fn tail_reporting_default_is_zero() {
         let adapter = KernelAdapter::new(TestGainKernel, 48000.0);
-        assert_eq!(adapter.tail_samples(), 0);
+        assert_eq!(TailReporting::tail_samples(&adapter), 0);
     }
 
     #[test]
     fn tail_reporting_direct_policy() {
         let adapter = Adapter::<TailKernel, DirectPolicy>::new_direct(TailKernel { tail: 48000 });
-        assert_eq!(adapter.tail_samples(), 48000);
+        assert_eq!(TailReporting::tail_samples(&adapter), 48000);
     }
 }

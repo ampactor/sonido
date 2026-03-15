@@ -325,6 +325,17 @@ pub trait Effect {
     /// # Arguments
     /// * `ctx` - Current tempo, transport state, and musical position
     fn set_tempo_context(&mut self, _ctx: &crate::tempo::TempoContext) {}
+
+    /// Report the effect's ring-out tail in samples.
+    ///
+    /// Used by the graph engine for spillover — effects with non-zero tails
+    /// are kept alive after removal, fed silence, and faded out over their
+    /// tail duration. Default: 0 (no tail).
+    ///
+    /// Override for reverb, delay, and looper effects.
+    fn tail_samples(&self) -> usize {
+        0
+    }
 }
 
 /// Extension trait for effects that report their tail/ring-out duration.
@@ -448,6 +459,10 @@ impl<A: Effect, B: Effect> Effect for Chain<A, B> {
     fn set_tempo_context(&mut self, ctx: &crate::tempo::TempoContext) {
         self.first.set_tempo_context(ctx);
         self.second.set_tempo_context(ctx);
+    }
+
+    fn tail_samples(&self) -> usize {
+        self.first.tail_samples().max(self.second.tail_samples())
     }
 }
 

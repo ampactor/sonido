@@ -139,7 +139,7 @@ pub use graph::{
     GraphSnapshot, NodeId, NodeKind, ProcessStep, ProcessingGraph, SnapshotEntry, StereoBuffer,
     StereoSamples,
 };
-pub use kernel::{DspKernel, KernelAdapter, KernelParams, SmoothingStyle};
+pub use kernel::{DspKernel, KernelAdapter, KernelParams, MorphCurve, MorphSpace, SmoothingStyle};
 pub use lfo::{Lfo, LfoWaveform};
 pub use loop_buffer::LoopBuffer;
 pub use math::{

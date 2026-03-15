@@ -74,7 +74,9 @@
 //! This module is fully `no_std` compatible with `alloc` (for `Vec` in the adapter).
 
 mod adapter;
+pub mod morph;
 mod traits;
 
 pub use adapter::{Adapter, DirectPolicy, KernelAdapter, SmoothedPolicy, SmoothingPolicy};
+pub use morph::{MorphCurve, MorphSpace};
 pub use traits::{DspKernel, KernelParams, SmoothingStyle};

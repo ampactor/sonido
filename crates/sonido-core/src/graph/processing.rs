@@ -28,6 +28,23 @@ use super::schedule::{CompiledSchedule, MAX_SPLIT_TARGETS, ProcessStep};
 #[cfg(all(debug_assertions, feature = "debug-alloc"))]
 use assert_no_alloc::assert_no_alloc;
 
+/// An effect removed from the graph that's still producing decaying output.
+///
+/// Fed silence each block; output mixed into the final output with exponential
+/// fade-out. Dropped when remaining samples reach zero or fade reaches silence.
+struct SpilloverTail {
+    /// The removed effect, still processing its tail (reverb decay, delay feedback).
+    effect: Box<dyn EffectWithParams + Send>,
+    /// Exponential fade-out envelope (starts at 1.0, targets 0.0).
+    fade: SmoothedParam,
+    /// Samples remaining in the tail.
+    remaining: usize,
+    /// Scratch left buffer for processing (sized to block_size).
+    left_buf: Vec<f32>,
+    /// Scratch right buffer for processing (sized to block_size).
+    right_buf: Vec<f32>,
+}
+
 /// Formats a compiled `ProcessStep` into a human-readable description.
 #[cfg(feature = "tracing")]
 fn format_step(step: &ProcessStep) -> String {
@@ -162,6 +179,10 @@ pub struct ProcessingGraph {
     audio_pool: BufferPool,
     /// Persistent compensation delay lines. Rebuilt at compile(), state persists across blocks.
     audio_delay_lines: Vec<CompensationDelay>,
+    /// Active spillover tails from removed effects.
+    spillover_tails: Vec<SpilloverTail>,
+    /// Whether spillover is enabled (default: true).
+    spillover_enabled: bool,
 }
 
 impl ProcessingGraph {
@@ -188,6 +209,8 @@ impl ProcessingGraph {
             crossfade_right: vec![0.0; block_size],
             audio_pool: BufferPool::new(0, block_size),
             audio_delay_lines: Vec::new(),
+            spillover_tails: Vec::new(),
+            spillover_enabled: true,
         }
     }
 
@@ -265,7 +288,29 @@ impl ProcessingGraph {
             self.disconnect_internal(edge_id);
         }
 
-        self.nodes[idx] = None;
+        // Take the node out of the slot.
+        if let Some(node_data) = self.nodes[idx].take() {
+            // If this is an Effect node with a non-zero tail and spillover is enabled,
+            // preserve the effect so it can ring out instead of cutting abruptly.
+            if let NodeKind::Effect(effect) = node_data.kind {
+                let tail = effect.tail_samples();
+                if tail > 0 && self.spillover_enabled {
+                    let fade_ms = (tail as f32 / self.sample_rate * 1000.0).min(10000.0);
+                    let mut fade = SmoothedParam::with_config(1.0, self.sample_rate, fade_ms);
+                    fade.set_target(0.0);
+                    let buf_size = self.block_size.max(1);
+                    self.spillover_tails.push(SpilloverTail {
+                        effect,
+                        fade,
+                        remaining: tail,
+                        left_buf: vec![0.0; buf_size],
+                        right_buf: vec![0.0; buf_size],
+                    });
+                }
+                // If no tail or spillover disabled, effect is dropped here.
+            }
+            // Non-effect nodes (Input, Output, Split, Merge) are dropped normally.
+        }
         #[cfg(feature = "tracing")]
         tracing::debug!("graph_remove: node {id}");
         Ok(())
@@ -1097,6 +1142,31 @@ impl ProcessingGraph {
             }
         }
 
+        // Process spillover tails and mix into output.
+        self.spillover_tails.retain_mut(|tail| {
+            if tail.remaining == 0 {
+                return false;
+            }
+            let buf_len = len.min(tail.left_buf.len());
+            // Fill scratch buffers with silence — the effect's internal state
+            // (reverb feedback, delay lines) produces the ring-out as output.
+            tail.left_buf[..buf_len].fill(0.0);
+            tail.right_buf[..buf_len].fill(0.0);
+            // Process: silence in, tail decay out (in-place).
+            tail.effect.process_block_stereo_inplace(
+                &mut tail.left_buf[..buf_len],
+                &mut tail.right_buf[..buf_len],
+            );
+            // Mix faded tail into the final output.
+            for i in 0..buf_len {
+                let fade = tail.fade.advance();
+                left_out[i] += tail.left_buf[i] * fade;
+                right_out[i] += tail.right_buf[i] * fade;
+            }
+            tail.remaining = tail.remaining.saturating_sub(buf_len);
+            tail.remaining > 0 && !tail.fade.is_settled()
+        });
+
         // Cache output for potential future crossfade.
         let cache_len = len.min(self.crossfade_left.len());
         self.crossfade_left[..cache_len].copy_from_slice(&left_out[..cache_len]);
@@ -1307,6 +1377,10 @@ impl ProcessingGraph {
             }
             node.bypass_fade.set_sample_rate(sample_rate);
         }
+        for tail in &mut self.spillover_tails {
+            tail.effect.set_sample_rate(sample_rate);
+            tail.fade.set_sample_rate(sample_rate);
+        }
     }
 
     /// Sets the block size. Requires recompilation.
@@ -1323,6 +1397,8 @@ impl ProcessingGraph {
     }
 
     /// Resets all effect nodes and clears delay lines.
+    ///
+    /// Also clears all active spillover tails.
     pub fn reset(&mut self) {
         for node in self.nodes.iter_mut().flatten() {
             if let NodeKind::Effect(ref mut effect) = node.kind {
@@ -1335,6 +1411,7 @@ impl ProcessingGraph {
         for dl in &mut self.audio_delay_lines {
             dl.clear();
         }
+        self.spillover_tails.clear();
     }
 
     /// Broadcasts a tempo context to all effect nodes.
@@ -1353,6 +1430,23 @@ impl ProcessingGraph {
     /// Returns 0 if the graph hasn't been compiled.
     pub fn latency_samples(&self) -> usize {
         self.compiled.as_ref().map(|s| s.total_latency).unwrap_or(0)
+    }
+
+    /// Enable or disable spillover for removed effects.
+    ///
+    /// When enabled (default), effects with non-zero [`Effect::tail_samples()`] are
+    /// kept alive after [`remove_node()`](Self::remove_node) and fed silence until
+    /// their tail decays to zero. When disabled, removed effects are dropped immediately.
+    pub fn set_spillover(&mut self, enabled: bool) {
+        self.spillover_enabled = enabled;
+        if !enabled {
+            self.spillover_tails.clear();
+        }
+    }
+
+    /// Number of active spillover tails from previously removed effects.
+    pub fn spillover_count(&self) -> usize {
+        self.spillover_tails.len()
     }
 
     /// Convenience constructor: builds a linear chain Input → E1 → E2 → ... → Output.
@@ -2601,5 +2695,152 @@ mod tests {
                 "f64 accumulate left[{i}]: expected {val}, got {s}"
             );
         }
+    }
+
+    // --- Spillover tail tests ---
+
+    /// Test effect with a delay-line feedback loop so it actually has a tail.
+    struct TailTestEffect {
+        /// Reported tail length in samples.
+        tail: usize,
+        /// Simple feedback delay buffer.
+        buffer: [f32; 256],
+        write_pos: usize,
+    }
+
+    impl Effect for TailTestEffect {
+        fn process(&mut self, input: f32) -> f32 {
+            let delayed = self.buffer[self.write_pos];
+            self.buffer[self.write_pos] = input + delayed * 0.5;
+            self.write_pos = (self.write_pos + 1) % 256;
+            delayed
+        }
+
+        fn tail_samples(&self) -> usize {
+            self.tail
+        }
+
+        fn set_sample_rate(&mut self, _: f32) {}
+
+        fn reset(&mut self) {
+            self.buffer.fill(0.0);
+            self.write_pos = 0;
+        }
+    }
+
+    impl ParameterInfo for TailTestEffect {
+        fn param_count(&self) -> usize {
+            0
+        }
+        fn param_info(&self, _: usize) -> Option<ParamDescriptor> {
+            None
+        }
+        fn get_param(&self, _: usize) -> f32 {
+            0.0
+        }
+        fn set_param(&mut self, _: usize, _: f32) {}
+    }
+
+    #[test]
+    fn spillover_preserves_tail() {
+        // Input → TailTestEffect → Output. Process noise to fill the delay,
+        // then remove the effect and verify output remains non-zero (tail rings out).
+        let tail_len = 512usize;
+        let block_size = 64usize;
+
+        let mut graph = ProcessingGraph::new(48000.0, block_size);
+        let input = graph.add_input();
+        let effect_id = graph.add_effect(Box::new(TailTestEffect {
+            tail: tail_len,
+            buffer: [0.0; 256],
+            write_pos: 0,
+        }));
+        let output = graph.add_output();
+
+        graph.connect(input, effect_id).unwrap();
+        graph.connect(effect_id, output).unwrap();
+        graph.compile().unwrap();
+
+        // Fill the effect with signal.
+        let signal = vec![0.5_f32; block_size];
+        let mut left_out = vec![0.0_f32; block_size];
+        let mut right_out = vec![0.0_f32; block_size];
+        for _ in 0..4 {
+            graph.process_block(&signal, &signal, &mut left_out, &mut right_out);
+        }
+
+        // Remove the effect — should move to spillover.
+        graph.remove_node(effect_id).unwrap();
+        assert_eq!(
+            graph.spillover_count(),
+            1,
+            "spillover tail should be active"
+        );
+
+        // Reconnect graph without the effect and recompile.
+        graph.connect(input, output).unwrap();
+        graph.compile().unwrap();
+
+        // Process silence — spillover should produce non-zero output.
+        let silence = vec![0.0_f32; block_size];
+        graph.process_block(&silence, &silence, &mut left_out, &mut right_out);
+
+        let sum: f32 = left_out.iter().map(|s| s.abs()).sum();
+        assert!(
+            sum > 0.0,
+            "spillover tail should produce non-zero output, got sum={sum}"
+        );
+    }
+
+    #[test]
+    fn no_spillover_for_zero_tail_effect() {
+        // Gain (tail = 0) should not create a spillover tail.
+        let mut graph = ProcessingGraph::new(48000.0, 64);
+        let input = graph.add_input();
+        let dist_id = graph.add_effect(Box::new(Gain { factor: 2.0 }));
+        let output = graph.add_output();
+
+        graph.connect(input, dist_id).unwrap();
+        graph.connect(dist_id, output).unwrap();
+        graph.compile().unwrap();
+
+        graph.remove_node(dist_id).unwrap();
+
+        assert_eq!(
+            graph.spillover_count(),
+            0,
+            "zero-tail effect should not create spillover"
+        );
+    }
+
+    #[test]
+    fn spillover_disabled_drops_immediately() {
+        // With spillover off, even tailed effects are dropped immediately.
+        let tail_len = 4800usize;
+        let block_size = 64usize;
+
+        let mut graph = ProcessingGraph::new(48000.0, block_size);
+        let input = graph.add_input();
+        let effect_id = graph.add_effect(Box::new(TailTestEffect {
+            tail: tail_len,
+            buffer: [0.0; 256],
+            write_pos: 0,
+        }));
+        let output = graph.add_output();
+
+        graph.connect(input, effect_id).unwrap();
+        graph.connect(effect_id, output).unwrap();
+        graph.compile().unwrap();
+
+        // Disable spillover before removing.
+        graph.set_spillover(false);
+
+        graph.remove_node(effect_id).unwrap();
+
+        assert_eq!(
+            graph.spillover_count(),
+            0,
+            "spillover disabled: effect should be dropped immediately"
+        );
     }
 }
