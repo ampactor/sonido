@@ -274,7 +274,7 @@ use sonido_core::kernel::DspKernel;
 
 fn audio_callback(kernel: &mut FilterKernel, adc_cutoff: f32, adc_resonance: f32) {
     // Map ADC readings (0.0-1.0) directly to parameter ranges
-    let params = FilterParams::from_knobs(adc_cutoff, adc_resonance, 0.5, 0.0, 1.0);
+    let params = FilterParams::from_knobs(adc_cutoff, adc_resonance, 0.5, 0.0);
 
     // Process sample-by-sample — no allocation, no smoothing
     let (left, right) = kernel.process_stereo(input_l, input_r, &params);

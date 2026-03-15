@@ -149,7 +149,7 @@ async fn main(spawner: embassy_executor::Spawner) {
                 };
 
                 // from_knobs maps 0.0-1.0 to parameter ranges
-                let params = DistortionParams::from_knobs(drive, tone, out_level, mode, mix);
+                let params = DistortionParams::from_knobs(drive, tone, out_level, mode, mix, 0.0);
 
                 // Process 32 stereo sample pairs (64 interleaved u32 values)
                 for i in (0..input.len()).step_by(2) {

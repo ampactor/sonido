@@ -79,7 +79,7 @@
 //! use sonido_core::DspKernel;
 //!
 //! let mut kernel = DistortionKernel::new(48000.0);
-//! let params = DistortionParams::from_knobs(adc_drive, adc_tone, adc_output, adc_mix);
+//! let params = DistortionParams::from_knobs(adc_drive, adc_tone, adc_output, adc_shape, adc_mix, adc_dynamics);
 //! let (left, right) = kernel.process_stereo(input_l, input_r, &params);
 //! ```
 //!

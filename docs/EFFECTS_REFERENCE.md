@@ -14,7 +14,7 @@ let adapter = KernelAdapter::new(DistortionKernel::new(48000.0), 48000.0);
 
 // Embedded: call kernel directly, no smoothing overhead
 let mut kernel = DistortionKernel::new(48000.0);
-let params = DistortionParams::from_knobs(adc_drive, adc_tone, adc_output, adc_shape, adc_mix);
+let params = DistortionParams::from_knobs(adc_drive, adc_tone, adc_output, adc_shape, adc_mix, adc_dynamics);
 let (l, r) = kernel.process_stereo(input_l, input_r, &params);
 ```
 

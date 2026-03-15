@@ -30,7 +30,7 @@ let mut kernel = DistortionKernel::new(48000.0);
 
 // from_knobs() maps 0.0–1.0 ADC readings → parameter ranges
 let params = DistortionParams::from_knobs(
-    adc_drive, adc_tone, adc_output, adc_shape, adc_mix,
+    adc_drive, adc_tone, adc_output, adc_shape, adc_mix, adc_dynamics,
 );
 let (out_l, out_r) = kernel.process_stereo(in_l, in_r, &params);
 ```

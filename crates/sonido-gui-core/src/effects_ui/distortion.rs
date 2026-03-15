@@ -20,10 +20,10 @@ impl DistortionPanel {
     /// Render the distortion effect controls.
     ///
     /// Param indices: 0 = drive (dB), 1 = tone (dB), 2 = output (dB),
-    /// 3 = waveshape (enum), 4 = mix (%).
+    /// 3 = waveshape (enum), 4 = mix (%), 5 = dynamics (%).
     pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: SlotIndex) {
         let theme = SonidoTheme::get(ui.ctx());
-        let fader_indices: &[usize] = &[0, 1, 4, 2];
+        let fader_indices: &[usize] = &[0, 1, 5, 4, 2];
         let param_count = fader_indices.len();
         let avail_w = ui.available_width();
         let fader_w = theme.layout.fader_width(avail_w, param_count);

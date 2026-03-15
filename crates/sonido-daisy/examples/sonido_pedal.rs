@@ -123,7 +123,7 @@ struct EffectEntry {
 ///
 /// | # | Effect     | K1          | K2           | K3           | K4            | K5   | K6      |
 /// |---|------------|-------------|--------------|--------------|---------------|------|---------|
-/// | 0 | filter     | 0:Cutoff    | 1:Reso       | --           | --            | --   | 2:Out   |
+/// | 0 | filter     | 0:Cutoff    | 1:Reso       | 3:Type(S)    | --            | --   | 2:Out   |
 /// | 1 | tremolo    | 0:Rate      | 1:Depth      | 2:Wave(S)    | 3:Spread      | --   | 6:Out   |
 /// | 2 | vibrato    | 0:Depth     | --           | --           | --            | 1:Mix| 2:Out   |
 /// | 3 | chorus     | 0:Rate      | 1:Depth      | 4:Feedback   | 3:Voices(S)   | 2:Mix| 8:Out   |
@@ -134,13 +134,13 @@ struct EffectEntry {
 /// | 8 | tape       | 0:Drive     | 1:Saturation | 2:HFRolloff  | 4:Wow         | 5:Flutter| 9:Out|
 /// | 9 | compressor | 0:Threshold | 1:Ratio      | 2:Attack     | 3:Release     |10:Mix| 4:Makeup|
 /// |10 | wah        | 0:Freq      | 1:Reso       | 2:Sensitivity| 3:Mode(S)     | --   | 4:Out   |
-/// |11 | distortion | 0:Drive     | 1:Tone       | 3:Shape(S)   | --            | 4:Mix| 2:Out   |
+/// |11 | distortion | 0:Drive     | 1:Tone       | 3:Shape(S)   | 5:Dyn         | 4:Mix| 2:Out   |
 /// |12 | bitcrusher | 0:Bits(S)   | 1:Down(S)    | 2:Jitter     | --            | 3:Mix| 4:Out   |
 /// |13 | ringmod    | 0:Freq      | 1:Depth      | 2:Wave(S)    | --            | 3:Mix| 4:Out   |
 const EFFECT_LIST: [EffectEntry; NUM_EFFECTS] = [
     EffectEntry {
         id: "filter",
-        knobs: [0, 1, NULL_KNOB, NULL_KNOB, NULL_KNOB, 2],
+        knobs: [0, 1, 3, NULL_KNOB, NULL_KNOB, 2],
     },
     EffectEntry {
         id: "tremolo",
@@ -184,7 +184,7 @@ const EFFECT_LIST: [EffectEntry; NUM_EFFECTS] = [
     },
     EffectEntry {
         id: "distortion",
-        knobs: [0, 1, 3, NULL_KNOB, 4, 2],
+        knobs: [0, 1, 3, 5, 4, 2],
     },
     EffectEntry {
         id: "bitcrusher",

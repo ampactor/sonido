@@ -174,7 +174,7 @@ impl EffectRegistry {
                 short_name: "DIST",
                 description: "Anti-aliased waveshaping distortion with multiple algorithms",
                 category: EffectCategory::Distortion,
-                param_count: 5,
+                param_count: 6,
             },
             |sr| Box::new(KernelAdapter::new(DistortionKernel::new(sr), sr)),
         );
@@ -250,9 +250,9 @@ impl EffectRegistry {
                 id: "filter",
                 name: "Low Pass Filter",
                 short_name: "FILT",
-                description: "Resonant biquad lowpass filter",
+                description: "Multimode biquad filter (LPF/HPF/BPF/Notch)",
                 category: EffectCategory::Filter,
-                param_count: 3,
+                param_count: 4,
             },
             |sr| Box::new(KernelAdapter::new(FilterKernel::new(sr), sr)),
         );
