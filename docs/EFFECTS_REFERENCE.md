@@ -216,25 +216,33 @@ sonido process in.wav --effect delay \
 
 ## filter
 
-Resonant lowpass filter (2-pole). Also available as `lowpass`.
+Multimode biquad filter — LPF, HPF, BPF, and Notch. Also available as `lowpass` (default mode).
 
 | Parameter | Description | Default | Range |
 |-----------|-------------|---------|-------|
-| `cutoff` | Cutoff frequency in Hz | 1000.0 | 20-20000 |
+| `cutoff` | Cutoff/center frequency in Hz | 1000.0 | 20-20000 |
 | `resonance` | Resonance (Q factor) | 0.707 | 0.1-20 |
 | `output` | Output level in dB | 0.0 | -20 to 20 |
+| `filter_type` | Filter mode: 0=LPF, 1=HPF, 2=BPF, 3=Notch | 0 | 0-3 |
+
+### Filter Types
+
+- **LPF** (0): Low-pass — attenuates frequencies above cutoff. Standard tone-shaping filter.
+- **HPF** (1): High-pass — attenuates frequencies below cutoff. Useful for removing rumble and mud.
+- **BPF** (2): Band-pass — passes a band around the center frequency, attenuates above and below. Width controlled by Q.
+- **Notch** (3): Band-reject — removes a narrow band at the center frequency. Opposite of bandpass.
 
 ### Tips
 
-- **Q = 0.707**: Butterworth response, flattest passband
-- **Q > 1**: Resonant peak at cutoff
+- **Q = 0.707**: Butterworth response, flattest passband (all modes)
+- **Q > 1**: Resonant peak at cutoff (LPF/HPF) or narrower band (BPF/Notch)
 - **Q > 5**: Strong resonance, almost self-oscillating
 
 ### Example
 
 ```bash
 sonido process in.wav --effect filter \
-    --param cutoff=2000 --param resonance=2.0
+    --param cutoff=2000 --param resonance=2.0 --param filter_type=1
 ```
 
 ---

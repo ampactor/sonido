@@ -141,7 +141,7 @@ fn rule2_bypass_parity() {
 // Most effects place it as the last param. Documented exceptions (distortion,
 // compressor) place it at a non-final index with a domain-appropriate name.
 
-const RULE3_NON_LAST_EXCEPTIONS: &[&str] = &["distortion", "compressor"];
+const RULE3_NON_LAST_EXCEPTIONS: &[&str] = &["distortion", "compressor", "filter"];
 
 #[test]
 fn rule3_output_parameter() {

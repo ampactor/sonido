@@ -1,4 +1,4 @@
-//! Low-pass filter kernel — biquad LPF with cutoff, resonance, and soft limiting.
+//! Multimode biquad filter kernel — LPF/HPF/BPF/Notch with cutoff, resonance, and soft limiting.
 //!
 //! `FilterKernel` owns DSP state (biquad filters, sample rate, cached
 //! coefficients). Parameters are received via `&FilterParams` each sample.
@@ -8,27 +8,35 @@
 //! # Signal Flow
 //!
 //! ```text
-//! Input → Biquad LPF → Soft Limit → Output Level
+//! Input → Biquad (mode-selected) → Soft Limit → Output Level
 //! ```
 //!
-//! Coefficients are recomputed only when cutoff or resonance changes
-//! (tracked via cached values).
+//! Coefficients are recomputed only when cutoff, resonance, or filter type
+//! changes (tracked via cached values).
 //!
 //! # Theory
 //!
-//! The low-pass biquad uses the Audio EQ Cookbook (Bristow-Johnson) direct
+//! The biquad filter uses the Audio EQ Cookbook (Bristow-Johnson) direct
 //! form II transposed topology:
 //!
 //! ```text
 //! H(z) = (b0 + b1·z⁻¹ + b2·z⁻²) / (a0 + a1·z⁻¹ + a2·z⁻²)
 //! ```
 //!
-//! where `b0 = b2 = (1 − cos(ω₀)) / 2`, `b1 = 1 − cos(ω₀)`,
-//! `a0 = 1 + α`, `a1 = −2·cos(ω₀)`, `a2 = 1 − α`,
+//! All four RBJ filter types are supported: LPF, HPF, BPF, and Notch.
 //! `α = sin(ω₀) / (2·Q)`, and `ω₀ = 2π·fc/fs`.
 //!
 //! Reference: Robert Bristow-Johnson, "Cookbook formulae for audio EQ biquad
 //! filter coefficients", 1994.
+//!
+//! # Parameters
+//!
+//! | Index | Field | Unit | Range | Default |
+//! |-------|-------|------|-------|---------|
+//! | 0 | `cutoff_hz` | Hz | 20–20000 | 1000.0 |
+//! | 1 | `resonance` | ratio (Q) | 0.1–20.0 | 0.707 |
+//! | 2 | `output_db` | dB | −20–20 | 0.0 |
+//! | 3 | `filter_type` | index | 0–3 | 0 (LPF) |
 //!
 //! # Deployment
 //!
@@ -39,15 +47,15 @@
 //!
 //! // Embedded / Daisy Seed (direct — no smoothing, ADCs are hardware-filtered)
 //! let mut kernel = FilterKernel::new(48000.0);
-//! let params = FilterParams::from_knobs(adc_cutoff, adc_resonance, adc_output);
+//! let params = FilterParams::from_knobs(adc_cutoff, adc_resonance, adc_output, adc_type);
 //! let (left, right) = kernel.process_stereo(input_l, input_r, &params);
 //! ```
 
 use sonido_core::kernel::{DspKernel, KernelParams, SmoothingStyle};
 use sonido_core::math::soft_limit;
 use sonido_core::{
-    Biquad, ParamDescriptor, ParamId, ParamScale, ParamUnit, fast_db_to_linear,
-    lowpass_coefficients,
+    Biquad, ParamDescriptor, ParamFlags, ParamId, ParamScale, ParamUnit, bandpass_coefficients,
+    fast_db_to_linear, highpass_coefficients, lowpass_coefficients, notch_coefficients,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -64,6 +72,7 @@ use sonido_core::{
 /// | 0 | `cutoff_hz` | Hz | 20–20000 | 1000.0 |
 /// | 1 | `resonance` | ratio (Q) | 0.1–20.0 | 0.707 |
 /// | 2 | `output_db` | dB | −20–20 | 0.0 |
+/// | 3 | `filter_type` | index | 0–3 | 0 (LPF) |
 #[derive(Debug, Clone, Copy)]
 pub struct FilterParams {
     /// Filter cutoff frequency in Hz.
@@ -72,6 +81,8 @@ pub struct FilterParams {
     pub resonance: f32,
     /// Output level in decibels.
     pub output_db: f32,
+    /// Filter type selector: 0=LPF, 1=HPF, 2=BPF, 3=Notch.
+    pub filter_type: f32,
 }
 
 impl Default for FilterParams {
@@ -80,6 +91,7 @@ impl Default for FilterParams {
             cutoff_hz: 1000.0,
             resonance: 0.707,
             output_db: 0.0,
+            filter_type: 0.0,
         }
     }
 }
@@ -94,13 +106,14 @@ impl FilterParams {
     /// - `cutoff`: normalized 0.0–1.0 → 20–20000 Hz (logarithmic)
     /// - `resonance`: normalized 0.0–1.0 → 0.1–20.0 (linear)
     /// - `output`: normalized 0.0–1.0 → −20–+6 dB (linear)
-    pub fn from_knobs(cutoff: f32, resonance: f32, output: f32) -> Self {
-        Self::from_normalized(&[cutoff, resonance, output])
+    /// - `filter_type`: normalized 0.0–1.0 → 0–3 (stepped: LPF/HPF/BPF/Notch)
+    pub fn from_knobs(cutoff: f32, resonance: f32, output: f32, filter_type: f32) -> Self {
+        Self::from_normalized(&[cutoff, resonance, output, filter_type])
     }
 }
 
 impl KernelParams for FilterParams {
-    const COUNT: usize = 3;
+    const COUNT: usize = 4;
 
     fn descriptor(index: usize) -> Option<ParamDescriptor> {
         match index {
@@ -134,6 +147,13 @@ impl KernelParams for FilterParams {
             2 => Some(
                 sonido_core::gain::output_param_descriptor().with_id(ParamId(1202), "flt_output"),
             ),
+            3 => Some(
+                ParamDescriptor::custom("Type", "Type", 0.0, 3.0, 0.0)
+                    .with_step(1.0)
+                    .with_id(ParamId(1203), "flt_type")
+                    .with_flags(ParamFlags::AUTOMATABLE.union(ParamFlags::STEPPED))
+                    .with_step_labels(&["LPF", "HPF", "BPF", "Notch"]),
+            ),
             _ => None,
         }
     }
@@ -143,6 +163,7 @@ impl KernelParams for FilterParams {
             0 => SmoothingStyle::Slow,     // cutoff — filter coefficient, avoid zipper
             1 => SmoothingStyle::Slow,     // resonance — filter coefficient, avoid zipper
             2 => SmoothingStyle::Standard, // output level
+            3 => SmoothingStyle::None,     // filter_type — stepped, snap immediately
             _ => SmoothingStyle::Standard,
         }
     }
@@ -152,6 +173,7 @@ impl KernelParams for FilterParams {
             0 => self.cutoff_hz,
             1 => self.resonance,
             2 => self.output_db,
+            3 => self.filter_type,
             _ => 0.0,
         }
     }
@@ -161,6 +183,7 @@ impl KernelParams for FilterParams {
             0 => self.cutoff_hz = value,
             1 => self.resonance = value,
             2 => self.output_db = value,
+            3 => self.filter_type = value,
             _ => {}
         }
     }
@@ -170,17 +193,17 @@ impl KernelParams for FilterParams {
 //  Kernel
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Pure DSP low-pass filter kernel.
+/// Pure DSP multimode filter kernel.
 ///
 /// Contains ONLY the mutable state required for audio processing:
 /// - Stereo biquad filters (L/R)
 /// - Sample rate (for coefficient recalculation on rate change)
-/// - Cached coefficient tracking (recompute only on cutoff/resonance change)
+/// - Cached coefficient tracking (recompute only on cutoff/resonance/type change)
 ///
 /// No `SmoothedParam`, no `AtomicU32`, no platform awareness. Coefficients
-/// are recomputed only when `cutoff_hz` or `resonance` deviate by more than
-/// a small epsilon from the cached values, keeping the hot path coefficient-free
-/// on steady-state operation.
+/// are recomputed only when `cutoff_hz`, `resonance`, or `filter_type` deviate
+/// by more than a small epsilon from the cached values, keeping the hot path
+/// coefficient-free on steady-state operation.
 pub struct FilterKernel {
     /// Sample rate in Hz, used for biquad coefficient computation.
     sample_rate: f32,
@@ -194,12 +217,14 @@ pub struct FilterKernel {
     last_cutoff_hz: f32,
     /// Cached Q — recompute coefficients only when this changes.
     last_resonance: f32,
+    /// Cached filter type — recompute coefficients when this changes.
+    last_filter_type: f32,
 }
 
 impl FilterKernel {
     /// Create a new filter kernel at the given sample rate.
     ///
-    /// Initialises both biquad filters with default parameters (1000 Hz, Q=0.707).
+    /// Initialises both biquad filters with default parameters (1000 Hz, Q=0.707, LPF).
     pub fn new(sample_rate: f32) -> Self {
         let mut kernel = Self {
             sample_rate,
@@ -207,28 +232,34 @@ impl FilterKernel {
             biquad_r: Biquad::new(),
             last_cutoff_hz: f32::NAN, // Force initial coefficient computation
             last_resonance: f32::NAN,
+            last_filter_type: f32::NAN,
         };
         let defaults = FilterParams::default();
-        kernel.update_coefficients(defaults.cutoff_hz, defaults.resonance);
+        kernel.update_coefficients(defaults.cutoff_hz, defaults.resonance, defaults.filter_type);
         kernel
     }
 
-    /// Recalculate biquad coefficients for the given cutoff and resonance.
+    /// Recalculate biquad coefficients for the given cutoff, resonance, and filter type.
     ///
-    /// Uses the Audio EQ Cookbook low-pass formula. Coefficients are applied
-    /// to both left and right biquad filters simultaneously (they are always
-    /// kept in sync — this is a dual-mono topology, not true stereo).
-    fn update_coefficients(&mut self, cutoff_hz: f32, resonance: f32) {
+    /// Uses the Audio EQ Cookbook formulas. Coefficients are applied to both left and
+    /// right biquad filters simultaneously (dual-mono topology, not true stereo).
+    fn update_coefficients(&mut self, cutoff_hz: f32, resonance: f32, filter_type: f32) {
         // Clamp cutoff to valid range to avoid coefficient instability.
         let cutoff = cutoff_hz.clamp(20.0, self.sample_rate * 0.49);
         let q = resonance.clamp(0.1, 20.0);
 
-        let (b0, b1, b2, a0, a1, a2) = lowpass_coefficients(cutoff, q, self.sample_rate);
+        let (b0, b1, b2, a0, a1, a2) = match filter_type as u8 {
+            1 => highpass_coefficients(cutoff, q, self.sample_rate),
+            2 => bandpass_coefficients(cutoff, q, self.sample_rate),
+            3 => notch_coefficients(cutoff, q, self.sample_rate),
+            _ => lowpass_coefficients(cutoff, q, self.sample_rate),
+        };
         self.biquad_l.set_coefficients(b0, b1, b2, a0, a1, a2);
         self.biquad_r.set_coefficients(b0, b1, b2, a0, a1, a2);
 
         self.last_cutoff_hz = cutoff;
         self.last_resonance = q;
+        self.last_filter_type = filter_type;
     }
 }
 
@@ -236,12 +267,13 @@ impl DspKernel for FilterKernel {
     type Params = FilterParams;
 
     fn process_stereo(&mut self, left: f32, right: f32, params: &FilterParams) -> (f32, f32) {
-        // ── Coefficient update (only when cutoff or resonance changes) ──
+        // ── Coefficient update (only when cutoff, resonance, or filter type changes) ──
         // Comparison threshold accounts for smoothing granularity.
         if (params.cutoff_hz - self.last_cutoff_hz).abs() > 0.1
             || (params.resonance - self.last_resonance).abs() > 0.0001
+            || (params.filter_type - self.last_filter_type).abs() > 0.5
         {
-            self.update_coefficients(params.cutoff_hz, params.resonance);
+            self.update_coefficients(params.cutoff_hz, params.resonance, params.filter_type);
         }
 
         // ── Unit conversion (user-facing → internal) ──
@@ -260,11 +292,12 @@ impl DspKernel for FilterKernel {
         // Reset cached values so coefficients are recomputed on the next process call.
         self.last_cutoff_hz = f32::NAN;
         self.last_resonance = f32::NAN;
+        self.last_filter_type = f32::NAN;
     }
 
     fn set_sample_rate(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate;
-        // Recompute with the same cached cutoff/resonance at the new rate.
+        // Recompute with the same cached cutoff/resonance/type at the new rate.
         // Guard against NaN from a fresh reset state.
         let cutoff = if self.last_cutoff_hz.is_nan() {
             FilterParams::default().cutoff_hz
@@ -276,7 +309,12 @@ impl DspKernel for FilterKernel {
         } else {
             self.last_resonance
         };
-        self.update_coefficients(cutoff, resonance);
+        let filter_type = if self.last_filter_type.is_nan() {
+            FilterParams::default().filter_type
+        } else {
+            self.last_filter_type
+        };
+        self.update_coefficients(cutoff, resonance, filter_type);
     }
 }
 
@@ -324,7 +362,7 @@ mod tests {
 
     #[test]
     fn params_descriptor_count() {
-        assert_eq!(FilterParams::COUNT, 3);
+        assert_eq!(FilterParams::COUNT, 4);
 
         let desc0 = FilterParams::descriptor(0).expect("index 0 must exist");
         assert_eq!(desc0.name, "Cutoff");
@@ -347,9 +385,18 @@ mod tests {
         assert_eq!(desc2.id, ParamId(1202));
         assert_eq!(desc2.string_id, "flt_output");
 
+        let desc3 = FilterParams::descriptor(3).expect("index 3 must exist");
+        assert_eq!(desc3.name, "Type");
+        assert!((desc3.min - 0.0).abs() < 0.01);
+        assert!((desc3.max - 3.0).abs() < 0.01);
+        assert!((desc3.default - 0.0).abs() < 0.01);
+        assert_eq!(desc3.id, ParamId(1203));
+        assert_eq!(desc3.string_id, "flt_type");
+        assert!(desc3.flags.contains(ParamFlags::STEPPED));
+
         assert!(
-            FilterParams::descriptor(3).is_none(),
-            "index 3 must be None"
+            FilterParams::descriptor(4).is_none(),
+            "index 4 must be None"
         );
     }
 
@@ -364,11 +411,13 @@ mod tests {
             cutoff_hz: 500.0,
             resonance: 0.707,
             output_db: 0.0,
+            filter_type: 0.0,
         };
         let high_cutoff = FilterParams {
             cutoff_hz: 16000.0,
             resonance: 0.707,
             output_db: 0.0,
+            filter_type: 0.0,
         };
 
         let mut kernel_low = FilterKernel::new(sample_rate);
@@ -421,7 +470,7 @@ mod tests {
         let kernel = FilterKernel::new(48000.0);
         let adapter = KernelAdapter::new(kernel, 48000.0);
 
-        assert_eq!(adapter.param_count(), 3);
+        assert_eq!(adapter.param_count(), 4);
 
         let desc0 = adapter.param_info(0).expect("param 0 must exist");
         assert_eq!(desc0.name, "Cutoff");
@@ -435,7 +484,10 @@ mod tests {
         assert_eq!(desc2.name, "Output");
         assert_eq!(desc2.id, ParamId(1202));
 
-        assert!(adapter.param_info(3).is_none());
+        let desc3 = adapter.param_info(3).expect("param 3 must exist");
+        assert_eq!(desc3.name, "Type");
+
+        assert!(adapter.param_info(4).is_none());
     }
 
     #[test]
@@ -446,11 +498,13 @@ mod tests {
             cutoff_hz: 500.0,
             resonance: 0.5,
             output_db: 0.0,
+            filter_type: 0.0,
         };
         let b = FilterParams {
             cutoff_hz: 10000.0,
             resonance: 4.0,
             output_db: -6.0,
+            filter_type: 0.0,
         };
 
         for step in 0..=10 {
@@ -480,6 +534,7 @@ mod tests {
             cutoff_hz: 500.0,
             resonance: 0.707,
             output_db: 0.0,
+            filter_type: 0.0,
         };
 
         // Warm up with constant input.
@@ -503,7 +558,7 @@ mod tests {
     fn from_knobs_maps_midpoint_to_approx_1khz() {
         // At t=0.5, the log mapping 20 * 1000^0.5 = 20 * ~31.6 = ~632 Hz.
         // Verify the formula is consistent (not equal to 1 kHz, but finite).
-        let params = FilterParams::from_knobs(0.5, 0.5, 0.5);
+        let params = FilterParams::from_knobs(0.5, 0.5, 0.5, 0.0);
         assert!(
             params.cutoff_hz.is_finite(),
             "cutoff_hz should be finite, got {}",
@@ -534,6 +589,7 @@ mod tests {
         assert_eq!(FilterParams::smoothing(0), SmoothingStyle::Slow);
         assert_eq!(FilterParams::smoothing(1), SmoothingStyle::Slow);
         assert_eq!(FilterParams::smoothing(2), SmoothingStyle::Standard);
+        assert_eq!(FilterParams::smoothing(3), SmoothingStyle::None);
     }
 
     #[test]
@@ -560,6 +616,114 @@ mod tests {
             (adapter.get_param(2) - (-6.0)).abs() < 0.01,
             "Output roundtrip failed: {}",
             adapter.get_param(2)
+        );
+    }
+
+    #[test]
+    fn default_filter_type_is_lpf() {
+        let params = FilterParams::default();
+        assert_eq!(
+            params.filter_type, 0.0,
+            "Default filter type should be LPF (0)"
+        );
+    }
+
+    #[test]
+    fn highpass_rejects_dc() {
+        let mut kernel = FilterKernel::new(48000.0);
+        let params = FilterParams {
+            cutoff_hz: 500.0,
+            resonance: 0.707,
+            output_db: 0.0,
+            filter_type: 1.0, // HPF
+        };
+
+        // Warm up with DC
+        for _ in 0..2000 {
+            kernel.process_stereo(1.0, 1.0, &params);
+        }
+
+        // HPF should reject DC — output near zero
+        let (out_l, _) = kernel.process_stereo(1.0, 1.0, &params);
+        assert!(out_l.abs() < 0.05, "HPF should reject DC, got {out_l}");
+    }
+
+    #[test]
+    fn bandpass_passes_center_frequency() {
+        let sample_rate = 48000.0;
+        let center_hz = 1000.0;
+        let mut kernel = FilterKernel::new(sample_rate);
+        let params = FilterParams {
+            cutoff_hz: center_hz,
+            resonance: 2.0,
+            output_db: 0.0,
+            filter_type: 2.0, // BPF
+        };
+
+        // Process signal at center frequency
+        let mut energy_center = 0.0f32;
+        for i in 0..1024 {
+            let t = i as f32 / sample_rate;
+            let s = libm::sinf(2.0 * core::f32::consts::PI * center_hz * t);
+            let (out, _) = kernel.process_stereo(s, s, &params);
+            if i >= 512 {
+                // skip transient
+                energy_center += out * out;
+            }
+        }
+
+        // Process signal well off-center (100 Hz)
+        kernel.reset();
+        let mut energy_off = 0.0f32;
+        for i in 0..1024 {
+            let t = i as f32 / sample_rate;
+            let s = libm::sinf(2.0 * core::f32::consts::PI * 100.0 * t);
+            let (out, _) = kernel.process_stereo(s, s, &params);
+            if i >= 512 {
+                energy_off += out * out;
+            }
+        }
+
+        assert!(
+            energy_center > energy_off * 2.0,
+            "BPF should pass center ({center_hz} Hz) more than off-center: center={energy_center:.4}, off={energy_off:.4}"
+        );
+    }
+
+    #[test]
+    fn notch_rejects_center_frequency() {
+        let sample_rate = 48000.0;
+        let notch_hz = 1000.0;
+        let mut kernel = FilterKernel::new(sample_rate);
+        let params = FilterParams {
+            cutoff_hz: notch_hz,
+            resonance: 2.0,
+            output_db: 0.0,
+            filter_type: 3.0, // Notch
+        };
+
+        // Process signal at notch frequency
+        let mut energy_notch = 0.0f32;
+        for i in 0..1024 {
+            let t = i as f32 / sample_rate;
+            let s = libm::sinf(2.0 * core::f32::consts::PI * notch_hz * t);
+            let (out, _) = kernel.process_stereo(s, s, &params);
+            if i >= 512 {
+                energy_notch += out * out;
+            }
+        }
+
+        // Process DC (0 Hz) — notch should pass DC
+        kernel.reset();
+        for _ in 0..2000 {
+            kernel.process_stereo(1.0, 1.0, &params);
+        }
+        let (dc_out, _) = kernel.process_stereo(1.0, 1.0, &params);
+
+        assert!(dc_out.abs() > 0.8, "Notch should pass DC, got {dc_out}");
+        assert!(
+            energy_notch < 10.0, // very attenuated at notch frequency
+            "Notch should reject center frequency, energy={energy_notch:.4}"
         );
     }
 }
