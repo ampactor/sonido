@@ -49,18 +49,19 @@ Waveshaping distortion with multiple modes.
 
 **Signal flow** (`crates/sonido-effects/src/kernels/distortion.rs`):
 ```
-Input -> Drive (gain) -> Waveshaper -> Tone Filter -> Output Level
+Input -> [Envelope] -> Drive (gain, dynamic) -> Waveshaper -> Tone Filter -> Output Level
 ```
 
 The distortion applies a static nonlinear transfer function (waveshaper) to the input signal, preceded by a gain stage (drive) to push the signal into the nonlinear region. The `KernelAdapter` handles per-parameter smoothing via `SmoothingStyle` (Fast for drive, Standard for others).
 
 | Parameter | Description | Default | Range |
 |-----------|-------------|---------|-------|
-| `drive` | Drive amount in dB | 12.0 | 0-40 |
+| `drive` | Drive amount in dB | 8.0 | 0-40 |
 | `tone` | Tone tilt in dB (boost/cut at 1 kHz) | 0.0 | -12 to 12 |
 | `output` | Output level in dB | 0.0 | -20 to 20 |
 | `shape` | Waveshape type (0=SoftClip, 1=HardClip, 2=Foldback, 3=Asymmetric) | 0 | 0-3 |
 | `mix` | Wet/dry mix % | 100.0 | 0-100 |
+| `dynamics` | Dynamic drive response (0=static, 100=fully responsive) | 0.0 | 0-100 |
 
 ### Waveshape Types and Their Harmonic Character
 
@@ -74,6 +75,8 @@ The distortion applies a static nonlinear transfer function (waveshaper) to the 
 The tone control is a shelving tilt filter placed after the waveshaper. The `tone` parameter in dB boosts or cuts around 1 kHz, taming harsh high-frequency harmonics (negative values) or adding brightness (positive values). This is essential because nonlinear processing can generate significant energy above the original signal's bandwidth.
 
 **Stereo processing**: In stereo mode (`process_stereo`), each channel has its own independent tone filter state. This ensures proper dual-mono behavior -- each channel's filtering history is independent, preventing cross-channel artifacts that would occur if a single filter state were shared between channels.
+
+**ADAA**: All four waveshape modes use first-order Antiderivative Anti-Aliasing (ADAA), which reduces aliasing by approximately 6 dB per octave without the CPU cost of oversampling.
 
 **Aliasing note**: For critical applications, wrap the distortion in `Oversampled<4, Distortion>` to suppress harmonic aliasing from the nonlinear waveshaper. At 48 kHz base rate, 4x oversampling processes at 192 kHz, keeping generated harmonics below the effective Nyquist.
 

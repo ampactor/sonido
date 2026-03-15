@@ -140,8 +140,8 @@ pub use kernel::{DspKernel, KernelAdapter, KernelParams, SmoothingStyle};
 pub use lfo::{Lfo, LfoWaveform};
 pub use math::{
     asymmetric_clip, asymmetric_clip_ad, db_to_linear, fast_tanh, flush_denormal, foldback,
-    hard_clip, hard_clip_ad, linear_to_db, mono_sum, soft_clip, soft_clip_ad, tape_sat_ad,
-    tape_sat_neg_ad, tape_sat_pos_ad, wet_dry_mix, wet_dry_mix_stereo,
+    foldback_ad, hard_clip, hard_clip_ad, linear_to_db, mono_sum, soft_clip, soft_clip_ad,
+    tape_sat_ad, tape_sat_neg_ad, tape_sat_pos_ad, wet_dry_mix, wet_dry_mix_stereo,
 };
 pub use modulation::{ModulationAmount, ModulationSource};
 pub use one_pole::OnePole;

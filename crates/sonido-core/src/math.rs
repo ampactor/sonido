@@ -26,6 +26,7 @@
 //! |------------|----------------|-------|
 //! | [`soft_clip`] (tanh) | [`soft_clip_ad`] | Numerically stable `ln(2·cosh)` |
 //! | [`hard_clip`] | [`hard_clip_ad`] | Piecewise quadratic/linear |
+//! | [`foldback`] | [`foldback_ad`] | Piecewise parabolic (triangle-wave) |
 //! | tape positive | [`tape_sat_pos_ad`] | Exponential saturation |
 //! | tape negative | [`tape_sat_neg_ad`] | Asymmetric exponential |
 //! | tape combined | [`tape_sat_ad`] | Piecewise with continuity correction |
@@ -303,6 +304,54 @@ pub fn tape_sat_ad(x: f32) -> f32 {
         //             neg at 0 = 0 + 1/1.8 = 0.5556
         //             correction = 0.5 - 1/1.8 = -1/18
         tape_sat_neg_ad(x) + (0.5 - 1.0 / 1.8)
+    }
+}
+
+/// First antiderivative of [`foldback`].
+///
+/// Piecewise parabolic antiderivative of the triangle-wave foldback function.
+/// The foldback function is periodic with half-period `threshold`, alternating
+/// between rising and falling linear ramps. Its antiderivative is a sequence
+/// of parabolic arcs, with offsets chosen for global continuity.
+///
+/// Within each half-period indexed by `k = floor((x + t) / (2t))`:
+///
+/// ```text
+/// F(x) = u²/2        for even k  (rising ramp, f(x) = u)
+/// F(x) = t² − u²/2   for odd  k  (falling ramp, f(x) = −u)
+/// ```
+///
+/// where `u = x − 2·k·t` is the position relative to the center of half-period k.
+///
+/// For use with [`Adaa1`](crate::adaa::Adaa1), capture the threshold in a
+/// closure: `|x| foldback_ad(x, threshold)`.
+///
+/// # Reference
+///
+/// Parker et al., DAFx-2016, Section 4.2 (piecewise antiderivative method).
+#[inline]
+pub fn foldback_ad(input: f32, threshold: f32) -> f32 {
+    use libm::floorf;
+
+    if threshold <= 0.0 {
+        return 0.0;
+    }
+
+    let t = threshold;
+    let t2 = 2.0 * t;
+
+    // Half-period index: k = floor((x + t) / (2t))
+    let s = (input + t) / t2;
+    let k = floorf(s) as i32;
+
+    // Position relative to half-period center (range [-t, t])
+    let u = input - k as f32 * t2;
+
+    // Alternating parabolic arcs with continuity offset t² on odd half-periods.
+    if k.rem_euclid(2) == 0 {
+        0.5 * u * u
+    } else {
+        t * t - 0.5 * u * u
     }
 }
 
@@ -781,6 +830,27 @@ mod tests {
             assert!(
                 (numerical - analytical).abs() < 1e-3,
                 "hard_clip_ad [{a}, {b}]: numerical={numerical}, analytical={analytical}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_foldback_ad_vs_numerical() {
+        let threshold = 0.8;
+        let f = |x: f32| foldback(x, threshold);
+        let intervals: &[(f32, f32)] = &[
+            (0.0, 0.5),   // within threshold
+            (0.0, 1.5),   // crosses threshold
+            (-1.5, 1.5),  // symmetric span
+            (-2.0, -0.5), // negative region
+            (0.5, 3.0),   // multiple folds
+        ];
+        for &(a, b) in intervals {
+            let numerical = trapz(f, a, b, 10_000);
+            let analytical = foldback_ad(b, threshold) - foldback_ad(a, threshold);
+            assert!(
+                (numerical - analytical).abs() < 1e-3,
+                "foldback_ad [{a}, {b}]: numerical={numerical}, analytical={analytical}"
             );
         }
     }

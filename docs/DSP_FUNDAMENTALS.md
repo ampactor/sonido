@@ -566,7 +566,9 @@ Each waveshaping algorithm has a distinct harmonic character determined by the s
 
 **Asymmetric functions**: Functions that are not odd-symmetric produce even harmonics (2nd, 4th, 6th...) in addition to odd ones. Even harmonics are perceived as "warm" and "musical," characteristic of vacuum tube distortion.
 
-**Foldback distortion**: When the input exceeds a threshold, the signal folds back rather than clipping. This produces a rich, complex harmonic spectrum with both even and odd harmonics. The wavefolder behavior creates more harmonics as drive increases, rather than just compressing the signal as a clipper does. Implementation uses a bounded iterative loop (16 max iterations) rather than recursion, ensuring safety on embedded targets with limited stack (e.g., Daisy Seed).
+**Foldback distortion**: When the input exceeds a threshold, the signal folds back rather than clipping. This produces a rich, complex harmonic spectrum with both even and odd harmonics. The wavefolder behavior creates more harmonics as drive increases, rather than just compressing the signal as a clipper does. Like the other three modes, foldback uses first-order ADAA (piecewise parabolic antiderivative) to reduce aliasing artifacts.
+
+**Dynamic Waveshaping**: The `dynamics` parameter modulates drive gain based on input level via an `EnvelopeFollower` (5 ms attack, 50 ms release). When input is quiet, drive is reduced by up to 80%, keeping the signal in the waveshaper's linear region — mimicking tube amp bias-point shift. At `dynamics=0` (default), no envelope processing occurs (zero overhead).
 
 ### Oversampling Integration
 
