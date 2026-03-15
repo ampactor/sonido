@@ -121,6 +121,7 @@ fn format_step(step: &ProcessStep) -> String {
 
 /// Errors that can occur during graph operations.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum GraphError {
     /// The specified node was not found in the graph.
     NodeNotFound(NodeId),

@@ -185,6 +185,7 @@ use alloc::{format, string::String};
 ///
 /// Reference: JUCE `NormalisableRange` (skew factor), iPlug2 `ShapePowCurve`.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[non_exhaustive]
 pub enum ParamScale {
     /// Linear mapping (default). Equal resolution across the range.
     #[default]
@@ -1068,6 +1069,7 @@ impl ParamDescriptor {
 /// }
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum ParamUnit {
     /// Decibels (dB) - for gain, threshold, and level parameters.
     Decibels,

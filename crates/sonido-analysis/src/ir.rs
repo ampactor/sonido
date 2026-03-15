@@ -372,6 +372,92 @@ fn calculate_edc_correlation(edc: &[f32], start_db: f32, end_db: f32) -> f32 {
     }
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Environmental-audio / room-capture API  (Status: stubs — TODO: implement)
+// ────────────────────────────────────────────────────────────────────────────
+
+/// Configuration for an impulse-response measurement sweep.
+///
+/// Used by [`generate_sweep`] and [`compute_ir`] for the "Capture Room" /
+/// "Clone This Space" workflow.
+///
+/// # Typical Values
+///
+/// | Field           | Default  | Range          |
+/// |-----------------|----------|----------------|
+/// | `start_freq`    | 20 Hz    | [1, 200] Hz    |
+/// | `end_freq`      | 20 000 Hz| [1 k, 24 k] Hz |
+/// | `duration_secs` | 5 s      | [1, 30] s      |
+/// | `sample_rate`   | 48 000 Hz| [22 050, 96 k] |
+pub struct SweepConfig {
+    /// Sweep start frequency in Hz.  Typical: 20 Hz.
+    pub start_freq: f32,
+    /// Sweep end frequency in Hz.  Typical: 20 000 Hz.
+    pub end_freq: f32,
+    /// Sweep duration in seconds.  Longer sweeps give higher SNR.
+    pub duration_secs: f32,
+    /// Output sample rate in Hz.
+    pub sample_rate: f32,
+}
+
+impl Default for SweepConfig {
+    fn default() -> Self {
+        Self {
+            start_freq: 20.0,
+            end_freq: 20_000.0,
+            duration_secs: 5.0,
+            sample_rate: 48_000.0,
+        }
+    }
+}
+
+/// Generate a logarithmic (Farina) sine sweep.
+///
+/// Produces a unit-amplitude exponential sine sweep from `config.start_freq`
+/// to `config.end_freq` over `config.duration_secs` seconds.  The sweep has
+/// flat power-spectral density on a log-frequency axis, which yields a
+/// well-conditioned deconvolution in [`compute_ir`].
+///
+/// # Reference
+///
+/// A. Farina, "Simultaneous measurement of impulse response and distortion
+/// with a swept-sine technique," AES 108th Convention, 2000.
+///
+/// # Status
+///
+/// TODO: implement.  Returns empty `Vec` until wired up.
+pub fn generate_sweep(config: &SweepConfig) -> Vec<f32> {
+    // TODO: replicate SineSweep::generate() logic using config fields
+    let _ = config;
+    Vec::new()
+}
+
+/// Compute an impulse response from a recorded sweep response.
+///
+/// Deconvolves `recorded` with the analytical inverse filter of `sweep` in the
+/// frequency domain.  The result is the linear time-invariant impulse response
+/// of the room or device under test.
+///
+/// # Arguments
+///
+/// * `sweep`    — The excitation signal, as produced by [`generate_sweep`].
+/// * `recorded` — The microphone capture of `sweep` played through the room.
+/// * `config`   — Must match the config used to generate `sweep`.
+///
+/// # Returns
+///
+/// Impulse response samples at `config.sample_rate`.  Length equals
+/// `recorded.len() + sweep.len() - 1` (linear convolution length).
+///
+/// # Status
+///
+/// TODO: implement deconvolution.  Returns empty `Vec` until wired up.
+pub fn compute_ir(sweep: &[f32], recorded: &[f32], config: &SweepConfig) -> Vec<f32> {
+    // TODO: build SineSweep from config, call compute_ir, or replicate inline
+    let _ = (sweep, recorded, config);
+    Vec::new()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -22,6 +22,7 @@ use libm::{expf, sqrtf};
 /// Reference: Giannoulis et al., "Digital Dynamic Range Compressor Design —
 /// A Tutorial and Analysis", JAES 2012.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum DetectionMode {
     /// Peak detection — follows instantaneous amplitude.
     #[default]

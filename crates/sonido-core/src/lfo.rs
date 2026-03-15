@@ -9,6 +9,7 @@ use crate::tempo::NoteDivision;
 
 /// LFO waveform type
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum LfoWaveform {
     /// Sine waveform — smooth, natural-sounding modulation.
     #[default]

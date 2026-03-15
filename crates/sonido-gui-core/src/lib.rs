@@ -13,6 +13,7 @@
 //! - [`effects_ui`] — Per-effect UI panels (one per effect type)
 //! - [`undo`] — Undo/redo history with gesture grouping for parameter mutations
 
+pub mod accessibility;
 pub mod effects_ui;
 pub mod param_bridge;
 pub mod theme;

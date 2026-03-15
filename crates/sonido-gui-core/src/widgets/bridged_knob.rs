@@ -69,6 +69,7 @@ fn format_plain_value(value: f32, unit: ParamUnit) -> String {
         ParamUnit::Percent => format!("{value:.0} %"),
         ParamUnit::Ratio => format!("{value:.1}:1"),
         ParamUnit::None => format!("{value:.2}"),
+        _ => format!("{value:.2}{}", unit.suffix()),
     }
 }
 
@@ -187,6 +188,10 @@ pub fn bridged_knob(
             ParamUnit::None => knob.format(move |n| {
                 let v = d.denormalize(n);
                 format!("{v:.2}")
+            }),
+            _ => knob.format(move |n| {
+                let v = d.denormalize(n);
+                format!("{v:.2}{}", d.unit.suffix())
             }),
         }
     } else {

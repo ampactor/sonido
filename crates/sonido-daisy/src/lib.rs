@@ -30,6 +30,7 @@
 pub mod adc;
 pub mod audio;
 pub mod controls;
+pub mod device_sync;
 pub mod expression;
 pub mod hothouse;
 pub mod led;

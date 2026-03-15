@@ -43,6 +43,7 @@ use crate::{ParamDescriptor, ParamFlags, ParamScale};
 /// allowing frequency params (Logarithmic), enum params (Snap), and
 /// continuous params (Linear) to all morph correctly in a single operation.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub enum MorphCurve {
     /// Arithmetic interpolation: `a + (b - a) * t`.
     ///

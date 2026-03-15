@@ -33,6 +33,7 @@ use alloc::vec::Vec;
 
 /// Interpolation method for fractional delay
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Interpolation {
     /// No interpolation (truncate to nearest sample)
     None,

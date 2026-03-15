@@ -57,6 +57,7 @@ impl NodeId {
 /// `NodeRate` is `Copy` and stored on the mutation thread; it is snapshotted into
 /// the compiled schedule as a flag on `ProcessEffect`.
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
+#[non_exhaustive]
 pub enum NodeRate {
     /// Process every sample in the block (default for all effects).
     #[default]
@@ -70,6 +71,7 @@ pub enum NodeRate {
 }
 
 /// The role of a node in the processing graph.
+#[non_exhaustive]
 pub enum NodeKind {
     /// Receives external audio input. Exactly one per graph.
     Input,

@@ -86,6 +86,12 @@
 //! - **No dependencies on std**: Pure `no_std` with `libm` for math
 //! - **Object-safe traits**: Dynamic dispatch when needed
 //! - **Zero-cost abstractions**: Static dispatch chains optimize away
+//!
+//! ## API Stability
+//!
+//! Public enums are `#[non_exhaustive]`. New variants can be added without
+//! breaking downstream crates. Match arms in downstream code must include a
+//! wildcard (`_ => ...`) to remain forward-compatible.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -117,6 +123,7 @@ pub mod one_pole;
 pub mod oversample;
 pub mod param;
 pub mod param_info;
+pub mod plugin_host;
 pub mod svf;
 pub mod tempo;
 

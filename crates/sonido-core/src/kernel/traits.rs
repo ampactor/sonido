@@ -7,6 +7,11 @@
 use crate::param_info::ParamDescriptor;
 use crate::tempo::TempoContext;
 
+#[cfg(not(feature = "std"))]
+use alloc::{format, string::String, vec::Vec};
+#[cfg(feature = "std")]
+use std::{format, string::String, vec::Vec};
+
 /// How a parameter should be smoothed when values change.
 ///
 /// The kernel never sees smoothing — it receives pre-smoothed values each sample.
@@ -20,6 +25,7 @@ use crate::tempo::TempoContext;
 /// [`Custom`](Self::Custom) when an effect needs a specific time constant
 /// that falls between tiers.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[non_exhaustive]
 pub enum SmoothingStyle {
     /// No smoothing — snap to value immediately.
     ///
@@ -229,6 +235,37 @@ pub trait KernelParams: Default + Clone + Send {
     }
 
     // ── Morphing ──
+
+    /// Generate a human-readable description of the current parameter state.
+    ///
+    /// Uses descriptor metadata (name, unit, scale, step_labels) to compose
+    /// a readable string listing each visible parameter's name and formatted value.
+    /// Powers tooltips, accessibility, and automated preset naming.
+    ///
+    /// Hidden (`HIDDEN`) and read-only (`READ_ONLY`) parameters are excluded.
+    ///
+    /// # Example Output
+    ///
+    /// ```text
+    /// "Drive: 20 dB, Tone: 50 %, Mix: 100 %"
+    /// ```
+    fn describe_state(&self) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        for i in 0..Self::COUNT {
+            if let Some(desc) = Self::descriptor(i) {
+                if desc.flags.contains(crate::ParamFlags::HIDDEN) {
+                    continue;
+                }
+                if desc.flags.contains(crate::ParamFlags::READ_ONLY) {
+                    continue;
+                }
+                let val = self.get(i);
+                let formatted = desc.format_value(val);
+                parts.push(format!("{}: {}", desc.short_name, formatted));
+            }
+        }
+        parts.join(", ")
+    }
 
     /// Linearly interpolate between two parameter snapshots.
     ///

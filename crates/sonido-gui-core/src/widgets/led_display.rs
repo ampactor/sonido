@@ -113,6 +113,7 @@ impl LedDisplay {
             ParamUnit::Percent => format!("{value:.0} %"),
             ParamUnit::Ratio => format!("{value:.1}:1"),
             ParamUnit::None => format!("{value:.2}"),
+            _ => format!("{value:.2}{}", unit.suffix()),
         };
         Self::new(text).digits(7)
     }

@@ -70,6 +70,7 @@ pub mod engine;
 pub mod node;
 mod processing;
 pub mod schedule;
+pub mod spectral_node;
 pub mod stereo_samples;
 
 pub use buffer::{BufferPool, CompensationDelay, StereoBuffer};
