@@ -116,11 +116,14 @@ pub mod test_utils;
 // Re-export all kernel types at crate root
 pub use kernels::{
     AmpKernel, AmpParams, BitcrusherKernel, BitcrusherParams, CabinetKernel, CabinetParams,
-    ChorusKernel, ChorusParams, CompressorKernel, CompressorParams, DelayKernel, DelayParams,
-    DistortionKernel, DistortionParams, EqKernel, EqParams, FilterKernel, FilterParams,
-    FlangerKernel, FlangerParams, GateKernel, GateParams, LimiterKernel, LimiterParams,
-    LooperKernel, LooperParams, PhaserKernel, PhaserParams, PitchShiftKernel, PitchShiftParams,
-    PreampKernel, PreampParams, ReverbKernel, ReverbParams, RingModKernel, RingModParams,
-    StageKernel, StageParams, TapeKernel, TapeParams, TremoloKernel, TremoloParams, TunerKernel,
+    ChorusKernel, ChorusParams, CompressorKernel, CompressorParams, DeesserKernel, DeesserParams,
+    DelayKernel, DelayParams, DistortionKernel, DistortionParams, EqKernel, EqParams, FilterKernel,
+    FilterParams, FlangerKernel, FlangerParams, GateKernel, GateParams, LimiterKernel,
+    LimiterParams, LooperKernel, LooperParams, MultibandCompKernel, MultibandCompParams,
+    PhaserKernel, PhaserParams, PitchShiftKernel, PitchShiftParams, PlateReverbKernel,
+    PlateReverbParams, PreampKernel, PreampParams, ReverbKernel, ReverbParams, RingModKernel,
+    RingModParams, ShelvingEqKernel, ShelvingEqParams, SpringReverbKernel, SpringReverbParams,
+    StageKernel, StageParams, StereoWidenerKernel, StereoWidenerParams, TapeKernel, TapeParams,
+    TransientShaperKernel, TransientShaperParams, TremoloKernel, TremoloParams, TunerKernel,
     TunerParams, VibratoKernel, VibratoParams, WahKernel, WahParams,
 };
