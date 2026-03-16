@@ -888,6 +888,45 @@ sonido process in.wav --effect looper --param mode=1 --param feedback=80 --param
 
 ---
 
+## transient_shaper
+
+Transient shaper with independent attack and sustain envelope control.
+
+**Signal flow** (`crates/sonido-effects/src/kernels/transient_shaper.rs`):
+
+```text
+Input ──┬──────────────────────────────────── × gain ──┬── wet/dry mix ── × output
+        │                                       ▲       │
+        └─► × sensitivity ─► Fast EF (1ms/10ms)        └── (dry path)
+                           └─► Slow EF (50ms/200ms)
+```
+
+Two envelope followers run in parallel on the sensitivity-scaled input. The fast follower tracks transients; the slow follower tracks the sustained body. Their normalized outputs drive a multiplicative gain modifier: `gain = 1.0 + (attack/100) × transient + (sustain/100) × sustain_env`. Gain is clamped ≥ 0 to prevent sign inversion.
+
+**Parameters:**
+
+| # | Name | Range | Default | Unit | Scale | Smoothing |
+|---|------|-------|---------|------|-------|-----------|
+| 0 | Attack | −100–+100 | 0.0 | % | Linear | Fast |
+| 1 | Sustain | −100–+100 | 0.0 | % | Linear | Fast |
+| 2 | Sensitivity | 0–100 | 50.0 | % | Linear | Standard |
+| 3 | Mix | 0–100 | 100.0 | % | Linear | Standard |
+| 4 | Output | −60–+6 | 0.0 | dB | Linear | Fast |
+
+- **Attack +100%**: doubles transient peaks (snappier drums, percussive attack).
+- **Attack −100%**: removes transients (softer, rounder onset).
+- **Sustain +100%**: doubles sustained body level (fatter, more present).
+- **Sustain −100%**: removes sustain (staccato, gated feel).
+- **Sensitivity**: pre-gain for envelope detection. Higher = more responsive to quiet signals.
+
+**CLI:**
+
+```bash
+sonido process in.wav --effect transient_shaper --param attack=50 --param sustain=-30
+```
+
+---
+
 ## Effect Chains
 
 ### Chain Syntax

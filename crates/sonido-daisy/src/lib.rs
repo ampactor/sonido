@@ -242,7 +242,7 @@ pub fn enable_cycle_counter(dcb: &mut cortex_m::peripheral::DCB, dwt: &mut DWT) 
 /// Converts a u32 SAI sample (24-bit signed, right-aligned) to f32 in [-1.0, 1.0].
 ///
 /// With `DataSize::Data24`, the STM32H7 SAI places 24-bit audio data in
-/// bits [23:0] of the 32-bit data register. The sign bit is bit 23, not
+/// bits \[23:0\] of the 32-bit data register. The sign bit is bit 23, not
 /// bit 31. This function sign-extends from 24-bit to 32-bit, then scales
 /// by 2^23 — matching libDaisy's `s242f()`.
 ///

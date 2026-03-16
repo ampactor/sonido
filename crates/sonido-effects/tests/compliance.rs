@@ -9,12 +9,22 @@
 
 mod helpers;
 
-use helpers::{all_ids, sine_440};
+use helpers::all_ids;
 use sonido_registry::EffectRegistry;
 
 const SAMPLE_RATE: f32 = 48000.0;
 const BLOCK_SIZE: usize = 4800; // 100 ms at 48 kHz
 const DC_CHECK_SAMPLES: usize = 4096;
+
+/// Generate a 440 Hz sine wave at 0.5 amplitude.
+fn sine_440(len: usize) -> Vec<f32> {
+    (0..len)
+        .map(|i| {
+            let t = i as f32 / SAMPLE_RATE;
+            (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.5
+        })
+        .collect()
+}
 
 /// Generate a silence block.
 fn silence(len: usize) -> Vec<f32> {

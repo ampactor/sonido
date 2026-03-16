@@ -35,7 +35,7 @@
 //! This module is no_std-compatible and relies on `alloc` for `Vec` and `Box`.
 
 #[cfg(not(feature = "std"))]
-use alloc::{boxed::Box, vec, vec::Vec};
+use alloc::boxed::Box;
 
 use crate::effect_with_params::EffectWithParams;
 use crate::graph::node::NodeId;

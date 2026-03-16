@@ -117,7 +117,24 @@ pub fn adc_to_param(desc: &ParamDescriptor, normalized: f32) -> f32 {
 /// ```
 #[inline]
 pub fn adc_to_param_biased(desc: &ParamDescriptor, noon: f32, normalized: f32) -> f32 {
+    // STEPPED params: equal knob travel per option, biasing is meaningless.
+    if desc.flags.contains(ParamFlags::STEPPED) {
+        return adc_to_param(desc, normalized);
+    }
+
     let noon = clamp(noon, desc.min, desc.max);
+    let range = desc.max - desc.min;
+
+    // Noon at or near an extreme: biased mapping creates a dead zone.
+    // Fall back to linear (full range, no wasted travel).
+    // Threshold: 5% of range from either end.
+    if range < 1e-6
+        || (noon - desc.min) / range < 0.05
+        || (desc.max - noon) / range < 0.05
+    {
+        return adc_to_param(desc, normalized);
+    }
+
     let val = if normalized <= 0.5 {
         let t = normalized * 2.0; // 0.0→1.0 in bottom half
         interpolate_scaled(desc.min, noon, t, desc.scale)
@@ -125,9 +142,87 @@ pub fn adc_to_param_biased(desc: &ParamDescriptor, noon: f32, normalized: f32) -
         let t = (normalized - 0.5) * 2.0; // 0.0→1.0 in top half
         interpolate_scaled(noon, desc.max, t, desc.scale)
     };
-    if desc.flags.contains(ParamFlags::STEPPED) {
-        libm::roundf(val)
-    } else {
-        val
+    val
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper: linear param with given range.
+    fn linear(min: f32, max: f32, default: f32) -> ParamDescriptor {
+        ParamDescriptor::custom("P", "P", min, max, default)
+    }
+
+    /// Helper: STEPPED (discrete) param.
+    fn stepped(min: f32, max: f32, default: f32) -> ParamDescriptor {
+        ParamDescriptor::custom("P", "P", min, max, default).with_flags(ParamFlags::STEPPED)
+    }
+
+    #[test]
+    fn biased_stepped_uses_linear() {
+        // 4-option selector [0, 3]: biased noon=1 should NOT compress range.
+        let desc = stepped(0.0, 3.0, 1.0);
+        // With linear mapping, 0→0, 0.5→1.5→rounds to 2, 1→3
+        let at_zero = adc_to_param_biased(&desc, 1.0, 0.0);
+        let at_half = adc_to_param_biased(&desc, 1.0, 0.5);
+        let at_one = adc_to_param_biased(&desc, 1.0, 1.0);
+        assert_eq!(at_zero, 0.0);
+        assert_eq!(at_half, 2.0); // rounded from 1.5
+        assert_eq!(at_one, 3.0);
+    }
+
+    #[test]
+    fn biased_noon_at_min_uses_linear() {
+        // Preamp gain [0, 20] with noon=0: without fallback, bottom half is dead.
+        let desc = linear(0.0, 20.0, 0.0);
+        let at_quarter = adc_to_param_biased(&desc, 0.0, 0.25);
+        let at_half = adc_to_param_biased(&desc, 0.0, 0.5);
+        let at_one = adc_to_param_biased(&desc, 0.0, 1.0);
+        // Should fall back to linear: full range, no dead zone.
+        assert!((at_quarter - 5.0).abs() < 0.01);
+        assert!((at_half - 10.0).abs() < 0.01);
+        assert!((at_one - 20.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn biased_noon_at_max_uses_linear() {
+        // Width [0, 100] with noon=100: without fallback, top half is dead.
+        let desc = linear(0.0, 100.0, 100.0);
+        let at_zero = adc_to_param_biased(&desc, 100.0, 0.0);
+        let at_half = adc_to_param_biased(&desc, 100.0, 0.5);
+        // Should fall back to linear.
+        assert!((at_zero).abs() < 0.01);
+        assert!((at_half - 50.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn biased_near_extreme_uses_linear() {
+        // Filter resonance [0.1, 20.0] with noon=0.707.
+        // (0.707 - 0.1) / (20.0 - 0.1) ≈ 3% — below 5% threshold.
+        let desc = linear(0.1, 20.0, 0.707);
+        let at_zero = adc_to_param_biased(&desc, 0.707, 0.0);
+        let at_one = adc_to_param_biased(&desc, 0.707, 1.0);
+        // Should fall back to linear — full range.
+        assert!((at_zero - 0.1).abs() < 0.01);
+        assert!((at_one - 20.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn biased_full_range() {
+        // Drive [0, 40] with noon=8: noon is 20% from min, well above 5%.
+        let desc = linear(0.0, 40.0, 8.0);
+        let at_zero = adc_to_param_biased(&desc, 8.0, 0.0);
+        let at_one = adc_to_param_biased(&desc, 8.0, 1.0);
+        assert!((at_zero - 0.0).abs() < 0.01);
+        assert!((at_one - 40.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn biased_noon_at_center() {
+        // Drive [0, 40] with noon=8: knob center should return noon.
+        let desc = linear(0.0, 40.0, 8.0);
+        let at_half = adc_to_param_biased(&desc, 8.0, 0.5);
+        assert!((at_half - 8.0).abs() < 0.01);
     }
 }

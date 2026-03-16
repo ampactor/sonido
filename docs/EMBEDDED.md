@@ -142,6 +142,11 @@ The Hothouse 6-knob pedal uses a "noon = sweet spot" convention: knobs at 12 o'c
 
 Both halves respect the descriptor's `ParamScale` (Linear, Logarithmic, Power).
 
+`adc_to_param_biased` automatically falls back to linear mapping (`adc_to_param`) for
+STEPPED parameters (equal knob travel per option) and when the noon value is at or near
+a range extreme (within 5% of either end). This eliminates dead zones — where half the
+knob travel produces no change — without requiring the caller to check parameter types.
+
 ```rust
 use sonido_daisy::{adc_to_param_biased, noon_presets};
 
@@ -155,9 +160,42 @@ for k in 0..knob_count {
 }
 ```
 
-The noon values are centralized in `noon_presets::noon_value(effect_id, param_idx)` and equal the descriptor defaults — effect authors already set musically correct sweet spots. The biased mapping just centers the ADC curve on them without narrowing the available range.
+The noon values are centralized in `noon_presets::noon_value(effect_id, param_idx)`. Most equal the descriptor defaults, but mix parameters use 50% (pedal blend convention) instead of the plugin default of 100% (insert chain convention). The biased mapping centers the ADC curve on these sweet spots without narrowing the available range.
 
 For effects without noon presets or for new effects, `adc_to_param()` (linear mapping) remains available as a fallback.
+
+### Noon Preset Verification
+
+Because `sonido-daisy` targets Cortex-M7 (`no_std`), its unit tests can't run on the host.
+The mapping functions and noon table are pure math depending only on `ParamDescriptor`, so
+they're inlined in `crates/sonido-effects/tests/noon_mapping.rs` (with `std` math substitutions)
+and verified exhaustively against every registered effect.
+
+**Test cases:**
+
+| Test | What it catches |
+|------|----------------|
+| `noon_coverage_completeness` | Writable param added without noon preset; READ_ONLY param with unnecessary preset |
+| `noon_values_in_range` | Stale noon after descriptor range change (the original ADR-030 bug class) |
+| `biased_mapping_endpoints` | Dead zone where knob 0→min or knob 1→max fails |
+| `biased_noon_at_center` | Knob center doesn't produce the sweet-spot value |
+| `biased_mapping_monotonic` | Non-monotonic output from biased split algorithm |
+
+**READ_ONLY diagnostic exclusions** — these params are metering outputs, not knob-writable.
+Noon presets are intentionally omitted for them:
+
+| Effect | Index | Param | Why excluded |
+|--------|-------|-------|--------------|
+| Compressor | 9 | Gain Reduction | Metering output |
+| Gate | 4 | Gate Open | Binary state indicator |
+| Chorus | 9 | LFO Phase | Diagnostic readback |
+| Flanger | 5 | LFO Phase | Diagnostic readback |
+| Phaser | 7 | LFO Phase | Diagnostic readback |
+| Tremolo | 4 | LFO Phase | Diagnostic readback |
+
+**Guitarist-ready effects** — effects with ≤6 writable params, directly mappable to Hothouse's
+6 knobs without paging: distortion (6), preamp (3), wah (5), filter (4), vibrato (3),
+bitcrusher (5), ringmod (5), limiter (5), looper (6).
 
 **Usage pattern** (all Hothouse examples):
 

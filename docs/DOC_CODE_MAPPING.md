@@ -52,10 +52,12 @@ Rows marked `<!-- PLANNED -->` are pre-reserved for v0.3+ features. Do not updat
 | Any new crate | CLAUDE.md (Crates table + Key Files table), `docs/ARCHITECTURE.md` (diagram) | Crate purpose, no_std status, dependency position |
 | `crates/sonido-core/src/kernel/traits.rs`, `adapter.rs` | CLAUDE.md (Kernel Architecture section), `docs/ARCHITECTURE.md` (Kernel Architecture), `docs/KERNEL_ARCHITECTURE.md`, `docs/DESIGN_DECISIONS.md` ADR-028 | DspKernel, KernelParams, SmoothingStyle, Adapter (SmoothedPolicy / DirectPolicy) |
 | `crates/sonido-effects/src/kernels/*.rs` | `docs/EFFECTS_REFERENCE.md` (Kernel Architecture), `docs/ARCHITECTURE.md` | Kernel implementations, parameter tables, from_knobs() |
+| `crates/sonido-core/src/compose.rs` | `docs/ARCHITECTURE.md` (Composition Algebra), CLAUDE.md (Key Files) | `seq`, `par`, `feedback` combinators, `GraphBuilder` API |
 | `crates/sonido-core/src/graph/` | `docs/ARCHITECTURE.md` (DAG section), `docs/DESIGN_DECISIONS.md` ADR-025, CLAUDE.md (Crates table, Key Patterns, Key Files) | Node types, buffer pool, topological sort, `ProcessingGraph` API |
 | `crates/sonido-core/src/graph/engine.rs` | `docs/ARCHITECTURE.md` (data flow), CLAUDE.md (Key Files) | `GraphEngine` API, `from_chain()` migration path |
 | `crates/sonido-core/src/graph/stereo_samples.rs` | CLAUDE.md (Key Files) | `StereoSamples` struct (stereo buffer pair) |
 | `crates/sonido-gui/src/chain_manager.rs` | `docs/ARCHITECTURE.md` (data flow), `docs/GUI.md` | `GraphCommand` enum (Add/Remove/ReplaceTopology) |
+| `crates/sonido-daisy/src/noon_presets.rs`, `param_map.rs` | `docs/EMBEDDED.md` (Noon Preset Verification), `crates/sonido-effects/tests/noon_mapping.rs` | Noon table values, biased mapping algorithm, test inlined copies |
 | `crates/sonido-daisy/src/*.rs` | `docs/EMBEDDED.md`, CLAUDE.md (Crates table, Key Files) | Firmware lib, DWT helpers, audio constants, `heartbeat` task, SDRAM init, clock profiles |
 | `crates/sonido-daisy/examples/*.rs` | `docs/EMBEDDED.md` (Tier System, Getting Started, Diagnostics) | bench_kernels, bench_mini, blinky, blinky_bare, heap_test, hothouse_diag, morph_pedal, passthrough, passthrough_blink, silence, single_effect, square_out, tone_out |
 | `LICENSE-MIT`, `LICENSE-APACHE` | `README.md` (License section), `docs/LICENSING.md` | License text, dual-license references |

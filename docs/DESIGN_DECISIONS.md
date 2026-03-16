@@ -1323,6 +1323,15 @@ Per-effect noon values are centralized in `noon_presets::noon_value(effect_id, p
 - The `noon_aligned()` builder method remains available for ad-hoc use but is not applied to production descriptors.
 - `adc_to_param()` (linear mapping) remains available for effects that don't need biased mapping.
 
+### Revision: Dead Zone Elimination (2026-03-15)
+
+`adc_to_param_biased` now automatically falls back to `adc_to_param` (linear mapping) in two cases:
+
+1. **STEPPED parameters** — discrete selectors (waveshape, mode, filter type) need equal knob travel per option. Biasing wastes half the travel on one option.
+2. **Noon at or near a range extreme** — when noon is within 5% of either end, biased mapping creates a dead zone where half the knob travel produces no change. Fallback to linear gives full range with no wasted travel.
+
+Additionally, noon preset values for mix parameters were changed from 100% (plugin insert convention) to 50% (pedal blend knob convention), and reverb presets were corrected from stale [0,1]-range values to the actual [0,100] parameter ranges.
+
 ### References
 
 - `crates/sonido-daisy/src/param_map.rs` — `adc_to_param_biased()`, `interpolate_scaled()`

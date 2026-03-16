@@ -8,11 +8,32 @@
 
 mod helpers;
 
-use helpers::{all_ids, assert_no_violations, rms_db, sine_440};
+use helpers::{all_ids, assert_no_violations};
 use sonido_core::{ParamFlags, ParamScale, ParamUnit};
 use sonido_registry::EffectRegistry;
 
 const SAMPLE_RATE: f32 = 48000.0;
+
+/// Generate a 440 Hz sine wave at 0.5 amplitude.
+fn sine_440(len: usize) -> Vec<f32> {
+    (0..len)
+        .map(|i| {
+            let t = i as f32 / SAMPLE_RATE;
+            (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.5
+        })
+        .collect()
+}
+
+/// RMS level of a signal in dB.
+fn rms_db(signal: &[f32]) -> f32 {
+    let sum_sq: f32 = signal.iter().map(|&s| s * s).sum();
+    let rms = (sum_sq / signal.len() as f32).sqrt();
+    if rms > 1e-10 {
+        20.0 * rms.log10()
+    } else {
+        -200.0
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test 1: Full Range Accessible

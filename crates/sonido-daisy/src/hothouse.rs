@@ -7,7 +7,7 @@
 //! - [`hothouse_control_task`] — Embassy task that reads ADC + GPIO at 50 Hz
 //! - [`decode_toggle`] — standardized 3-position toggle decoder
 //! - `hothouse_pins!` — macro to extract control pins from Embassy peripherals
-//! - [`HothousePlatform`] — `PlatformController` implementation
+//! - `HothousePlatform` — `PlatformController` implementation (feature `platform`)
 //!
 //! # Pin Mapping
 //!

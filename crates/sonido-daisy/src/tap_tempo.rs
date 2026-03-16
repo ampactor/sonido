@@ -36,9 +36,9 @@ const TICK_HZ: f32 = 32_768.0;
 
 /// Footswitch-based BPM detector with running average.
 ///
-/// Stores the last [`TAP_HISTORY`] tap timestamps and computes BPM from
+/// Stores the last `TAP_HISTORY` tap timestamps and computes BPM from
 /// the average interval. Automatically resets if no tap arrives within
-/// [`TAP_TIMEOUT_TICKS`] (3 seconds).
+/// `TAP_TIMEOUT_TICKS` (3 seconds).
 ///
 /// # Range
 ///

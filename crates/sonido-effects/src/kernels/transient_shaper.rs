@@ -364,6 +364,9 @@ impl DspKernel for TransientShaperKernel {
 
 #[cfg(test)]
 mod tests {
+    extern crate alloc;
+    use alloc::{vec, vec::Vec};
+
     use super::*;
 
     const SR: f32 = 48000.0;
@@ -439,11 +442,11 @@ mod tests {
 
         let baseline_peak = baseline_out
             .iter()
-            .map(|&(l, _)| l.abs())
+            .map(|&(l, _): &(f32, f32)| l.abs())
             .fold(0.0f32, f32::max);
         let boosted_peak = boosted_out
             .iter()
-            .map(|&(l, _)| l.abs())
+            .map(|&(l, _): &(f32, f32)| l.abs())
             .fold(0.0f32, f32::max);
 
         assert!(
@@ -483,11 +486,11 @@ mod tests {
         let cut_tail = process_block(&mut cut, &params_cut, &tail);
 
         let baseline_rms: f32 = {
-            let sum: f32 = baseline_tail.iter().map(|&(l, _)| l * l).sum();
+            let sum: f32 = baseline_tail.iter().map(|&(l, _): &(f32, f32)| l * l).sum();
             libm::sqrtf(sum / baseline_tail.len() as f32)
         };
         let cut_rms: f32 = {
-            let sum: f32 = cut_tail.iter().map(|&(l, _)| l * l).sum();
+            let sum: f32 = cut_tail.iter().map(|&(l, _): &(f32, f32)| l * l).sum();
             libm::sqrtf(sum / cut_tail.len() as f32)
         };
 

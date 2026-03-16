@@ -3,14 +3,11 @@
 //! Uses proptest to verify that every effect in the registry satisfies
 //! fundamental invariants: finite output, bounded output, and clean reset.
 
+mod helpers;
+
+use helpers::all_ids;
 use proptest::prelude::*;
 use sonido_registry::{EffectRegistry, EffectWithParams};
-
-/// All effect IDs in the registry.
-fn all_effect_ids() -> Vec<&'static str> {
-    let registry = EffectRegistry::new();
-    registry.all_effects().into_iter().map(|d| d.id).collect()
-}
 
 /// Set random valid parameters on an effect using normalized [0,1] values.
 fn set_random_params(effect: &mut Box<dyn EffectWithParams + Send>, rng_values: &[f32; 16]) {
@@ -35,8 +32,8 @@ proptest! {
         param_values in prop::array::uniform16(0.0f32..=1.0f32),
         effect_idx in 0usize..19,
     ) {
-        let ids = all_effect_ids();
-        let id = ids[effect_idx % ids.len()];
+        let ids = all_ids();
+        let id = &ids[effect_idx % ids.len()];
         let registry = EffectRegistry::new();
         let mut effect = registry.create(id, 48000.0).unwrap();
 
@@ -72,8 +69,8 @@ proptest! {
         param_values in prop::array::uniform16(0.0f32..=1.0f32),
         effect_idx in 0usize..19,
     ) {
-        let ids = all_effect_ids();
-        let id = ids[effect_idx % ids.len()];
+        let ids = all_ids();
+        let id = &ids[effect_idx % ids.len()];
         let registry = EffectRegistry::new();
         let mut effect = registry.create(id, 48000.0).unwrap();
 
@@ -105,8 +102,8 @@ proptest! {
         param_values in prop::array::uniform16(0.0f32..=1.0f32),
         effect_idx in 0usize..19,
     ) {
-        let ids = all_effect_ids();
-        let id = ids[effect_idx % ids.len()];
+        let ids = all_ids();
+        let id = &ids[effect_idx % ids.len()];
         let registry = EffectRegistry::new();
         let mut effect = registry.create(id, 48000.0).unwrap();
 
