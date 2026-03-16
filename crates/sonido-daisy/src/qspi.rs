@@ -252,11 +252,7 @@ impl<'a> PresetStore<'a> {
         self.buffer[start..end].copy_from_slice(&bytes);
 
         // Update header count
-        let count = self
-            .load_all()
-            .iter()
-            .filter(|s| s.is_some())
-            .count() as u8;
+        let count = self.load_all().iter().filter(|s| s.is_some()).count() as u8;
         self.buffer[5] = count; // PresetHeader.count is at byte offset 5 (magic=4, version=1)
     }
 

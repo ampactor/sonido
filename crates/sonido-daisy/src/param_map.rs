@@ -107,10 +107,7 @@ pub fn adc_to_param_biased(desc: &ParamDescriptor, noon: f32, normalized: f32) -
     // Noon at or near an extreme: biased mapping creates a dead zone.
     // Fall back to linear (full range, no wasted travel).
     // Threshold: 5% of range from either end.
-    if range < 1e-6
-        || (noon - desc.min) / range < 0.05
-        || (desc.max - noon) / range < 0.05
-    {
+    if range < 1e-6 || (noon - desc.min) / range < 0.05 || (desc.max - noon) / range < 0.05 {
         return adc_to_param(desc, normalized);
     }
 

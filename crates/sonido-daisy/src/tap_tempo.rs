@@ -184,7 +184,10 @@ mod tests {
         tap.tap(ticks_per_beat(120.0));
         // Tap after timeout — should reset and only record one tap
         tap.tap(TAP_TIMEOUT_TICKS + ticks_per_beat(120.0) * 2 + 1);
-        assert!(tap.bpm().is_none(), "history should have reset after timeout");
+        assert!(
+            tap.bpm().is_none(),
+            "history should have reset after timeout"
+        );
     }
 
     #[test]
@@ -226,6 +229,9 @@ mod tests {
             tap.tap(i * interval);
         }
         let bpm = tap.bpm().expect("should have bpm after wrapping");
-        assert!((bpm - 80.0).abs() < 1.0, "expected ~80 bpm after wrap, got {bpm}");
+        assert!(
+            (bpm - 80.0).abs() < 1.0,
+            "expected ~80 bpm after wrap, got {bpm}"
+        );
     }
 }

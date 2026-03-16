@@ -37,12 +37,12 @@ use embassy_stm32 as hal;
 use embedded_alloc::LlffHeap as Heap;
 use panic_probe as _;
 
+use sonido_core::kernel::{Adapter, DirectPolicy};
 use sonido_core::{Effect, ParameterInfo};
 use sonido_daisy::controls::HothouseBuffer;
 use sonido_daisy::hothouse::hothouse_control_task;
-use sonido_daisy::param_map::{adc_to_param_biased};
 use sonido_daisy::noon_presets;
-use sonido_core::kernel::{Adapter, DirectPolicy};
+use sonido_daisy::param_map::adc_to_param_biased;
 use sonido_daisy::{ClockProfile, SAMPLE_RATE, f32_to_u24, heartbeat, led::UserLed, u24_to_f32};
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -111,7 +111,12 @@ async fn main(spawner: embassy_executor::Spawner) {
     let knob_count = param_count.min(NUM_KNOBS);
 
     // Cache descriptors for adc_to_param
-    defmt::assert!(param_count <= MAX_PARAMS, "effect has {} params, max is {}", param_count, MAX_PARAMS);
+    defmt::assert!(
+        param_count <= MAX_PARAMS,
+        "effect has {} params, max is {}",
+        param_count,
+        MAX_PARAMS
+    );
     let mut descs = [None; MAX_PARAMS];
     for i in 0..param_count {
         descs[i] = effect.param_info(i);
@@ -161,8 +166,8 @@ async fn main(spawner: embassy_executor::Spawner) {
                     for k in 0..knob_count {
                         if let Some(ref desc) = descs[k] {
                             let raw = CONTROLS.read_knob(k);
-                            let noon = noon_presets::noon_value(EFFECT_ID, k)
-                                .unwrap_or(desc.default);
+                            let noon =
+                                noon_presets::noon_value(EFFECT_ID, k).unwrap_or(desc.default);
                             let value = adc_to_param_biased(desc, noon, raw);
                             effect.set_param(k, value);
 
@@ -178,8 +183,12 @@ async fn main(spawner: embassy_executor::Spawner) {
 
                     let (mut l, mut r) = effect.process_stereo(left_in, right_in);
 
-                    if !l.is_finite() { l = 0.0; }
-                    if !r.is_finite() { r = 0.0; }
+                    if !l.is_finite() {
+                        l = 0.0;
+                    }
+                    if !r.is_finite() {
+                        r = 0.0;
+                    }
 
                     output[i] = f32_to_u24(l.clamp(-1.0, 1.0));
                     output[i + 1] = f32_to_u24(r.clamp(-1.0, 1.0));

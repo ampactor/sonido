@@ -355,6 +355,59 @@ impl ProcessingGraph {
         Ok(())
     }
 
+    /// Returns the `NodeId` of the Input node, or `None` if no Input exists.
+    pub fn input_id(&self) -> Option<NodeId> {
+        self.nodes.iter().flatten().find_map(|n| {
+            if matches!(n.kind, NodeKind::Input) {
+                Some(n.id)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Returns the `NodeId` of the Output node, or `None` if no Output exists.
+    pub fn output_id(&self) -> Option<NodeId> {
+        self.nodes.iter().flatten().find_map(|n| {
+            if matches!(n.kind, NodeKind::Output) {
+                Some(n.id)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Removes all nodes except Input and Output, and clears all edges.
+    ///
+    /// Preserves crossfade state, sample rate, block size, and pre-allocated
+    /// buffers. The graph is ready for new effects and connections after this
+    /// call. `compile()` will trigger the built-in crossfade automatically.
+    pub fn clear_topology(&mut self) {
+        // Collect IDs of non-I/O nodes.
+        let to_remove: Vec<NodeId> = self
+            .nodes
+            .iter()
+            .flatten()
+            .filter(|n| !matches!(n.kind, NodeKind::Input | NodeKind::Output))
+            .map(|n| n.id)
+            .collect();
+
+        for id in to_remove {
+            // Ignore errors — node may already be gone if disconnect cascaded.
+            let _ = self.remove_node(id);
+        }
+
+        // Clear all edges (Input/Output have no remaining connections).
+        self.edges.clear();
+        self.next_edge_slot = 0;
+
+        // Clear incoming/outgoing edge lists on remaining I/O nodes.
+        for node in self.nodes.iter_mut().flatten() {
+            node.incoming.clear();
+            node.outgoing.clear();
+        }
+    }
+
     /// Connects two nodes with a directed edge.
     ///
     /// Returns the new edge's ID, or an error if:

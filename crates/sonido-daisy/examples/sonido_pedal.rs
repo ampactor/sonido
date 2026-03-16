@@ -50,19 +50,19 @@ use embedded_alloc::LlffHeap as Heap;
 use panic_probe as _;
 
 use sonido_core::graph::ProcessingGraph;
+use sonido_core::kernel::Adapter;
 use sonido_core::{EffectWithParams, ParamFlags, TempoManager};
 use sonido_daisy::controls::HothouseBuffer;
 use sonido_daisy::expression::ExpressionInput;
 use sonido_daisy::hothouse::hothouse_control_task;
 use sonido_daisy::midi::{MidiEvent, MidiHandler};
+use sonido_daisy::noon_presets;
 use sonido_daisy::qspi::{EffectSlotData, MAX_USER_PRESETS, PresetSlot};
 use sonido_daisy::tap_tempo::TapTempo;
-use sonido_core::kernel::Adapter;
 use sonido_daisy::{
     BLOCK_SIZE, ClockProfile, SAMPLE_RATE, adc_to_param_biased, f32_to_u24, heartbeat,
     led::UserLed, u24_to_f32,
 };
-use sonido_daisy::noon_presets;
 use sonido_effects::{
     BitcrusherKernel, ChorusKernel, CompressorKernel, DelayKernel, DistortionKernel, FilterKernel,
     FlangerKernel, LooperKernel, PhaserKernel, ReverbKernel, RingModKernel, TapeKernel,
@@ -450,10 +450,14 @@ const FACTORY_PRESETS: [FactoryPreset; 3] = [
             FactorySlot {
                 effect_idx: Some(7), // reverb
                 //                room  decay damp  pre   mix   width er    out
-                params_a: [30.0, 40.0, 60.0, 5.0, 40.0, 80.0, 50.0, 0.0,
-                           0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                params_b: [90.0, 88.0, 10.0, 30.0, 80.0, 100.0, 30.0, 0.0,
-                           0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                params_a: [
+                    30.0, 40.0, 60.0, 5.0, 40.0, 80.0, 50.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                    0.0, 0.0,
+                ],
+                params_b: [
+                    90.0, 88.0, 10.0, 30.0, 80.0, 100.0, 30.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                    0.0, 0.0,
+                ],
                 stepped: [false; MAX_PARAMS],
                 count: 8,
             },
@@ -468,12 +472,18 @@ const FACTORY_PRESETS: [FactoryPreset; 3] = [
             FactorySlot {
                 effect_idx: Some(6), // delay
                 //                time  fb    mix   ping  fblp     fbhp  diff  sync  div   out
-                params_a: [80.0, 15.0, 25.0, 0.0, 20000.0, 20.0, 0.0, 0.0,
-                           2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                params_b: [400.0, 93.0, 70.0, 0.0, 3000.0, 100.0, 30.0, 0.0,
-                           2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                stepped: [false, false, false, true, false, false, false, true,
-                          true, false, false, false, false, false, false, false],
+                params_a: [
+                    80.0, 15.0, 25.0, 0.0, 20000.0, 20.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                    0.0, 0.0,
+                ],
+                params_b: [
+                    400.0, 93.0, 70.0, 0.0, 3000.0, 100.0, 30.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                    0.0, 0.0,
+                ],
+                stepped: [
+                    false, false, false, true, false, false, false, true, true, false, false,
+                    false, false, false, false, false,
+                ],
                 count: 10,
             },
             FactorySlot::EMPTY,
@@ -487,21 +497,31 @@ const FACTORY_PRESETS: [FactoryPreset; 3] = [
             FactorySlot {
                 effect_idx: Some(11), // distortion
                 //                drive tone  out   shape mix   dyn
-                params_a: [0.0, 0.0, 0.0, 0.0, 100.0, 0.0,
-                           0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                params_b: [32.0, -3.0, -6.0, 3.0, 100.0, 60.0,
-                           0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                stepped: [false, false, false, true, false, false,
-                          false, false, false, false, false, false, false, false, false, false],
+                params_a: [
+                    0.0, 0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                    0.0,
+                ],
+                params_b: [
+                    32.0, -3.0, -6.0, 3.0, 100.0, 60.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                    0.0, 0.0,
+                ],
+                stepped: [
+                    false, false, false, true, false, false, false, false, false, false, false,
+                    false, false, false, false, false,
+                ],
                 count: 6,
             },
             FactorySlot {
                 effect_idx: Some(7), // reverb
                 //                room  decay damp  pre   mix   width er    out
-                params_a: [20.0, 30.0, 50.0, 5.0, 20.0, 60.0, 40.0, 0.0,
-                           0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                params_b: [60.0, 65.0, 30.0, 15.0, 45.0, 100.0, 50.0, 0.0,
-                           0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                params_a: [
+                    20.0, 30.0, 50.0, 5.0, 20.0, 60.0, 40.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                    0.0, 0.0,
+                ],
+                params_b: [
+                    60.0, 65.0, 30.0, 15.0, 45.0, 100.0, 50.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                    0.0, 0.0,
+                ],
                 stepped: [false; MAX_PARAMS],
                 count: 8,
             },
@@ -550,7 +570,7 @@ fn build_graph(
     topology: Topology,
     sr: f32,
     bs: usize,
-) -> (ProcessingGraph, [Option<NodeId>; NUM_SLOTS]) {
+) -> Result<(ProcessingGraph, [Option<NodeId>; NUM_SLOTS]), sonido_core::graph::GraphError> {
     let mut g = ProcessingGraph::new(sr, bs);
     let inp = g.add_input();
     let out = g.add_output();
@@ -611,8 +631,79 @@ fn build_graph(
         }
     }
 
-    g.compile().unwrap();
-    (g, node_ids)
+    g.compile()?;
+    Ok((g, node_ids))
+}
+
+/// Rebuild an existing graph in-place, preserving crossfade state.
+///
+/// Clears the topology and re-adds effects based on current node configuration.
+/// The built-in ~5ms crossfade in `compile()` handles click-free transitions.
+fn rebuild_graph(
+    graph: &mut ProcessingGraph,
+    nodes: &[NodeState; NUM_SLOTS],
+    topology: Topology,
+    sr: f32,
+) -> Result<[Option<NodeId>; NUM_SLOTS], sonido_core::graph::GraphError> {
+    graph.clear_topology();
+
+    let inp = graph.input_id().unwrap();
+    let out = graph.output_id().unwrap();
+
+    let mut populated: Vec<(usize, NodeId)> = Vec::new();
+    let mut node_ids: [Option<NodeId>; NUM_SLOTS] = [None; NUM_SLOTS];
+
+    for (slot, node) in nodes.iter().enumerate() {
+        if let Some(effect_idx) = node.effect_index
+            && let Some(effect) = create_effect(effect_idx, sr)
+        {
+            let nid = graph.add_effect(effect);
+            node_ids[slot] = Some(nid);
+            populated.push((slot, nid));
+        }
+    }
+
+    if populated.is_empty() {
+        graph.connect(inp, out)?;
+    } else if populated.len() == 1 {
+        let nid = populated[0].1;
+        graph.connect(inp, nid)?;
+        graph.connect(nid, out)?;
+    } else {
+        match topology {
+            Topology::Linear => {
+                graph.connect(inp, populated[0].1)?;
+                for i in 1..populated.len() {
+                    graph.connect(populated[i - 1].1, populated[i].1)?;
+                }
+                graph.connect(populated[populated.len() - 1].1, out)?;
+            }
+            Topology::Parallel => {
+                let s = graph.add_split();
+                let m = graph.add_merge();
+                graph.connect(inp, s)?;
+                for &(_, nid) in &populated {
+                    graph.connect(s, nid)?;
+                    graph.connect(nid, m)?;
+                }
+                graph.connect(m, out)?;
+            }
+            Topology::Fan => {
+                let s = graph.add_split();
+                let m = graph.add_merge();
+                graph.connect(inp, populated[0].1)?;
+                graph.connect(populated[0].1, s)?;
+                for &(_, nid) in &populated[1..] {
+                    graph.connect(s, nid)?;
+                    graph.connect(nid, m)?;
+                }
+                graph.connect(m, out)?;
+            }
+        }
+    }
+
+    graph.compile()?;
+    Ok(node_ids)
 }
 
 // ── Morph interpolation ─────────────────────────────────────────────────────
@@ -715,10 +806,20 @@ fn process_midi_event(
             _ => {}
         }
     } else if event.is_clock() {
-        // MIDI Clock → tap tempo (24 clocks per beat; use every 24th clock
-        // for 1-tap-per-beat behavior — here we simply pass all clocks through
-        // and TapTempo's timeout filters out noise).
-        tap_tempo.tap(now_ticks);
+        // MIDI Clock fires 24× per beat. Divide down to 1 tap per beat.
+        let count = MIDI_CLOCK_DIV.fetch_add(1, Ordering::Relaxed);
+        if count == 0 {
+            tap_tempo.tap(now_ticks);
+        }
+        if count >= 23 {
+            MIDI_CLOCK_DIV.store(0, Ordering::Relaxed);
+        }
+    } else if event.is_start() {
+        // MIDI Start: reset divider so first clock triggers a tap.
+        MIDI_CLOCK_DIV.store(0, Ordering::Relaxed);
+    } else if event.is_stop() {
+        // MIDI Stop: reset divider; no more taps until next Start.
+        MIDI_CLOCK_DIV.store(0, Ordering::Relaxed);
     }
     // Program Change → preset load handled in the poll loop where preset state lives.
 }
@@ -729,10 +830,7 @@ fn process_midi_event(
 ///
 /// Topology is encoded as 0=Linear, 1=Parallel, 2=Fan matching the [`Topology`]
 /// enum discriminants used in [`PresetSlot::topology`].
-fn current_state_to_preset_slot(
-    nodes: &[NodeState; NUM_SLOTS],
-    topology: Topology,
-) -> PresetSlot {
+fn current_state_to_preset_slot(nodes: &[NodeState; NUM_SLOTS], topology: Topology) -> PresetSlot {
     let topology_byte = match topology {
         Topology::Linear => 0,
         Topology::Parallel => 1,
@@ -783,16 +881,52 @@ async fn milestone(controls: &HothouseBuffer) {
 /// Global bypass flag — audio callback checks this.
 static BYPASSED: AtomicBool = AtomicBool::new(false);
 
+/// MIDI clock divider counter (0–23). MIDI clock fires 24× per beat;
+/// `TapTempo` expects ~1 tap per beat. Only the first of every 24 clocks
+/// triggers a tap.
+static MIDI_CLOCK_DIV: AtomicU8 = AtomicU8::new(0);
+
 // ── Deferred D-cache ────────────────────────────────────────────────────────
 
-// ── Watchdog ─────────────────────────────────────────────────────────────────
+// ── Boot counter (TAMP backup register) ─────────────────────────────────────
 
-/// Boot counter for safe-mode detection.
+/// TAMP backup register 0 — survives IWDG and software resets.
 ///
-/// Incremented on every boot and stored in a register-backed static. After
-/// 3 consecutive watchdog resets the firmware should enter passthrough-only
-/// mode (future: read from RTC backup register for persistence across resets).
-static BOOT_COUNT: AtomicU8 = AtomicU8::new(0);
+/// Address: 0x5800_2100 (TAMP_BKP0R on STM32H750, per RM0433 §8.5.20).
+/// Requires RTCAPBEN (RCC_APB4ENR bit 16) — enabled below in `read_boot_count`.
+const TAMP_BKP0R: *mut u32 = 0x5800_2100 as *mut u32;
+
+/// RCC APB4 peripheral clock enable register.
+const RCC_APB4ENR: *mut u32 = 0x5802_40F4 as *mut u32;
+
+/// Reads the boot counter from TAMP backup register 0 (low byte).
+///
+/// # Safety
+///
+/// Writes to RCC and reads TAMP MMIO. Must be called after RCC is configured
+/// (embassy-stm32 init guarantees this).
+unsafe fn read_boot_count() -> u8 {
+    unsafe {
+        // Ensure TAMP clock is enabled (RTCAPBEN = bit 16 of RCC_APB4ENR).
+        let apb4 = core::ptr::read_volatile(RCC_APB4ENR);
+        core::ptr::write_volatile(RCC_APB4ENR, apb4 | (1 << 16));
+        (core::ptr::read_volatile(TAMP_BKP0R) & 0xFF) as u8
+    }
+}
+
+/// Writes the boot counter to TAMP backup register 0 (low byte).
+///
+/// # Safety
+///
+/// Writes to TAMP MMIO. RTCAPBEN must already be enabled (see `read_boot_count`).
+unsafe fn write_boot_count(count: u8) {
+    unsafe {
+        let prev = core::ptr::read_volatile(TAMP_BKP0R) & !0xFF;
+        core::ptr::write_volatile(TAMP_BKP0R, prev | count as u32);
+    }
+}
+
+// ── Watchdog ─────────────────────────────────────────────────────────────────
 
 /// Watchdog task — feeds the STM32H750 IWDG every 500 ms.
 ///
@@ -839,11 +973,20 @@ async fn watchdog_task() {
         core::ptr::write_volatile(IWDG_KR, 0xCCCC);
     }
 
-    BOOT_COUNT.fetch_add(1, Ordering::Relaxed);
-    defmt::info!(
-        "watchdog started (boot #{})",
-        BOOT_COUNT.load(Ordering::Relaxed)
-    );
+    // Read persistent boot counter, increment, write back.
+    let boot_count = unsafe {
+        let count = read_boot_count();
+        let next = count.saturating_add(1);
+        write_boot_count(next);
+        next
+    };
+    defmt::info!("watchdog started (boot #{})", boot_count);
+
+    // 3+ consecutive rapid reboots → force bypass (safe mode).
+    if boot_count >= 3 {
+        defmt::warn!("safe mode: {} rapid reboots, forcing bypass", boot_count);
+        BYPASSED.store(true, Ordering::Relaxed);
+    }
 
     loop {
         // Feed the watchdog — must happen within the ~1 s timeout window.
@@ -865,6 +1008,18 @@ async fn deferred_dcache() {
     embassy_time::Timer::after_millis(500).await;
     sonido_daisy::sdram::enable_dcache();
     defmt::info!("D-cache enabled");
+}
+
+/// Clears the boot counter after 5 seconds of stable operation.
+///
+/// If audio runs cleanly for 5 s without a watchdog reset, the firmware
+/// is healthy — clear the counter so future single resets don't trigger
+/// safe mode.
+#[embassy_executor::task]
+async fn boot_success_guard() {
+    embassy_time::Timer::after_secs(5).await;
+    unsafe { write_boot_count(0) };
+    defmt::info!("boot success — counter cleared");
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
@@ -931,7 +1086,7 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     // Auto-load factory preset 1 for first-time experience.
     load_factory_preset(&mut nodes, 0);
-    let (mut graph, mut node_ids) = build_graph(&nodes, topology, SAMPLE_RATE, BLOCK_SIZE);
+    let (mut graph, mut node_ids) = build_graph(&nodes, topology, SAMPLE_RATE, BLOCK_SIZE).unwrap();
     apply_all_snapshots(&mut graph, &node_ids, &nodes, AbMode::A);
     defmt::info!("factory preset 1 loaded: Room → Shimmer");
 
@@ -1028,6 +1183,9 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     // Spawn watchdog — must be alive for entire session.
     spawner.spawn(watchdog_task()).unwrap();
+
+    // Clear boot counter after 5s of stable operation.
+    spawner.spawn(boot_success_guard()).unwrap();
 
     // ── Audio setup — start SAI as late as possible ──
     let audio_peripherals = sonido_daisy::audio::AudioPeripherals {
@@ -1369,11 +1527,8 @@ async fn main(spawner: embassy_executor::Spawner) {
                             if param_idx != NULL_KNOB
                                 && let Some(desc) = effect.effect_param_info(param_idx as usize)
                             {
-                                let noon = noon_presets::noon_value(
-                                    entry.id,
-                                    param_idx as usize,
-                                )
-                                .unwrap_or(desc.default);
+                                let noon = noon_presets::noon_value(entry.id, param_idx as usize)
+                                    .unwrap_or(desc.default);
                                 let val = adc_to_param_biased(&desc, noon, norm_knobs[k]);
                                 // Skip K1 (mode) for looper when FS override is active,
                                 // unless the user turned K1 to Stop (clears override).
@@ -1402,39 +1557,49 @@ async fn main(spawner: embassy_executor::Spawner) {
                     nodes[focused_node].update_snapshot(&ab_mode, &param_vals);
 
                     // Any knob movement in A/B mode arms the auto-save timer.
-                    save_debounce = 150; // 3 seconds at 50 Hz poll rate
+                    save_debounce = 300; // 3 seconds at ~100 Hz poll rate
                 }
             } else {
                 // Morph mode: K6 = morph speed (0.2–10.0s). K1-K5 disabled.
                 morph_speed = 0.2 + CONTROLS.read_knob(5) * 9.8;
             }
 
-            // ── 7. Graph rebuild ──
+            // ── 7. Graph rebuild (in-place, preserves crossfade state) ──
             if needs_rebuild {
-                let (new_graph, new_nodes) = build_graph(&nodes, topology, SAMPLE_RATE, BLOCK_SIZE);
-                graph = new_graph;
-                node_ids = new_nodes;
+                match rebuild_graph(&mut graph, &nodes, topology, SAMPLE_RATE) {
+                    Ok(new_nodes) => {
+                        node_ids = new_nodes;
 
-                // Capture default params for newly created effects.
-                for slot in 0..NUM_SLOTS {
-                    if nodes[slot].effect_index.is_some() && nodes[slot].params_a.count == 0 {
-                        if let Some(nid) = node_ids[slot] {
-                            nodes[slot].params_a.capture_from(&graph, nid);
+                        // Capture default params for newly created effects.
+                        for slot in 0..NUM_SLOTS {
+                            if nodes[slot].effect_index.is_some() && nodes[slot].params_a.count == 0
+                            {
+                                if let Some(nid) = node_ids[slot] {
+                                    nodes[slot].params_a.capture_from(&graph, nid);
+                                }
+                            }
                         }
+
+                        // Restore params to new graph based on mode.
+                        match ab_mode {
+                            AbMode::A => {
+                                apply_all_snapshots(&mut graph, &node_ids, &nodes, AbMode::A);
+                            }
+                            AbMode::B => {
+                                apply_all_snapshots(&mut graph, &node_ids, &nodes, AbMode::B);
+                            }
+                            AbMode::Morph => {
+                                interpolate_and_apply(&mut graph, &node_ids, &nodes, morph_t);
+                            }
+                        }
+
+                        defmt::info!("graph rebuilt");
+                    }
+                    Err(_) => {
+                        defmt::error!("graph compile failed, keeping previous graph");
                     }
                 }
-
-                // Restore params to new graph based on mode.
-                match ab_mode {
-                    AbMode::A => apply_all_snapshots(&mut graph, &node_ids, &nodes, AbMode::A),
-                    AbMode::B => apply_all_snapshots(&mut graph, &node_ids, &nodes, AbMode::B),
-                    AbMode::Morph => {
-                        interpolate_and_apply(&mut graph, &node_ids, &nodes, morph_t);
-                    }
-                }
-
                 needs_rebuild = false;
-                defmt::info!("graph rebuilt");
             }
 
             // ── 7b. Morph interpolation (every poll) ──
@@ -1460,17 +1625,24 @@ async fn main(spawner: embassy_executor::Spawner) {
                     // Recording: fast blink 5 Hz (10 polls on, 10 off).
                     CONTROLS.write_led(
                         0,
-                        if (poll_counter / 10) % 2 == 0 { 1.0 } else { 0.0 },
+                        if (poll_counter / 10) % 2 == 0 {
+                            1.0
+                        } else {
+                            0.0
+                        },
                     );
                 } else if looper_mode_raw >= 1.5 && looper_mode == 2 {
                     // Playing: slow pulse 1 Hz.
                     let phase = (poll_counter % 100) as f32 / 100.0;
-                    let bright =
-                        0.5 + 0.5 * libm::sinf(2.0 * core::f32::consts::PI * phase);
+                    let bright = 0.5 + 0.5 * libm::sinf(2.0 * core::f32::consts::PI * phase);
                     let pwm = poll_counter % 10;
                     CONTROLS.write_led(
                         0,
-                        if pwm < (bright * 10.0) as u16 { 1.0 } else { 0.0 },
+                        if pwm < (bright * 10.0) as u16 {
+                            1.0
+                        } else {
+                            0.0
+                        },
                     );
                 } else if looper_mode_raw >= 2.5 {
                     // Overdubbing: double-blink (50 poll cycle = 500ms).
@@ -1494,7 +1666,11 @@ async fn main(spawner: embassy_executor::Spawner) {
                 }
                 CONTROLS.write_led(
                     1,
-                    if led_blink_remaining % 2 == 0 { 1.0 } else { 0.0 },
+                    if led_blink_remaining % 2 == 0 {
+                        1.0
+                    } else {
+                        0.0
+                    },
                 );
             } else if ab_mode == AbMode::Morph {
                 // PWM duty = morph_t (dark=A, bright=B).
@@ -1521,8 +1697,8 @@ async fn main(spawner: embassy_executor::Spawner) {
                 let effect_id = nodes[focused_node]
                     .effect_index
                     .map_or("", |idx| EFFECT_LIST[idx].id);
-                let effect_ref = node_ids[focused_node]
-                    .and_then(|nid| graph.effect_with_params_ref(nid));
+                let effect_ref =
+                    node_ids[focused_node].and_then(|nid| graph.effect_with_params_ref(nid));
 
                 let brightness = match effect_id {
                     "chorus" | "flanger" | "phaser" | "tremolo" => {
@@ -1533,17 +1709,12 @@ async fn main(spawner: embassy_executor::Spawner) {
                         if led_phase >= 1.0 {
                             led_phase -= 1.0;
                         }
-                        0.5 + 0.5 * libm::sinf(
-                            2.0 * core::f32::consts::PI * led_phase,
-                        )
+                        0.5 + 0.5 * libm::sinf(2.0 * core::f32::consts::PI * led_phase)
                     }
                     "delay" => {
                         // Brief flash every delay period.
-                        let time_ms =
-                            effect_ref.map_or(300.0, |e| e.effect_get_param(0));
-                        let dt_ms = POLL_EVERY as f32 * BLOCK_SIZE as f32
-                            / SAMPLE_RATE
-                            * 1000.0;
+                        let time_ms = effect_ref.map_or(300.0, |e| e.effect_get_param(0));
+                        let dt_ms = POLL_EVERY as f32 * BLOCK_SIZE as f32 / SAMPLE_RATE * 1000.0;
                         let period = (time_ms / dt_ms) as u32;
                         let period = if period < 1 { 1 } else { period };
                         led_tap_counter += 1;
@@ -1565,20 +1736,17 @@ async fn main(spawner: embassy_executor::Spawner) {
                         // Bright when open, dark when closed.
                         if output_peak > 0.01 { 1.0 } else { 0.0 }
                     }
-                    "distortion" | "tape" | "preamp" | "vibrato"
-                    | "bitcrusher" | "ringmod" | "wah" => {
+                    "distortion" | "tape" | "preamp" | "vibrato" | "bitcrusher" | "ringmod"
+                    | "wah" => {
                         // Output envelope follower (~30ms at 100 Hz poll rate).
-                        led_envelope +=
-                            0.3 * (output_peak - led_envelope);
+                        led_envelope += 0.3 * (output_peak - led_envelope);
                         let v = led_envelope * 3.0;
                         if v > 1.0 { 1.0 } else { v }
                     }
                     "filter" => {
                         // Brightness = log-scaled cutoff position.
-                        let cutoff =
-                            effect_ref.map_or(1000.0, |e| e.effect_get_param(0));
-                        let norm = libm::log2f(cutoff / 20.0)
-                            / libm::log2f(1000.0);
+                        let cutoff = effect_ref.map_or(1000.0, |e| e.effect_get_param(0));
+                        let norm = libm::log2f(cutoff / 20.0) / libm::log2f(1000.0);
                         let clamped = if norm < 0.0 {
                             0.0
                         } else if norm > 1.0 {
@@ -1598,10 +1766,7 @@ async fn main(spawner: embassy_executor::Spawner) {
                 // Software PWM: 10 brightness levels at ~100 Hz.
                 let pwm_phase = poll_counter % 10;
                 let threshold = (brightness * 10.0) as u16;
-                CONTROLS.write_led(
-                    1,
-                    if pwm_phase < threshold { 1.0 } else { 0.0 },
-                );
+                CONTROLS.write_led(1, if pwm_phase < threshold { 1.0 } else { 0.0 });
             }
         })
         .await

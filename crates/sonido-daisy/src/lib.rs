@@ -50,10 +50,10 @@ pub mod noon_presets;
 
 pub use controls::ControlBuffer;
 #[cfg(feature = "alloc")]
-pub use sonido_core::kernel::{Adapter, DirectPolicy};
-#[cfg(feature = "alloc")]
 pub use param_map::{adc_to_param, adc_to_param_biased};
 pub use rcc::{ClockProfile, cycles_per_block, rcc_config};
+#[cfg(feature = "alloc")]
+pub use sonido_core::kernel::{Adapter, DirectPolicy};
 
 use cortex_m::peripheral::DWT;
 

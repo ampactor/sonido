@@ -102,8 +102,14 @@ impl SyncFrame {
         let tb = self.tempo_bpm.to_le_bytes();
         [
             self.header,
-            mt[0], mt[1], mt[2], mt[3],
-            tb[0], tb[1], tb[2], tb[3],
+            mt[0],
+            mt[1],
+            mt[2],
+            mt[3],
+            tb[0],
+            tb[1],
+            tb[2],
+            tb[3],
             self.preset_idx,
             self.flags,
             self.checksum,
@@ -125,7 +131,11 @@ impl SyncFrame {
             flags: data[10],
             checksum: data[11],
         };
-        if frame.verify_checksum() { Some(frame) } else { None }
+        if frame.verify_checksum() {
+            Some(frame)
+        } else {
+            None
+        }
     }
 
     /// Verify that the checksum field matches the XOR of bytes [0..11].

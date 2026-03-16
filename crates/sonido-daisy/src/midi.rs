@@ -74,6 +74,18 @@ impl MidiEvent {
         self.status == status::CLOCK
     }
 
+    /// Whether this is a MIDI Start message.
+    #[inline]
+    pub fn is_start(&self) -> bool {
+        self.status == status::START
+    }
+
+    /// Whether this is a MIDI Stop message.
+    #[inline]
+    pub fn is_stop(&self) -> bool {
+        self.status == status::STOP
+    }
+
     /// Whether this is a Note On message (velocity > 0).
     #[inline]
     pub fn is_note_on(&self) -> bool {

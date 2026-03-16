@@ -73,7 +73,11 @@ pub struct ControlBuffer<
 > {
     /// Smoothed knob values as f32 bits (0.0–1.0 normalized).
     knobs: [AtomicU32; KNOBS],
-    /// Previous knob values for change detection.
+    /// Last smoothed knob value written, for change detection.
+    ///
+    /// Updated on every `write_knob()` call (not just when the reader acknowledges
+    /// the change). This prevents sub-epsilon ADC drift from accumulating until
+    /// the total delta crosses `KNOB_EPSILON`.
     knobs_prev: [AtomicU32; KNOBS],
     /// Per-knob change flag (set by writer when value changes beyond epsilon).
     knobs_changed: [AtomicBool; KNOBS],
@@ -180,16 +184,18 @@ impl<const KNOBS: usize, const TOGGLES: usize, const FOOTSWITCHES: usize, const 
 
         self.knobs[index].store(smoothed.to_bits(), Ordering::Relaxed);
 
-        // Change detection: compare against last value the reader saw.
-        let reader_prev = f32::from_bits(self.knobs_prev[index].load(Ordering::Relaxed));
-        let delta = if smoothed > reader_prev {
-            smoothed - reader_prev
+        // Change detection: compare against last written smoothed value.
+        let write_prev = f32::from_bits(self.knobs_prev[index].load(Ordering::Relaxed));
+        let delta = if smoothed > write_prev {
+            smoothed - write_prev
         } else {
-            reader_prev - smoothed
+            write_prev - smoothed
         };
         if delta > KNOB_EPSILON {
             self.knobs_changed[index].store(true, Ordering::Relaxed);
         }
+        // Always update — prevents sub-epsilon drift accumulation.
+        self.knobs_prev[index].store(smoothed.to_bits(), Ordering::Relaxed);
     }
 
     /// Writes a 3-position toggle state.
@@ -329,4 +335,66 @@ impl<const KNOBS: usize, const TOGGLES: usize, const FOOTSWITCHES: usize, const 
 unsafe impl<const KNOBS: usize, const TOGGLES: usize, const FOOTSWITCHES: usize, const LEDS: usize>
     Sync for ControlBuffer<KNOBS, TOGGLES, FOOTSWITCHES, LEDS>
 {
+}
+
+// Tests require host compilation (x86). Currently blocked by embassy/cortex-m deps
+// at the crate level. Run if controls is ever extracted to a standalone crate.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    type TestBuffer = ControlBuffer<2, 1, 1, 1>;
+
+    #[test]
+    fn sub_epsilon_writes_do_not_trigger_change() {
+        let buf = TestBuffer::new();
+
+        // Set initial value.
+        buf.write_knob(0, 0.5, 1.0);
+        // Clear any change flag from the initial write.
+        buf.read_knob_changed(0);
+
+        // Write 50 times with sub-epsilon drift (~1e-5 per step).
+        // Total drift = 50 * 1e-5 = 5e-4, which crosses KNOB_EPSILON (3e-4)
+        // if drift accumulates against the initial value. With the fix,
+        // knobs_prev updates every write, so no single step crosses epsilon.
+        for i in 0..50 {
+            let drift = 0.5 + (i as f32) * 1e-5;
+            buf.write_knob(0, drift, 1.0);
+        }
+
+        let (_, changed) = buf.read_knob_changed(0);
+        assert!(
+            !changed,
+            "sub-epsilon writes should not trigger knobs_changed"
+        );
+    }
+
+    #[test]
+    fn large_knob_change_triggers_flag() {
+        let buf = TestBuffer::new();
+        buf.write_knob(0, 0.0, 1.0);
+        buf.read_knob_changed(0);
+
+        buf.write_knob(0, 0.5, 1.0);
+        let (val, changed) = buf.read_knob_changed(0);
+        assert!(changed, "large change should trigger knobs_changed");
+        assert!((val - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn toggle_change_detection() {
+        let buf = TestBuffer::new();
+        buf.write_toggle(0, 0);
+        let (_, changed) = buf.read_toggle_changed(0);
+        assert!(
+            !changed,
+            "initial write to 0 should not trigger change (was 0)"
+        );
+
+        buf.write_toggle(0, 2);
+        let (pos, changed) = buf.read_toggle_changed(0);
+        assert!(changed);
+        assert_eq!(pos, 2);
+    }
 }
