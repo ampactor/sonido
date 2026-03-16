@@ -233,3 +233,242 @@ impl CompensationDelay {
         self.write_pos = 0;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    extern crate alloc;
+
+    use super::*;
+
+    // ── StereoBuffer ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn stereo_buffer_new_has_correct_capacity() {
+        let buf = StereoBuffer::new(64);
+        assert_eq!(buf.len(), 64);
+        assert_eq!(buf.left.len(), 64);
+        assert_eq!(buf.right.len(), 64);
+    }
+
+    #[test]
+    fn stereo_buffer_new_is_zeroed() {
+        let buf = StereoBuffer::new(8);
+        assert!(buf.left.iter().all(|&s| s == 0.0));
+        assert!(buf.right.iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn stereo_buffer_is_empty_on_zero_size() {
+        let buf = StereoBuffer::new(0);
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn stereo_buffer_clear_zeros_contents() {
+        let mut buf = StereoBuffer::new(4);
+        buf.left[0] = 1.0;
+        buf.right[0] = 2.0;
+        buf.clear();
+        assert!(buf.left.iter().all(|&s| s == 0.0));
+        assert!(buf.right.iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn stereo_buffer_copy_from_produces_same_data() {
+        let mut src = StereoBuffer::new(4);
+        src.left.copy_from_slice(&[1.0, 2.0, 3.0, 4.0]);
+        src.right.copy_from_slice(&[5.0, 6.0, 7.0, 8.0]);
+
+        let mut dst = StereoBuffer::new(4);
+        dst.copy_from(&src);
+
+        assert_eq!(dst.left, src.left);
+        assert_eq!(dst.right, src.right);
+    }
+
+    #[test]
+    fn stereo_buffer_accumulate_from_adds_samples() {
+        let mut a = StereoBuffer::new(4);
+        a.left.copy_from_slice(&[1.0, 1.0, 1.0, 1.0]);
+        a.right.copy_from_slice(&[2.0, 2.0, 2.0, 2.0]);
+
+        let mut b = StereoBuffer::new(4);
+        b.left.copy_from_slice(&[0.5, 0.5, 0.5, 0.5]);
+        b.right.copy_from_slice(&[0.25, 0.25, 0.25, 0.25]);
+
+        a.accumulate_from(&b);
+
+        assert!(a.left.iter().all(|&s| (s - 1.5).abs() < 1e-6));
+        assert!(a.right.iter().all(|&s| (s - 2.25).abs() < 1e-6));
+    }
+
+    #[test]
+    fn stereo_buffer_resize_grows_correctly() {
+        let mut buf = StereoBuffer::new(4);
+        buf.resize(8);
+        assert_eq!(buf.len(), 8);
+        // New samples must be zero.
+        assert_eq!(buf.left[7], 0.0);
+        assert_eq!(buf.right[7], 0.0);
+    }
+
+    // ── BufferPool ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn buffer_pool_new_has_correct_count_and_block_size() {
+        let pool = BufferPool::new(3, 128);
+        assert_eq!(pool.count(), 3);
+        assert_eq!(pool.block_size(), 128);
+    }
+
+    #[test]
+    fn buffer_pool_buffers_are_zeroed_on_creation() {
+        let pool = BufferPool::new(2, 32);
+        for i in 0..pool.count() {
+            let buf = pool.get(i);
+            assert!(buf.left.iter().all(|&s| s == 0.0));
+            assert!(buf.right.iter().all(|&s| s == 0.0));
+        }
+    }
+
+    #[test]
+    fn buffer_pool_get_mut_write_then_get_reads_same() {
+        let mut pool = BufferPool::new(2, 4);
+        pool.get_mut(0).left[0] = 42.0;
+        assert_eq!(pool.get(0).left[0], 42.0);
+    }
+
+    #[test]
+    fn buffer_pool_clear_all_zeros_written_data() {
+        let mut pool = BufferPool::new(2, 4);
+        pool.get_mut(0).left[0] = 1.0;
+        pool.get_mut(1).right[2] = 3.0;
+        pool.clear_all();
+        assert!(pool.get(0).left.iter().all(|&s| s == 0.0));
+        assert!(pool.get(1).right.iter().all(|&s| s == 0.0));
+    }
+
+    #[test]
+    fn buffer_pool_resize_all_changes_block_size() {
+        let mut pool = BufferPool::new(2, 16);
+        pool.resize_all(64);
+        assert_eq!(pool.block_size(), 64);
+        assert_eq!(pool.get(0).len(), 64);
+        assert_eq!(pool.get(1).len(), 64);
+    }
+
+    #[test]
+    fn buffer_pool_get_ref_and_mut_read_lt_write() {
+        let mut pool = BufferPool::new(3, 4);
+        pool.get_mut(0).left[0] = 7.0;
+        let (read_buf, write_buf) = pool.get_ref_and_mut(0, 2);
+        assert_eq!(read_buf.left[0], 7.0);
+        write_buf.left[0] = 99.0;
+        assert_eq!(pool.get(2).left[0], 99.0);
+    }
+
+    #[test]
+    fn buffer_pool_get_ref_and_mut_read_gt_write() {
+        let mut pool = BufferPool::new(3, 4);
+        pool.get_mut(2).right[1] = 3.5;
+        let (read_buf, write_buf) = pool.get_ref_and_mut(2, 0);
+        assert_eq!(read_buf.right[1], 3.5);
+        write_buf.right[1] = 11.0;
+        assert_eq!(pool.get(0).right[1], 11.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot alias buffer slots")]
+    fn buffer_pool_get_ref_and_mut_same_index_panics() {
+        let mut pool = BufferPool::new(2, 4);
+        pool.get_ref_and_mut(1, 1);
+    }
+
+    // ── CompensationDelay ─────────────────────────────────────────────────────
+
+    #[test]
+    fn compensation_delay_zero_is_passthrough() {
+        let mut delay = CompensationDelay::new(0);
+        let (out_l, out_r) = delay.process(1.0, 2.0);
+        assert_eq!(out_l, 1.0);
+        assert_eq!(out_r, 2.0);
+    }
+
+    #[test]
+    fn compensation_delay_delay_samples_accessor() {
+        let delay = CompensationDelay::new(4);
+        assert_eq!(delay.delay_samples(), 4);
+    }
+
+    #[test]
+    fn compensation_delay_write_then_read_produces_same_data() {
+        // With delay = 1, the output of sample N is what was written at sample N-1.
+        // On the first call the buffer is zero, so output is (0,0).
+        let mut delay = CompensationDelay::new(1);
+        let (first_l, first_r) = delay.process(5.0, 9.0);
+        assert_eq!(first_l, 0.0); // initial silence comes out first
+        assert_eq!(first_r, 0.0);
+        let (second_l, second_r) = delay.process(0.0, 0.0);
+        assert_eq!(second_l, 5.0); // previous write comes out
+        assert_eq!(second_r, 9.0);
+    }
+
+    #[test]
+    fn compensation_delay_wrap_around_at_capacity() {
+        // Delay of 2: output should be 2 samples behind input.
+        let mut delay = CompensationDelay::new(2);
+        let inputs_l = [1.0f32, 2.0, 3.0, 4.0, 5.0];
+        let inputs_r = [10.0f32, 20.0, 30.0, 40.0, 50.0];
+        let mut out_l = [0.0f32; 5];
+        let mut out_r = [0.0f32; 5];
+        for i in 0..5 {
+            let (l, r) = delay.process(inputs_l[i], inputs_r[i]);
+            out_l[i] = l;
+            out_r[i] = r;
+        }
+        // First two outputs are the initial zeros; from sample 2 on, the lag is 2.
+        assert_eq!(out_l[0], 0.0);
+        assert_eq!(out_l[1], 0.0);
+        assert_eq!(out_l[2], 1.0);
+        assert_eq!(out_l[3], 2.0);
+        assert_eq!(out_l[4], 3.0);
+        assert_eq!(out_r[2], 10.0);
+    }
+
+    #[test]
+    fn compensation_delay_clear_resets_state() {
+        let mut delay = CompensationDelay::new(2);
+        delay.process(1.0, 1.0);
+        delay.process(1.0, 1.0);
+        delay.clear();
+        // After clear, outputs should be silence (zeroed buffer, write_pos = 0).
+        let (l, r) = delay.process(0.0, 0.0);
+        assert_eq!(l, 0.0);
+        assert_eq!(r, 0.0);
+    }
+
+    #[test]
+    fn compensation_delay_process_block_inplace_zero_is_passthrough() {
+        let mut delay = CompensationDelay::new(0);
+        let mut left = [1.0f32, 2.0, 3.0];
+        let mut right = [4.0f32, 5.0, 6.0];
+        delay.process_block_inplace(&mut left, &mut right);
+        assert_eq!(left, [1.0, 2.0, 3.0]);
+        assert_eq!(right, [4.0, 5.0, 6.0]);
+    }
+
+    #[test]
+    fn compensation_delay_process_block_inplace_delays_signal() {
+        // Delay of 3: the first 3 output samples are zeros, then the inputs appear.
+        let mut delay = CompensationDelay::new(3);
+        let mut left = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let mut right = left;
+        delay.process_block_inplace(&mut left, &mut right);
+        assert_eq!(left[0], 0.0);
+        assert_eq!(left[1], 0.0);
+        assert_eq!(left[2], 0.0);
+        assert_eq!(left[3], 1.0);
+        assert_eq!(left[4], 2.0);
+        assert_eq!(left[5], 3.0);
+    }
+}

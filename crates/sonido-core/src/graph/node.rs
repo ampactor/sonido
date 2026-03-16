@@ -172,3 +172,133 @@ impl NodeData {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    extern crate alloc;
+
+    use super::*;
+
+    // ── NodeId ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn node_id_index_returns_raw_value() {
+        let id = NodeId(42);
+        assert_eq!(id.index(), 42);
+    }
+
+    #[test]
+    fn node_id_sentinel_is_u32_max() {
+        assert_eq!(NodeId::sentinel().index(), u32::MAX);
+    }
+
+    #[test]
+    fn node_id_equality() {
+        let a = NodeId(7);
+        let b = NodeId(7);
+        let c = NodeId(8);
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn node_id_copy() {
+        let id = NodeId(3);
+        let copy = id;
+        assert_eq!(id, copy);
+    }
+
+    // ── NodeRate ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn node_rate_default_is_audio() {
+        let rate = NodeRate::default();
+        assert_eq!(rate, NodeRate::Audio);
+    }
+
+    #[test]
+    fn node_rate_control_stores_hz() {
+        let rate = NodeRate::Control(100.0);
+        match rate {
+            NodeRate::Control(hz) => assert!((hz - 100.0).abs() < 1e-6),
+            _ => panic!("expected NodeRate::Control"),
+        }
+    }
+
+    #[test]
+    fn node_rate_audio_equals_audio() {
+        assert_eq!(NodeRate::Audio, NodeRate::Audio);
+    }
+
+    // ── NodeData ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn node_data_new_input_kind() {
+        let id = NodeId(0);
+        let node = NodeData::new(id, NodeKind::Input, 48000.0);
+        assert_eq!(node.id, id);
+        assert!(!node.bypassed);
+        assert!(node.incoming.is_empty());
+        assert!(node.outgoing.is_empty());
+    }
+
+    #[test]
+    fn node_data_new_output_kind() {
+        let id = NodeId(1);
+        let node = NodeData::new(id, NodeKind::Output, 48000.0);
+        assert_eq!(node.id, id);
+        assert!(node.incoming.is_empty());
+        assert!(node.outgoing.is_empty());
+    }
+
+    #[test]
+    fn node_data_new_split_kind() {
+        let node = NodeData::new(NodeId(2), NodeKind::Split, 48000.0);
+        assert!(!node.bypassed);
+        assert_eq!(node.node_rate, NodeRate::Audio);
+    }
+
+    #[test]
+    fn node_data_new_merge_kind() {
+        let node = NodeData::new(NodeId(3), NodeKind::Merge, 48000.0);
+        assert!(!node.bypassed);
+        assert_eq!(node.node_rate, NodeRate::Audio);
+    }
+
+    #[test]
+    fn node_data_initial_peaks_are_zero() {
+        let node = NodeData::new(NodeId(0), NodeKind::Input, 48000.0);
+        assert_eq!(node.peak_in, (0.0, 0.0));
+        assert_eq!(node.peak_out, (0.0, 0.0));
+    }
+
+    #[test]
+    fn node_data_initial_last_cycles_is_zero() {
+        let node = NodeData::new(NodeId(0), NodeKind::Input, 48000.0);
+        assert_eq!(node.last_cycles, 0);
+    }
+
+    #[test]
+    fn node_data_not_tapped_by_default() {
+        let node = NodeData::new(NodeId(0), NodeKind::Input, 48000.0);
+        assert!(!node.tapped);
+    }
+
+    #[test]
+    fn node_data_sidechain_source_none_by_default() {
+        let node = NodeData::new(NodeId(0), NodeKind::Input, 48000.0);
+        assert!(node.sidechain_source.is_none());
+    }
+
+    #[test]
+    fn node_data_bypass_buf_starts_empty() {
+        let node = NodeData::new(NodeId(0), NodeKind::Input, 48000.0);
+        assert!(node.bypass_buf.is_empty());
+    }
+
+    #[test]
+    fn node_data_tap_buf_starts_empty() {
+        let node = NodeData::new(NodeId(0), NodeKind::Input, 48000.0);
+        assert!(node.tap_buf.is_empty());
+    }
+}

@@ -211,3 +211,334 @@ impl CompiledSchedule {
         self.feedback_delay_count
     }
 }
+
+#[cfg(test)]
+mod tests {
+    extern crate alloc;
+    use alloc::boxed::Box;
+
+    use super::*;
+    use crate::Effect;
+    use crate::effect_with_params::EffectWithParams;
+    use crate::graph::processing::ProcessingGraph;
+    use crate::param_info::{ParamDescriptor, ParameterInfo};
+
+    // ── minimal no-op effect for topology tests ────────────────────────────
+
+    struct Passthrough;
+
+    impl Effect for Passthrough {
+        fn process(&mut self, input: f32) -> f32 {
+            input
+        }
+        fn set_sample_rate(&mut self, _sr: f32) {}
+        fn reset(&mut self) {}
+    }
+
+    impl ParameterInfo for Passthrough {
+        fn param_count(&self) -> usize {
+            0
+        }
+        fn param_info(&self, _: usize) -> Option<ParamDescriptor> {
+            None
+        }
+        fn get_param(&self, _: usize) -> f32 {
+            0.0
+        }
+        fn set_param(&mut self, _: usize, _: f32) {}
+    }
+
+    fn pt() -> Box<dyn EffectWithParams + Send> {
+        Box::new(Passthrough)
+    }
+
+    /// Build a minimal graph with just Input → Output (no effects).
+    fn empty_graph() -> ProcessingGraph {
+        let mut g = ProcessingGraph::new(48000.0, 64);
+        let input = g.add_input();
+        let output = g.add_output();
+        g.connect(input, output).unwrap();
+        g
+    }
+
+    // ── CompiledSchedule accessors ─────────────────────────────────────────
+
+    #[test]
+    fn empty_graph_compiles_without_error() {
+        let mut g = empty_graph();
+        let sched = g.compile();
+        assert!(sched.is_ok());
+    }
+
+    #[test]
+    fn empty_graph_produces_nonzero_steps() {
+        let mut g = empty_graph();
+        let sched = g.compile().unwrap();
+        // Minimum: WriteInput + ReadOutput = 2 steps.
+        assert!(sched.step_count() >= 2);
+    }
+
+    #[test]
+    fn empty_graph_zero_total_latency() {
+        let mut g = empty_graph();
+        let sched = g.compile().unwrap();
+        assert_eq!(sched.total_latency(), 0);
+    }
+
+    #[test]
+    fn empty_graph_has_no_delay_lines() {
+        let mut g = empty_graph();
+        let sched = g.compile().unwrap();
+        assert_eq!(sched.delay_line_count(), 0);
+    }
+
+    #[test]
+    fn schedule_block_size_matches_graph() {
+        let block_size = 128;
+        let mut g = ProcessingGraph::new(48000.0, block_size);
+        let inp = g.add_input();
+        let out = g.add_output();
+        g.connect(inp, out).unwrap();
+        let sched = g.compile().unwrap();
+        assert_eq!(sched.block_size(), block_size);
+    }
+
+    // ── Linear chain produces correct step ordering ────────────────────────
+
+    #[test]
+    fn linear_chain_compiles_successfully() {
+        // Input → fx_a → fx_b → Output
+        let mut g = ProcessingGraph::new(48000.0, 64);
+        let inp = g.add_input();
+        let fx_a = g.add_effect(pt());
+        let fx_b = g.add_effect(pt());
+        let out = g.add_output();
+        g.connect(inp, fx_a).unwrap();
+        g.connect(fx_a, fx_b).unwrap();
+        g.connect(fx_b, out).unwrap();
+        assert!(g.compile().is_ok());
+    }
+
+    #[test]
+    fn linear_chain_step_order_starts_with_write_input() {
+        let mut g = ProcessingGraph::new(48000.0, 64);
+        let inp = g.add_input();
+        let fx = g.add_effect(pt());
+        let out = g.add_output();
+        g.connect(inp, fx).unwrap();
+        g.connect(fx, out).unwrap();
+        let sched = g.compile().unwrap();
+        assert!(
+            matches!(sched.steps[0], ProcessStep::WriteInput { .. }),
+            "first step must be WriteInput"
+        );
+    }
+
+    #[test]
+    fn linear_chain_step_order_ends_with_read_output() {
+        let mut g = ProcessingGraph::new(48000.0, 64);
+        let inp = g.add_input();
+        let fx = g.add_effect(pt());
+        let out = g.add_output();
+        g.connect(inp, fx).unwrap();
+        g.connect(fx, out).unwrap();
+        let sched = g.compile().unwrap();
+        let last = sched.steps.last().unwrap();
+        assert!(
+            matches!(last, ProcessStep::ReadOutput { .. }),
+            "last step must be ReadOutput"
+        );
+    }
+
+    #[test]
+    fn linear_chain_contains_process_effect_step() {
+        let mut g = ProcessingGraph::new(48000.0, 64);
+        let inp = g.add_input();
+        let fx = g.add_effect(pt());
+        let out = g.add_output();
+        g.connect(inp, fx).unwrap();
+        g.connect(fx, out).unwrap();
+        let sched = g.compile().unwrap();
+        let has_process = sched
+            .steps
+            .iter()
+            .any(|s| matches!(s, ProcessStep::ProcessEffect { .. }));
+        assert!(has_process, "schedule must contain a ProcessEffect step");
+    }
+
+    #[test]
+    fn two_effect_linear_chain_has_two_process_steps() {
+        let mut g = ProcessingGraph::new(48000.0, 64);
+        let inp = g.add_input();
+        let fx_a = g.add_effect(pt());
+        let fx_b = g.add_effect(pt());
+        let out = g.add_output();
+        g.connect(inp, fx_a).unwrap();
+        g.connect(fx_a, fx_b).unwrap();
+        g.connect(fx_b, out).unwrap();
+        let sched = g.compile().unwrap();
+        let count = sched
+            .steps
+            .iter()
+            .filter(|s| matches!(s, ProcessStep::ProcessEffect { .. }))
+            .count();
+        assert_eq!(count, 2);
+    }
+
+    // ── Parallel paths produce valid topological order ─────────────────────
+
+    #[test]
+    fn parallel_paths_compile_successfully() {
+        // Input → Split → fx_a ─┐
+        //                 fx_b ─┤→ Merge → Output
+        let mut g = ProcessingGraph::new(48000.0, 64);
+        let inp = g.add_input();
+        let split = g.add_split();
+        let fx_a = g.add_effect(pt());
+        let fx_b = g.add_effect(pt());
+        let merge = g.add_merge();
+        let out = g.add_output();
+        g.connect(inp, split).unwrap();
+        g.connect(split, fx_a).unwrap();
+        g.connect(split, fx_b).unwrap();
+        g.connect(fx_a, merge).unwrap();
+        g.connect(fx_b, merge).unwrap();
+        g.connect(merge, out).unwrap();
+        assert!(g.compile().is_ok());
+    }
+
+    #[test]
+    fn parallel_paths_schedule_starts_with_write_input() {
+        let mut g = ProcessingGraph::new(48000.0, 64);
+        let inp = g.add_input();
+        let split = g.add_split();
+        let fx_a = g.add_effect(pt());
+        let fx_b = g.add_effect(pt());
+        let merge = g.add_merge();
+        let out = g.add_output();
+        g.connect(inp, split).unwrap();
+        g.connect(split, fx_a).unwrap();
+        g.connect(split, fx_b).unwrap();
+        g.connect(fx_a, merge).unwrap();
+        g.connect(fx_b, merge).unwrap();
+        g.connect(merge, out).unwrap();
+        let sched = g.compile().unwrap();
+        assert!(matches!(sched.steps[0], ProcessStep::WriteInput { .. }));
+    }
+
+    #[test]
+    fn parallel_paths_schedule_ends_with_read_output() {
+        let mut g = ProcessingGraph::new(48000.0, 64);
+        let inp = g.add_input();
+        let split = g.add_split();
+        let fx_a = g.add_effect(pt());
+        let fx_b = g.add_effect(pt());
+        let merge = g.add_merge();
+        let out = g.add_output();
+        g.connect(inp, split).unwrap();
+        g.connect(split, fx_a).unwrap();
+        g.connect(split, fx_b).unwrap();
+        g.connect(fx_a, merge).unwrap();
+        g.connect(fx_b, merge).unwrap();
+        g.connect(merge, out).unwrap();
+        let sched = g.compile().unwrap();
+        let last = sched.steps.last().unwrap();
+        assert!(matches!(last, ProcessStep::ReadOutput { .. }));
+    }
+
+    #[test]
+    fn parallel_paths_write_input_precedes_all_process_effects() {
+        // WriteInput must appear before every ProcessEffect in the step list.
+        let mut g = ProcessingGraph::new(48000.0, 64);
+        let inp = g.add_input();
+        let split = g.add_split();
+        let fx_a = g.add_effect(pt());
+        let fx_b = g.add_effect(pt());
+        let merge = g.add_merge();
+        let out = g.add_output();
+        g.connect(inp, split).unwrap();
+        g.connect(split, fx_a).unwrap();
+        g.connect(split, fx_b).unwrap();
+        g.connect(fx_a, merge).unwrap();
+        g.connect(fx_b, merge).unwrap();
+        g.connect(merge, out).unwrap();
+        let sched = g.compile().unwrap();
+
+        let write_pos = sched
+            .steps
+            .iter()
+            .position(|s| matches!(s, ProcessStep::WriteInput { .. }))
+            .expect("WriteInput must be present");
+        for (pos, step) in sched.steps.iter().enumerate() {
+            if matches!(step, ProcessStep::ProcessEffect { .. }) {
+                assert!(
+                    pos > write_pos,
+                    "ProcessEffect at step {pos} must come after WriteInput at step {write_pos}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn parallel_paths_split_copy_precedes_both_process_effects() {
+        let mut g = ProcessingGraph::new(48000.0, 64);
+        let inp = g.add_input();
+        let split = g.add_split();
+        let fx_a = g.add_effect(pt());
+        let fx_b = g.add_effect(pt());
+        let merge = g.add_merge();
+        let out = g.add_output();
+        g.connect(inp, split).unwrap();
+        g.connect(split, fx_a).unwrap();
+        g.connect(split, fx_b).unwrap();
+        g.connect(fx_a, merge).unwrap();
+        g.connect(fx_b, merge).unwrap();
+        g.connect(merge, out).unwrap();
+        let sched = g.compile().unwrap();
+
+        let split_pos = sched
+            .steps
+            .iter()
+            .position(|s| matches!(s, ProcessStep::SplitCopy { .. }))
+            .expect("SplitCopy must be present for a split node");
+        let first_effect_pos = sched
+            .steps
+            .iter()
+            .position(|s| matches!(s, ProcessStep::ProcessEffect { .. }))
+            .expect("ProcessEffect must be present");
+        assert!(
+            split_pos < first_effect_pos,
+            "SplitCopy must precede all ProcessEffect steps"
+        );
+    }
+
+    // ── buffer_count is always at least 1 ─────────────────────────────────
+
+    #[test]
+    fn compiled_schedule_buffer_count_at_least_one() {
+        let mut g = empty_graph();
+        let sched = g.compile().unwrap();
+        assert!(sched.buffer_count() >= 1);
+    }
+
+    #[test]
+    fn compiled_schedule_buffer_count_for_linear_chain() {
+        let mut g = ProcessingGraph::new(48000.0, 64);
+        let inp = g.add_input();
+        let fx = g.add_effect(pt());
+        let out = g.add_output();
+        g.connect(inp, fx).unwrap();
+        g.connect(fx, out).unwrap();
+        let sched = g.compile().unwrap();
+        // A simple linear chain only ever needs 2 live buffers at once (ping-pong).
+        assert!(sched.buffer_count() >= 1);
+        assert!(sched.buffer_count() <= 4, "linear chain needs few buffers");
+    }
+
+    // ── MAX_SPLIT_TARGETS constant ─────────────────────────────────────────
+
+    #[test]
+    fn max_split_targets_is_at_least_two() {
+        assert!(MAX_SPLIT_TARGETS >= 2);
+    }
+}
