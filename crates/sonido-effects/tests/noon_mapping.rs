@@ -8,11 +8,16 @@
 
 mod helpers;
 
-use helpers::{all_ids, assert_no_violations};
+use helpers::{all_ids_from, assert_no_violations};
 use sonido_core::{ParamFlags, ParamScale};
 use sonido_registry::EffectRegistry;
 
 const SAMPLE_RATE: f32 = 48000.0;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTE: This file does NOT use `all_ids()` — it uses `all_ids_from(&registry)`
+// to avoid constructing a second EffectRegistry per test.
+// ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Inlined from crates/sonido-daisy/src/param_map.rs — keep in sync
@@ -32,22 +37,12 @@ fn interpolate_scaled(lo: f32, hi: f32, t: f32, scale: ParamScale) -> f32 {
     }
 }
 
-fn clamp(v: f32, min: f32, max: f32) -> f32 {
-    if v < min {
-        min
-    } else if v > max {
-        max
-    } else {
-        v
-    }
-}
-
 fn adc_to_param(desc: &sonido_core::ParamDescriptor, normalized: f32) -> f32 {
     let val = match desc.scale {
         ParamScale::Linear => desc.min + normalized * (desc.max - desc.min),
         ParamScale::Logarithmic => {
             let log_min = if desc.min > 1e-6 { desc.min } else { 1e-6 }.log2();
-            let log_max = desc.max.log2();
+            let log_max = if desc.max > 1e-6 { desc.max } else { 1e-6 }.log2();
             (log_min + normalized * (log_max - log_min)).exp2()
         }
         ParamScale::Power(exp) => desc.min + normalized.powf(exp) * (desc.max - desc.min),
@@ -65,7 +60,7 @@ fn adc_to_param_biased(desc: &sonido_core::ParamDescriptor, noon: f32, normalize
         return adc_to_param(desc, normalized);
     }
 
-    let noon = clamp(noon, desc.min, desc.max);
+    let noon = noon.clamp(desc.min, desc.max);
     let range = desc.max - desc.min;
 
     if range < 1e-6 || (noon - desc.min) / range < 0.05 || (desc.max - noon) / range < 0.05 {
@@ -125,7 +120,7 @@ fn noon_coverage_completeness() {
     let registry = EffectRegistry::new();
     let mut violations = Vec::new();
 
-    for id in all_ids() {
+    for id in all_ids_from(&registry) {
         let effect = registry.create(&id, SAMPLE_RATE).unwrap();
         let count = effect.effect_param_count();
 
@@ -168,7 +163,7 @@ fn noon_values_in_range() {
     let registry = EffectRegistry::new();
     let mut violations = Vec::new();
 
-    for id in all_ids() {
+    for id in all_ids_from(&registry) {
         let effect = registry.create(&id, SAMPLE_RATE).unwrap();
         let count = effect.effect_param_count();
 
@@ -203,7 +198,7 @@ fn biased_mapping_endpoints() {
     let registry = EffectRegistry::new();
     let mut violations = Vec::new();
 
-    for id in all_ids() {
+    for id in all_ids_from(&registry) {
         let effect = registry.create(&id, SAMPLE_RATE).unwrap();
         let count = effect.effect_param_count();
 
@@ -252,7 +247,7 @@ fn biased_noon_at_center() {
     let registry = EffectRegistry::new();
     let mut violations = Vec::new();
 
-    for id in all_ids() {
+    for id in all_ids_from(&registry) {
         let effect = registry.create(&id, SAMPLE_RATE).unwrap();
         let count = effect.effect_param_count();
 
@@ -308,7 +303,7 @@ fn biased_mapping_monotonic() {
     let mut violations = Vec::new();
     let steps = 200;
 
-    for id in all_ids() {
+    for id in all_ids_from(&registry) {
         let effect = registry.create(&id, SAMPLE_RATE).unwrap();
         let count = effect.effect_param_count();
 

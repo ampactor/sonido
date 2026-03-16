@@ -31,16 +31,6 @@ fn interpolate_scaled(lo: f32, hi: f32, t: f32, scale: ParamScale) -> f32 {
     }
 }
 
-fn clamp(v: f32, min: f32, max: f32) -> f32 {
-    if v < min {
-        min
-    } else if v > max {
-        max
-    } else {
-        v
-    }
-}
-
 /// Converts a normalized ADC reading (0.0–1.0) to a parameter's native value.
 ///
 /// Applies the parameter's scale (Linear, Logarithmic, Power) and rounds
@@ -122,7 +112,7 @@ pub fn adc_to_param_biased(desc: &ParamDescriptor, noon: f32, normalized: f32) -
         return adc_to_param(desc, normalized);
     }
 
-    let noon = clamp(noon, desc.min, desc.max);
+    let noon = noon.clamp(desc.min, desc.max);
     let range = desc.max - desc.min;
 
     // Noon at or near an extreme: biased mapping creates a dead zone.
@@ -135,14 +125,13 @@ pub fn adc_to_param_biased(desc: &ParamDescriptor, noon: f32, normalized: f32) -
         return adc_to_param(desc, normalized);
     }
 
-    let val = if normalized <= 0.5 {
+    if normalized <= 0.5 {
         let t = normalized * 2.0; // 0.0→1.0 in bottom half
         interpolate_scaled(desc.min, noon, t, desc.scale)
     } else {
         let t = (normalized - 0.5) * 2.0; // 0.0→1.0 in top half
         interpolate_scaled(noon, desc.max, t, desc.scale)
-    };
-    val
+    }
 }
 
 #[cfg(test)]
