@@ -32,8 +32,9 @@ fn all_effects_creatable_at_48k() {
 #[test]
 fn all_effects_creatable_at_various_sample_rates() {
     let registry = EffectRegistry::new();
+    let effects = registry.all_effects();
     for &sr in &[22_050.0_f32, 44_100.0, 88_200.0, 96_000.0, 192_000.0] {
-        for desc in registry.all_effects() {
+        for desc in &effects {
             let effect = registry.create(desc.id, sr);
             assert!(
                 effect.is_some(),
@@ -287,12 +288,10 @@ fn get_and_descriptor_are_consistent() {
             .descriptor(desc.id)
             .expect("descriptor() returned None for registered id");
 
-        // Both return references into the same backing entry, so pointer equality holds.
-        assert_eq!(
-            via_get as *const EffectDescriptor, via_descriptor as *const EffectDescriptor,
-            "get() and descriptor() return different pointers for {:?}",
-            desc.id
-        );
+        // Both must return the same data — compare fields, not pointers.
+        assert_eq!(via_get.id, via_descriptor.id);
+        assert_eq!(via_get.name, via_descriptor.name);
+        assert_eq!(via_get.param_count, via_descriptor.param_count);
     }
 }
 

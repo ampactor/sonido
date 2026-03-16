@@ -387,10 +387,9 @@ mod tests {
 
     // ── Parallel paths produce valid topological order ─────────────────────
 
-    #[test]
-    fn parallel_paths_compile_successfully() {
-        // Input → Split → fx_a ─┐
-        //                 fx_b ─┤→ Merge → Output
+    /// Input → Split → fx_a ─┐
+    ///                 fx_b ─┤→ Merge → Output
+    fn parallel_graph() -> ProcessingGraph {
         let mut g = ProcessingGraph::new(48000.0, 64);
         let inp = g.add_input();
         let split = g.add_split();
@@ -404,65 +403,30 @@ mod tests {
         g.connect(fx_a, merge).unwrap();
         g.connect(fx_b, merge).unwrap();
         g.connect(merge, out).unwrap();
-        assert!(g.compile().is_ok());
+        g
+    }
+
+    #[test]
+    fn parallel_paths_compile_successfully() {
+        assert!(parallel_graph().compile().is_ok());
     }
 
     #[test]
     fn parallel_paths_schedule_starts_with_write_input() {
-        let mut g = ProcessingGraph::new(48000.0, 64);
-        let inp = g.add_input();
-        let split = g.add_split();
-        let fx_a = g.add_effect(pt());
-        let fx_b = g.add_effect(pt());
-        let merge = g.add_merge();
-        let out = g.add_output();
-        g.connect(inp, split).unwrap();
-        g.connect(split, fx_a).unwrap();
-        g.connect(split, fx_b).unwrap();
-        g.connect(fx_a, merge).unwrap();
-        g.connect(fx_b, merge).unwrap();
-        g.connect(merge, out).unwrap();
-        let sched = g.compile().unwrap();
+        let sched = parallel_graph().compile().unwrap();
         assert!(matches!(sched.steps[0], ProcessStep::WriteInput { .. }));
     }
 
     #[test]
     fn parallel_paths_schedule_ends_with_read_output() {
-        let mut g = ProcessingGraph::new(48000.0, 64);
-        let inp = g.add_input();
-        let split = g.add_split();
-        let fx_a = g.add_effect(pt());
-        let fx_b = g.add_effect(pt());
-        let merge = g.add_merge();
-        let out = g.add_output();
-        g.connect(inp, split).unwrap();
-        g.connect(split, fx_a).unwrap();
-        g.connect(split, fx_b).unwrap();
-        g.connect(fx_a, merge).unwrap();
-        g.connect(fx_b, merge).unwrap();
-        g.connect(merge, out).unwrap();
-        let sched = g.compile().unwrap();
+        let sched = parallel_graph().compile().unwrap();
         let last = sched.steps.last().unwrap();
         assert!(matches!(last, ProcessStep::ReadOutput { .. }));
     }
 
     #[test]
     fn parallel_paths_write_input_precedes_all_process_effects() {
-        // WriteInput must appear before every ProcessEffect in the step list.
-        let mut g = ProcessingGraph::new(48000.0, 64);
-        let inp = g.add_input();
-        let split = g.add_split();
-        let fx_a = g.add_effect(pt());
-        let fx_b = g.add_effect(pt());
-        let merge = g.add_merge();
-        let out = g.add_output();
-        g.connect(inp, split).unwrap();
-        g.connect(split, fx_a).unwrap();
-        g.connect(split, fx_b).unwrap();
-        g.connect(fx_a, merge).unwrap();
-        g.connect(fx_b, merge).unwrap();
-        g.connect(merge, out).unwrap();
-        let sched = g.compile().unwrap();
+        let sched = parallel_graph().compile().unwrap();
 
         let write_pos = sched
             .steps
@@ -481,20 +445,7 @@ mod tests {
 
     #[test]
     fn parallel_paths_split_copy_precedes_both_process_effects() {
-        let mut g = ProcessingGraph::new(48000.0, 64);
-        let inp = g.add_input();
-        let split = g.add_split();
-        let fx_a = g.add_effect(pt());
-        let fx_b = g.add_effect(pt());
-        let merge = g.add_merge();
-        let out = g.add_output();
-        g.connect(inp, split).unwrap();
-        g.connect(split, fx_a).unwrap();
-        g.connect(split, fx_b).unwrap();
-        g.connect(fx_a, merge).unwrap();
-        g.connect(fx_b, merge).unwrap();
-        g.connect(merge, out).unwrap();
-        let sched = g.compile().unwrap();
+        let sched = parallel_graph().compile().unwrap();
 
         let split_pos = sched
             .steps

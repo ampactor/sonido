@@ -57,18 +57,7 @@ fn interpolate_scaled(lo: f32, hi: f32, t: f32, scale: ParamScale) -> f32 {
 /// ```
 #[inline]
 pub fn adc_to_param(desc: &ParamDescriptor, normalized: f32) -> f32 {
-    let val = match desc.scale {
-        ParamScale::Linear => desc.min + normalized * (desc.max - desc.min),
-        ParamScale::Logarithmic => {
-            // Logarithmic: geometric interpolation between min and max.
-            // Clamp min to avoid log2(0).
-            let log_min = libm::log2f(if desc.min > 1e-6 { desc.min } else { 1e-6 });
-            let log_max = libm::log2f(desc.max);
-            libm::exp2f(log_min + normalized * (log_max - log_min))
-        }
-        ParamScale::Power(exp) => desc.min + libm::powf(normalized, exp) * (desc.max - desc.min),
-        _ => desc.min + normalized * (desc.max - desc.min), // future scale variants: linear fallback
-    };
+    let val = interpolate_scaled(desc.min, desc.max, normalized, desc.scale);
     if desc.flags.contains(ParamFlags::STEPPED) {
         libm::roundf(val)
     } else {

@@ -8,6 +8,9 @@
 //! - Universal rules (all 19 effects): R1 bounded, R3, R5, R6, R7
 //! - Selective rules (subset of effects): R1 strict, R2, R4
 
+mod helpers;
+
+use helpers::all_ids;
 use sonido_core::ParamUnit;
 use sonido_registry::{EffectRegistry, EffectWithParams};
 
@@ -47,16 +50,6 @@ fn process_signal(effect: &mut Box<dyn EffectWithParams + Send>, input: &[f32]) 
     output
 }
 
-/// All effect IDs from the registry.
-fn all_effect_ids() -> Vec<String> {
-    let registry = EffectRegistry::new();
-    registry
-        .all_effects()
-        .into_iter()
-        .map(|d| d.id.to_string())
-        .collect()
-}
-
 // --- Rule 1: Peak Ceiling ---
 //
 // Universal: all effects must produce bounded output (peak < 4.0 / +12 dBFS)
@@ -77,7 +70,7 @@ fn rule1_peak_ceiling() {
     let input = generate_sine(SAMPLE_RATE, 1000.0, 1.0);
     let ceiling_linear = 10.0f32.powf(-1.0 / 20.0); // -1 dBFS ~ 0.891
 
-    for id in all_effect_ids() {
+    for id in all_ids() {
         let mut effect = registry.create(&id, SAMPLE_RATE).unwrap();
         let output = process_signal(&mut effect, &input);
         let pk = peak(&output);
@@ -158,7 +151,7 @@ const RULE3_NON_LAST_EXCEPTIONS: &[&str] = &[
 fn rule3_output_parameter() {
     let registry = EffectRegistry::new();
 
-    for id in all_effect_ids() {
+    for id in all_ids() {
         let effect = registry.create(&id, SAMPLE_RATE).unwrap();
         let count = effect.effect_param_count();
         assert!(count > 0, "Effect '{}' has no parameters", id);
@@ -316,7 +309,7 @@ fn rule6_headroom() {
     let registry = EffectRegistry::new();
     let amplitudes = [("0 dBFS", 1.0f32), ("-18 dBFS", 10.0f32.powf(-18.0 / 20.0))];
 
-    for id in all_effect_ids() {
+    for id in all_ids() {
         for &(label, amplitude) in &amplitudes {
             let mut effect = registry.create(&id, SAMPLE_RATE).unwrap();
             let input: Vec<f32> = generate_sine(SAMPLE_RATE, 1000.0, 1.0)
@@ -354,7 +347,7 @@ fn rule6_headroom() {
 fn rule7_vocabulary() {
     let registry = EffectRegistry::new();
 
-    for id in all_effect_ids() {
+    for id in all_ids() {
         let effect = registry.create(&id, SAMPLE_RATE).unwrap();
         let count = effect.effect_param_count();
 

@@ -38,16 +38,7 @@ fn interpolate_scaled(lo: f32, hi: f32, t: f32, scale: ParamScale) -> f32 {
 }
 
 fn adc_to_param(desc: &sonido_core::ParamDescriptor, normalized: f32) -> f32 {
-    let val = match desc.scale {
-        ParamScale::Linear => desc.min + normalized * (desc.max - desc.min),
-        ParamScale::Logarithmic => {
-            let log_min = if desc.min > 1e-6 { desc.min } else { 1e-6 }.log2();
-            let log_max = if desc.max > 1e-6 { desc.max } else { 1e-6 }.log2();
-            (log_min + normalized * (log_max - log_min)).exp2()
-        }
-        ParamScale::Power(exp) => desc.min + normalized.powf(exp) * (desc.max - desc.min),
-        _ => desc.min + normalized * (desc.max - desc.min),
-    };
+    let val = interpolate_scaled(desc.min, desc.max, normalized, desc.scale);
     if desc.flags.contains(ParamFlags::STEPPED) {
         val.round()
     } else {
