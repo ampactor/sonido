@@ -64,9 +64,11 @@ use sonido_daisy::{
     led::UserLed, u24_to_f32,
 };
 use sonido_effects::{
-    BitcrusherKernel, ChorusKernel, CompressorKernel, DelayKernel, DistortionKernel, FilterKernel,
-    FlangerKernel, LooperKernel, PhaserKernel, ReverbKernel, RingModKernel, TapeKernel,
-    TremoloKernel, VibratoKernel, WahKernel,
+    BitcrusherKernel, BitcrusherParams, ChorusKernel, ChorusParams, CompressorKernel,
+    CompressorParams, DelayKernel, DelayParams, DistortionKernel, DistortionParams, FilterKernel,
+    FilterParams, FlangerKernel, FlangerParams, LooperKernel, LooperParams, PhaserKernel,
+    PhaserParams, ReverbKernel, ReverbParams, RingModKernel, RingModParams, TapeKernel, TapeParams,
+    TremoloKernel, TremoloParams, VibratoKernel, VibratoParams, WahKernel, WahParams,
 };
 
 // ── Heap ────────────────────────────────────────────────────────────────────
@@ -203,6 +205,50 @@ const EFFECT_LIST: [EffectEntry; NUM_EFFECTS] = [
         knobs: [0, 1, 2, 3, 4, 5],
     },
 ];
+
+/// Parallel to EFFECT_LIST: `KernelParams::COUNT` per entry (compile-time guard).
+///
+/// If a knob index in EFFECT_LIST exceeds the effect's param count, the
+/// `const _: ()` assertion below fires a compile-time error.
+const EFFECT_PARAM_COUNTS: [u8; NUM_EFFECTS] = {
+    use sonido_core::kernel::KernelParams;
+    [
+        FilterParams::COUNT as u8,      // 0: filter
+        TremoloParams::COUNT as u8,     // 1: tremolo
+        VibratoParams::COUNT as u8,     // 2: vibrato
+        ChorusParams::COUNT as u8,      // 3: chorus
+        PhaserParams::COUNT as u8,      // 4: phaser
+        FlangerParams::COUNT as u8,     // 5: flanger
+        DelayParams::COUNT as u8,       // 6: delay
+        ReverbParams::COUNT as u8,      // 7: reverb
+        TapeParams::COUNT as u8,        // 8: tape
+        CompressorParams::COUNT as u8,  // 9: compressor
+        WahParams::COUNT as u8,         // 10: wah
+        DistortionParams::COUNT as u8,  // 11: distortion
+        BitcrusherParams::COUNT as u8,  // 12: bitcrusher
+        RingModParams::COUNT as u8,     // 13: ringmod
+        LooperParams::COUNT as u8,      // 14: looper
+    ]
+};
+
+/// Compile-time assertion: every knob index in EFFECT_LIST is within bounds.
+const _: () = {
+    let mut i = 0;
+    while i < NUM_EFFECTS {
+        let mut k = 0;
+        while k < 6 {
+            let pidx = EFFECT_LIST[i].knobs[k];
+            if pidx != NULL_KNOB {
+                assert!(
+                    (pidx as usize) < (EFFECT_PARAM_COUNTS[i] as usize),
+                    // compile-time panic if knob index exceeds param count
+                );
+            }
+            k += 1;
+        }
+        i += 1;
+    }
+};
 
 // ── Enums ───────────────────────────────────────────────────────────────────
 
