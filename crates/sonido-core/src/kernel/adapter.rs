@@ -93,6 +93,20 @@ pub trait SmoothingPolicy: Send {
     fn direct_mode() -> bool {
         false
     }
+
+    /// Whether the adapter should track input/output peak levels.
+    ///
+    /// When `true`, all processing methods update [`Adapter::peak_in`] /
+    /// [`Adapter::peak_out`] accumulators. When `false`, peaks stay at zero —
+    /// useful for embedded targets where peak tracking is unused overhead.
+    ///
+    /// The `if` on this const is dead-code-eliminated at compile time, so
+    /// `DirectPolicy` adapters pay zero cost for the check.
+    ///
+    /// Returns `true` by default (SmoothedPolicy behaviour).
+    fn tracks_peaks() -> bool {
+        true
+    }
 }
 
 // ── SmoothedPolicy ───────────────────────────────────────────────────────────
@@ -225,6 +239,11 @@ impl SmoothingPolicy for DirectPolicy {
     fn direct_mode() -> bool {
         true
     }
+
+    /// Embedded targets don't need peak tracking — ADC levels are read directly.
+    fn tracks_peaks() -> bool {
+        false
+    }
 }
 
 // ── Adapter<K, S> ────────────────────────────────────────────────────────────
@@ -237,10 +256,17 @@ impl SmoothingPolicy for DirectPolicy {
 ///
 /// # Peak Tracking (Pattern P1 — Observable Kernel)
 ///
-/// Input and output peaks are tracked per `process_stereo` call and
-/// readable via [`peak_in`](Self::peak_in) / [`peak_out`](Self::peak_out).
-/// Reset with [`reset_peaks`](Self::reset_peaks). Use for level meters,
-/// clip detection, or observability dashboards.
+/// Input and output peaks are tracked per processing call and readable
+/// via [`peak_in`](Self::peak_in) / [`peak_out`](Self::peak_out). Reset
+/// with [`reset_peaks`](Self::reset_peaks). Use for level meters, clip
+/// detection, or observability dashboards.
+///
+/// Peak tracking is gated by [`SmoothingPolicy::tracks_peaks()`]:
+/// - **`SmoothedPolicy`** — peaks are tracked (default `true`).
+/// - **`DirectPolicy`** — peaks stay at zero (no overhead on embedded).
+///
+/// The gate is a const bool, so the compiler eliminates all peak code
+/// in `DirectPolicy` adapters at monomorphization time.
 ///
 /// # Thread Safety
 ///
@@ -401,26 +427,28 @@ impl<K: DspKernel, S: SmoothingPolicy> Adapter<K, S> {
 impl<K: DspKernel, S: SmoothingPolicy> Effect for Adapter<K, S> {
     #[inline]
     fn process(&mut self, input: f32) -> f32 {
-        // Track input peak (mono → mirror to both L,R)
-        let abs_in = input.abs();
-        if abs_in > self.peak_in.0 {
-            self.peak_in.0 = abs_in;
-        }
-        if abs_in > self.peak_in.1 {
-            self.peak_in.1 = abs_in;
+        if S::tracks_peaks() {
+            let abs_in = input.abs();
+            if abs_in > self.peak_in.0 {
+                self.peak_in.0 = abs_in;
+            }
+            if abs_in > self.peak_in.1 {
+                self.peak_in.1 = abs_in;
+            }
         }
 
         self.advance_params();
         let out = self.kernel.process(input, &self.snapshot);
         self.kernel.update_diagnostics(&mut self.snapshot);
 
-        // Track output peak (mono → mirror to both L,R)
-        let abs_out = out.abs();
-        if abs_out > self.peak_out.0 {
-            self.peak_out.0 = abs_out;
-        }
-        if abs_out > self.peak_out.1 {
-            self.peak_out.1 = abs_out;
+        if S::tracks_peaks() {
+            let abs_out = out.abs();
+            if abs_out > self.peak_out.0 {
+                self.peak_out.0 = abs_out;
+            }
+            if abs_out > self.peak_out.1 {
+                self.peak_out.1 = abs_out;
+            }
         }
 
         out
@@ -428,14 +456,15 @@ impl<K: DspKernel, S: SmoothingPolicy> Effect for Adapter<K, S> {
 
     #[inline]
     fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
-        // Track input peaks
-        let abs_l = left.abs();
-        let abs_r = right.abs();
-        if abs_l > self.peak_in.0 {
-            self.peak_in.0 = abs_l;
-        }
-        if abs_r > self.peak_in.1 {
-            self.peak_in.1 = abs_r;
+        if S::tracks_peaks() {
+            let abs_l = left.abs();
+            let abs_r = right.abs();
+            if abs_l > self.peak_in.0 {
+                self.peak_in.0 = abs_l;
+            }
+            if abs_r > self.peak_in.1 {
+                self.peak_in.1 = abs_r;
+            }
         }
 
         self.advance_params();
@@ -444,14 +473,15 @@ impl<K: DspKernel, S: SmoothingPolicy> Effect for Adapter<K, S> {
         // back into the snapshot so get_param() can return live values.
         self.kernel.update_diagnostics(&mut self.snapshot);
 
-        // Track output peaks
-        let abs_l_out = l.abs();
-        let abs_r_out = r.abs();
-        if abs_l_out > self.peak_out.0 {
-            self.peak_out.0 = abs_l_out;
-        }
-        if abs_r_out > self.peak_out.1 {
-            self.peak_out.1 = abs_r_out;
+        if S::tracks_peaks() {
+            let abs_l_out = l.abs();
+            let abs_r_out = r.abs();
+            if abs_l_out > self.peak_out.0 {
+                self.peak_out.0 = abs_l_out;
+            }
+            if abs_r_out > self.peak_out.1 {
+                self.peak_out.1 = abs_r_out;
+            }
         }
 
         (l, r)
@@ -460,26 +490,28 @@ impl<K: DspKernel, S: SmoothingPolicy> Effect for Adapter<K, S> {
     fn process_block(&mut self, input: &[f32], output: &mut [f32]) {
         debug_assert_eq!(input.len(), output.len());
         for (inp, out) in input.iter().zip(output.iter_mut()) {
-            // Track input peak (mono → mirror to both L,R)
-            let abs_in = inp.abs();
-            if abs_in > self.peak_in.0 {
-                self.peak_in.0 = abs_in;
-            }
-            if abs_in > self.peak_in.1 {
-                self.peak_in.1 = abs_in;
+            if S::tracks_peaks() {
+                let abs_in = inp.abs();
+                if abs_in > self.peak_in.0 {
+                    self.peak_in.0 = abs_in;
+                }
+                if abs_in > self.peak_in.1 {
+                    self.peak_in.1 = abs_in;
+                }
             }
 
             self.advance_params();
             *out = self.kernel.process(*inp, &self.snapshot);
             self.kernel.update_diagnostics(&mut self.snapshot);
 
-            // Track output peak (mono → mirror to both L,R)
-            let abs_out = out.abs();
-            if abs_out > self.peak_out.0 {
-                self.peak_out.0 = abs_out;
-            }
-            if abs_out > self.peak_out.1 {
-                self.peak_out.1 = abs_out;
+            if S::tracks_peaks() {
+                let abs_out = out.abs();
+                if abs_out > self.peak_out.0 {
+                    self.peak_out.0 = abs_out;
+                }
+                if abs_out > self.peak_out.1 {
+                    self.peak_out.1 = abs_out;
+                }
             }
         }
     }
@@ -496,14 +528,15 @@ impl<K: DspKernel, S: SmoothingPolicy> Effect for Adapter<K, S> {
         debug_assert_eq!(left_out.len(), right_out.len());
 
         for i in 0..left_in.len() {
-            // Track input peaks
-            let abs_l = left_in[i].abs();
-            let abs_r = right_in[i].abs();
-            if abs_l > self.peak_in.0 {
-                self.peak_in.0 = abs_l;
-            }
-            if abs_r > self.peak_in.1 {
-                self.peak_in.1 = abs_r;
+            if S::tracks_peaks() {
+                let abs_l = left_in[i].abs();
+                let abs_r = right_in[i].abs();
+                if abs_l > self.peak_in.0 {
+                    self.peak_in.0 = abs_l;
+                }
+                if abs_r > self.peak_in.1 {
+                    self.peak_in.1 = abs_r;
+                }
             }
 
             self.advance_params();
@@ -514,14 +547,15 @@ impl<K: DspKernel, S: SmoothingPolicy> Effect for Adapter<K, S> {
             left_out[i] = l;
             right_out[i] = r;
 
-            // Track output peaks
-            let abs_l_out = l.abs();
-            let abs_r_out = r.abs();
-            if abs_l_out > self.peak_out.0 {
-                self.peak_out.0 = abs_l_out;
-            }
-            if abs_r_out > self.peak_out.1 {
-                self.peak_out.1 = abs_r_out;
+            if S::tracks_peaks() {
+                let abs_l_out = l.abs();
+                let abs_r_out = r.abs();
+                if abs_l_out > self.peak_out.0 {
+                    self.peak_out.0 = abs_l_out;
+                }
+                if abs_r_out > self.peak_out.1 {
+                    self.peak_out.1 = abs_r_out;
+                }
             }
         }
     }
@@ -1077,5 +1111,31 @@ mod tests {
         let adapter =
             Adapter::<TailKernel, DirectPolicy>::new_direct(TailKernel { tail: 48000 }, 48000.0);
         assert_eq!(TailReporting::tail_samples(&adapter), 48000);
+    }
+
+    // ── DirectPolicy peak gating tests ──
+
+    #[test]
+    fn direct_policy_peaks_stay_zero() {
+        let mut adapter =
+            Adapter::<TestGainKernel, DirectPolicy>::new_direct(TestGainKernel, 48000.0);
+
+        // Process via all four methods
+        adapter.process(0.9);
+        adapter.process_stereo(0.8, 0.7);
+
+        let input = [0.6, 0.5, 0.4];
+        let mut output = [0.0; 3];
+        adapter.process_block(&input, &mut output);
+
+        let left_in = [0.3, 0.2];
+        let right_in = [0.1, 0.9];
+        let mut left_out = [0.0; 2];
+        let mut right_out = [0.0; 2];
+        adapter.process_block_stereo(&left_in, &right_in, &mut left_out, &mut right_out);
+
+        // DirectPolicy should never update peaks
+        assert_eq!(adapter.peak_in(), (0.0, 0.0), "peak_in should stay zero");
+        assert_eq!(adapter.peak_out(), (0.0, 0.0), "peak_out should stay zero");
     }
 }

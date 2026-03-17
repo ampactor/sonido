@@ -390,17 +390,21 @@ pub trait Effect {
 
 /// Extension trait for effects that report their tail/ring-out duration.
 ///
-/// Separate from [`Effect`] to keep the base trait clean forever (Pattern P5:
-/// Extension Traits). New capabilities are added via independent traits, not
-/// by growing the base trait.
+/// # Why two places to query tail length?
 ///
-/// Effects with tails (reverb, delay, looper) implement this to report how
-/// long audio continues after input stops. Used by:
-/// - Spillover architecture (Phase 4) to determine crossfade duration
-/// - Plugin hosts via `clap_plugin_tail`
-/// - Graph engine for intelligent buffer management
+/// [`Effect::tail_samples()`] is available on every `dyn Effect` without
+/// downcast — the graph engine uses this for spillover queries on trait
+/// objects it already holds.
 ///
-/// Query via trait object downcast or via [`DspKernel::tail_samples()`](crate::DspKernel::tail_samples).
+/// `TailReporting` exists as a **separate extension trait** (Pattern P5) so
+/// that future consumers that _only_ care about tail metadata can query it
+/// via downcast without pulling in the full `Effect` vtable. Concrete use
+/// cases: CLAP host queries via `clap_plugin_tail`, graph spillover
+/// detection, offline render trim.
+///
+/// Both delegate to [`DspKernel::tail_samples()`](crate::DspKernel::tail_samples)
+/// — the kernel is the single source of truth. The adapter's `Effect` impl
+/// and `TailReporting` impl both forward to the same kernel method.
 ///
 /// # Example
 ///

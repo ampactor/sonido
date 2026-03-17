@@ -1,14 +1,32 @@
 //! Combined `Effect` + `ParameterInfo` trait for boxed effects.
 //!
-//! [`EffectWithParams`] bridges the gap between the object-safe [`Effect`] trait
-//! and [`ParameterInfo`]: it provides prefixed methods (`effect_param_count()`,
-//! `effect_set_param()`, etc.) that are dispatched through a single vtable. A
-//! blanket impl covers every concrete type that implements both traits.
+//! # Why this trait exists
 //!
-//! This trait lives in `sonido-core` (rather than `sonido-registry`) because
-//! both `Effect` and `ParameterInfo` are defined here, and the DAG routing
-//! engine (`ProcessingGraph`) stores `Box<dyn EffectWithParams + Send>` to
-//! enable runtime parameter access on graph nodes.
+//! `Box<dyn Effect + ParameterInfo>` is not object-safe in Rust — a trait
+//! object can only have a single vtable. `EffectWithParams` merges both
+//! capabilities into one trait (one vtable) by re-exporting every
+//! [`ParameterInfo`] method with an `effect_` prefix.
+//!
+//! A blanket impl (`impl<T: Effect + ParameterInfo> EffectWithParams for T`)
+//! means **no one implements `EffectWithParams` directly** — it is
+//! automatically available for any type that implements both base traits
+//! (e.g., `Adapter<K, SmoothedPolicy>`).
+//!
+//! # Two vocabularies
+//!
+//! This creates two isomorphic APIs for the same parameter data:
+//!
+//! - **Direct methods** — `param_count()`, `set_param()`, `get_param()`, etc.
+//!   Use these on concrete types or `&dyn ParameterInfo`.
+//! - **Prefixed methods** — `effect_param_count()`, `effect_set_param()`, etc.
+//!   Use these on `&dyn EffectWithParams` or `Box<dyn EffectWithParams + Send>`.
+//!
+//! # Where trait objects live
+//!
+//! [`ProcessingGraph`](crate::graph::ProcessingGraph) and the effect registry
+//! store `Box<dyn EffectWithParams + Send>`. This is why the trait lives in
+//! `sonido-core` rather than `sonido-registry` — both `Effect` and
+//! `ParameterInfo` are defined here, and the graph engine depends on it.
 
 #[cfg(not(feature = "std"))]
 use alloc::string::String;
