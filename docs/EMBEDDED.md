@@ -4,7 +4,7 @@ Deploying Sonido on the Electrosmith Daisy Seed (STM32H750 Cortex-M7) and the
 Cleveland Music Co. Hothouse DIY pedal platform.
 
 > **Current hardware:** Daisy Seed 65 MB (Rev 7 / PCM3060) + Hothouse DIY pedal
-> platform (assembled, not yet validated). Phases 1-2 require bare Seed + USB;
+> platform (working firmware, hardware tuning ongoing). Phases 1-2 require bare Seed + USB;
 > Phases 3-4 require the Hothouse for audio I/O and controls.
 
 ---
@@ -82,7 +82,7 @@ cargo check -p sonido-daisy \
 | 1 | `blinky.rs` | Embassy runtime + clock init | Seed + USB |
 | 1 | `heap_test.rs` | SRAM clock enable + heap allocation | Seed + USB |
 | 2 | `bench_mini.rs` | Single kernel DWT cycle benchmark (PreampKernel) | Seed + USB |
-| 2 | `bench_kernels.rs` | DWT cycle counts for all 19 kernels (dual-budget) | Seed + USB |
+| 2 | `bench_kernels.rs` | DWT cycle counts for all registered kernels (dual-budget) | Seed + USB |
 | 3 | `silence.rs` | Codec/SAI/DMA init — digital silence output | Hothouse |
 | 3 | `tone_out.rs` | DAC signal path health (440 Hz sine) | Hothouse |
 | 3 | `square_out.rs` | DAC health check (1 kHz full-scale square) | Hothouse |
@@ -1187,7 +1187,7 @@ that uses 73% budget at 480 MHz would use ~250%+ — unusable.
 ### Chain Configurations
 
 With the heap in 64 MB SDRAM, memory is no longer a constraint for
-effect chains. Any combination of all 19 effects fits comfortably.
+effect chains. Any combination of all 35 effects fits comfortably.
 CPU budget is the limiting factor.
 
 **Comfortable** — CPU < 50%:
@@ -1206,8 +1206,8 @@ CPU budget is the limiting factor.
 | Compressor → Distortion → Reverb(stereo) | ~112 KB | ~77% |
 
 After the 4.5x performance optimization (commit `1c2194d` — D-cache, I-cache,
-`target-cpu=cortex-m7`, DSP micro-optimizations), all 19 effects individually
-fit under budget at 480 MHz. Total for all 19 is ~564K cycles (176% budget),
+`target-cpu=cortex-m7`, DSP micro-optimizations), all original 19 effects individually
+fit under budget at 480 MHz. Total for the original 19 is ~564K cycles (176% budget),
 so chains of 3-4 effects are comfortable. See [Benchmarks](BENCHMARKS.md) for
 measured Cortex-M7 cycle counts.
 

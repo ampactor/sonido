@@ -123,7 +123,3 @@ crate-type = ["cdylib"]
 [[example]]
 name = "sonido-stage"
 crate-type = ["cdylib"]
-
-[[example]]
-name = "sonido-chain"
-crate-type = ["cdylib"]

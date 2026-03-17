@@ -244,6 +244,17 @@ impl GraphView {
         None
     }
 
+    /// Count of [`SonidoNode::Effect`] nodes currently in the graph.
+    ///
+    /// Used by the Daisy eligibility badge in the status bar: the Hothouse
+    /// pedal supports up to 3 effects in a single-chain topology.
+    pub fn effect_node_count(&self) -> usize {
+        self.snarl
+            .node_ids()
+            .filter(|(_, node)| matches!(node, SonidoNode::Effect { .. }))
+            .count()
+    }
+
     /// Compiles the Snarl topology into a [`GraphCommand::ReplaceTopology`].
     ///
     /// Walks all nodes and connections, builds a [`ProcessingGraph`], creates

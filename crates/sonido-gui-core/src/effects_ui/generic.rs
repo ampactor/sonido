@@ -1,0 +1,181 @@
+//! Generic fallback UI panel for effects without a dedicated panel.
+//!
+//! [`GenericPanel`] renders any registered effect's parameters using
+//! [`bridged_fader`] for continuous parameters and [`bridged_combo`] for
+//! stepped/enum parameters. It discovers parameter metadata at render time
+//! via the [`ParamBridge`], so it works for any effect ID.
+//!
+//! This is the catch-all panel returned by [`create_panel`](super::create_panel)
+//! when no dedicated panel exists for the given effect ID.
+
+use crate::effects_ui::EffectPanel;
+use crate::theme::SonidoTheme;
+use crate::widgets::{bridged_combo, bridged_fader};
+use crate::{ParamBridge, ParamIndex, SlotIndex};
+use egui::Ui;
+use sonido_core::ParamFlags;
+
+/// Number of faders per row in the generic layout.
+const FADERS_PER_ROW: usize = 6;
+
+/// Fallback UI panel for any registered effect.
+///
+/// Renders all visible parameters in rows of 6, using
+/// [`bridged_combo`] for stepped (enum) parameters and [`bridged_fader`]
+/// for continuous parameters. Parameters flagged `READ_ONLY` or `HIDDEN`
+/// are skipped.
+///
+/// The display name and short name are derived from the effect ID at
+/// construction time (capitalized ID, first 4 characters short).
+pub struct GenericPanel {
+    /// Effect registry ID (e.g., `"amp"`, `"cabinet"`).
+    effect_id: String,
+    /// Display name derived from effect ID — leaked as `&'static str` for
+    /// the [`EffectPanel`] trait contract.
+    name: &'static str,
+    /// Short name for chain view — leaked as `&'static str`.
+    short_name: &'static str,
+}
+
+impl GenericPanel {
+    /// Create a generic panel for the given effect ID.
+    ///
+    /// Returns `Some` for any non-empty effect ID. The display name is
+    /// derived by capitalizing the first character of `effect_id`.
+    /// The short name is the first four characters, upper-cased.
+    pub fn try_new(effect_id: &str) -> Option<Self> {
+        if effect_id.is_empty() {
+            return None;
+        }
+
+        let effect_name: String = {
+            let mut chars = effect_id.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        };
+
+        let effect_short: String = effect_id
+            .chars()
+            .take(4)
+            .flat_map(char::to_uppercase)
+            .collect();
+
+        // Leak once at construction time — generic panels are created once per
+        // effect type and live for the application lifetime.
+        let name: &'static str = Box::leak(effect_name.into_boxed_str());
+        let short_name: &'static str = Box::leak(effect_short.into_boxed_str());
+
+        Some(Self {
+            effect_id: effect_id.to_owned(),
+            name,
+            short_name,
+        })
+    }
+
+    /// Effect registry ID.
+    pub fn effect_id(&self) -> &str {
+        &self.effect_id
+    }
+
+    /// Render the generic effect controls.
+    ///
+    /// Parameters are rendered in rows of 6. Stepped
+    /// (enum) parameters use a combo box; continuous parameters use a fader.
+    /// `READ_ONLY` and `HIDDEN` parameters are skipped.
+    pub fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: SlotIndex) {
+        let theme = SonidoTheme::get(ui.ctx());
+        let param_count = bridge.param_count(slot);
+
+        if param_count == 0 {
+            ui.label(
+                egui::RichText::new("No parameters")
+                    .font(egui::FontId::monospace(10.0))
+                    .color(theme.colors.text_secondary),
+            );
+            return;
+        }
+
+        // Collect visible param indices, split into stepped vs continuous.
+        let mut stepped: Vec<usize> = Vec::new();
+        let mut continuous: Vec<usize> = Vec::new();
+
+        for i in 0..param_count {
+            let desc = bridge.param_descriptor(slot, ParamIndex(i));
+            if let Some(ref d) = desc {
+                if d.flags.contains(ParamFlags::HIDDEN) || d.flags.contains(ParamFlags::READ_ONLY) {
+                    continue;
+                }
+                if d.flags.contains(ParamFlags::STEPPED) {
+                    stepped.push(i);
+                } else {
+                    continuous.push(i);
+                }
+            } else {
+                continuous.push(i);
+            }
+        }
+
+        let avail_w = ui.available_width();
+        let row_count = continuous.len().clamp(1, FADERS_PER_ROW);
+        let fader_w = theme.layout.fader_width(avail_w, row_count);
+        let fader_h = theme.layout.fader_height(ui.available_height().min(200.0));
+
+        ui.vertical(|ui| {
+            // Stepped (combo) params in a horizontal row
+            if !stepped.is_empty() {
+                ui.horizontal(|ui| {
+                    for &i in &stepped {
+                        let desc = bridge.param_descriptor(slot, ParamIndex(i));
+                        let label_str = desc.as_ref().map_or("Param", |d| d.short_name);
+                        ui.label(
+                            egui::RichText::new(format!("{label_str}:"))
+                                .font(egui::FontId::monospace(10.0))
+                                .color(theme.colors.text_secondary),
+                        );
+
+                        let id_salt = format!("{}_{}", self.effect_id, i);
+                        if let Some(ref d) = desc {
+                            if let Some(labels) = d.step_labels {
+                                bridged_combo(ui, bridge, slot, ParamIndex(i), &id_salt, labels);
+                            } else {
+                                let count = (d.max - d.min).round() as usize + 1;
+                                let generated: Vec<String> =
+                                    (0..count).map(|n| n.to_string()).collect();
+                                let refs: Vec<&str> =
+                                    generated.iter().map(String::as_str).collect();
+                                bridged_combo(ui, bridge, slot, ParamIndex(i), &id_salt, &refs);
+                            }
+                        }
+                        ui.add_space(8.0);
+                    }
+                });
+                ui.add_space(8.0);
+            }
+
+            // Continuous params in rows of FADERS_PER_ROW
+            if !continuous.is_empty() {
+                ui.horizontal_wrapped(|ui| {
+                    for &i in &continuous {
+                        bridged_fader(ui, bridge, slot, ParamIndex(i), fader_w, fader_h);
+                    }
+                });
+            }
+        });
+    }
+}
+
+impl EffectPanel for GenericPanel {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn short_name(&self) -> &'static str {
+        self.short_name
+    }
+
+    fn ui(&mut self, ui: &mut Ui, bridge: &dyn ParamBridge, slot: SlotIndex) {
+        GenericPanel::ui(self, ui, bridge, slot);
+    }
+}

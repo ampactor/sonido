@@ -1081,11 +1081,12 @@ sonido presets paths
 
 ## Preset Files
 
-Presets are TOML files defining effect chains:
+Presets are TOML files defining effect chains with optional topology:
 
 ```toml
 name = "Guitar Crunch"
 description = "Classic overdrive sound"
+topology = "linear"  # optional: "linear" (default), "parallel", "fan"
 
 [[effects]]
 type = "preamp"
@@ -1096,9 +1097,12 @@ gain = "6"
 type = "distortion"
 [effects.params]
 drive = "15"
-tone = "4000"
-level = "-6"
+tone = "5"
+output = "-6"
 ```
+
+The `topology` field is optional — omitting it defaults to linear chaining.
+Valid values: `"linear"`, `"parallel"`, `"fan"`.
 
 Use with:
 
@@ -1106,3 +1110,29 @@ Use with:
 sonido process input.wav output.wav --preset my_preset.toml
 sonido realtime --preset my_preset.toml
 ```
+
+### Daisy Export
+
+Export a preset to Daisy Seed binary format for flashing to hardware:
+
+```bash
+sonido daisy export my_preset.toml --output preset.bin --slot 0
+sonido daisy inspect preset.bin  # verify round-trip
+```
+
+Constraints: max 3 effects, must be from the pedal-supported set (filter,
+tremolo, vibrato, chorus, phaser, flanger, delay, reverb, tape, compressor,
+wah, distortion, bitcrusher, ringmod, looper). Topology is encoded as a
+single byte in the binary sector.
+
+### DSL Round-Trip
+
+Graph snapshots (including topology) can be serialized to and from DSL strings:
+
+```
+distortion:drive=20|reverb:decay=0.8
+split(chorus:depth=6; -)|reverb:mix=0.5
+```
+
+This enables preset save/load via human-readable DSL strings in addition to
+TOML files. See the [Graph Syntax](#graph-syntax) section for the full grammar.

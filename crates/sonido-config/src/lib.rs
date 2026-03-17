@@ -61,7 +61,7 @@ pub use paths::{
     list_system_presets, list_user_presets, preset_name_from_path, system_presets_dir,
     user_config_dir, user_presets_dir,
 };
-pub use preset::{PRESET_VERSION, Preset, migrate_state};
+pub use preset::{PRESET_VERSION, Preset, migrate_state, topology_byte};
 pub use validation::{
     EffectValidator, ParamValidationInfo, ValidationError, ValidationResult, validate_effect,
     validate_effect_config, validate_effect_param, validate_preset,

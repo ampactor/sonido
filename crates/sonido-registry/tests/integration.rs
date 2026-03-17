@@ -8,7 +8,7 @@
 //! handled by `sonido_graph_dsl::effects::resolve_effect_name`, not the registry
 //! itself. Those aliases are tested in the graph-dsl crate.
 
-use sonido_registry::{EffectCategory, EffectDescriptor, EffectRegistry};
+use sonido_registry::{EffectCategory, EffectRegistry};
 
 // ── 1. All effects creatable ──────────────────────────────────────────────────
 

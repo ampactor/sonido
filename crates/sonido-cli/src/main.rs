@@ -45,6 +45,9 @@ enum Commands {
 
     /// Manage effect presets (list, show, save, delete)
     Presets(commands::presets::PresetsArgs),
+
+    /// Daisy Seed preset management
+    Daisy(commands::daisy::DaisyArgs),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -69,5 +72,6 @@ fn main() -> anyhow::Result<()> {
         Commands::Info(args) => commands::info::run(args),
         Commands::Play(args) => commands::play::run(args),
         Commands::Presets(args) => commands::presets::run(args),
+        Commands::Daisy(args) => commands::daisy::run(args),
     }
 }

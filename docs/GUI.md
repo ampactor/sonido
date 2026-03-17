@@ -271,6 +271,8 @@ The interpolation mirrors `KernelParams::lerp()`:
 - **CPU**: Audio thread CPU usage percentage with real-time sparkline graph
   - Graph shows last 60 frames of CPU usage trend
   - Color-coded: green (<80%), yellow (80-100%), red (>100%)
+- **Daisy Eligibility**: Shows `Daisy: N/3` — green when the graph has 3 or fewer
+  effect nodes (compatible with Hothouse hardware), red when over the limit
 - **Buffer Overrun Warning**: Appears when buffer overruns are detected
   - Yellow: warning status (processing time approaching buffer limit)
   - Red: critical status (audio glitches possible)
@@ -411,19 +413,31 @@ User presets are saved as JSON files in:
 
 ### Preset File Format
 
-Presets are stored as JSON files containing all effect parameters, bypass states, and effect order:
+Presets are stored as TOML files containing effect parameters, bypass states,
+effect order, and optional graph topology:
 
-```json
-{
-  "name": "My Preset",
-  "category": "User",
-  "input_gain": 0.0,
-  "master_volume": -3.0,
-  "distortion_bypass": false,
-  "dist_drive": 18.0,
-  ...
-}
+```toml
+name = "My Preset"
+description = "Warm crunch with reverb"
+topology = "linear"  # optional: "linear", "parallel", "fan"
+
+[[effects]]
+type = "distortion"
+[effects.params]
+drive = "18"
 ```
+
+The `topology` field is preserved through save/load cycles and used by the
+Daisy export command (`sonido daisy export`) to encode routing into the
+hardware binary. See the [CLI Guide](CLI_GUIDE.md#preset-files) for the
+full TOML format reference.
+
+### Generic Effect Panels
+
+Effects without a dedicated UI panel (e.g., the 15 newly registered effects
+like amp, cabinet, pitch_shift) use a `GenericPanel` that auto-discovers
+parameters from the registry. Stepped parameters render as combo boxes;
+continuous parameters render as faders in rows of 6.
 
 ## Real-Time Parameter Changes
 

@@ -482,7 +482,10 @@ impl GraphEngine {
             })
             .collect();
 
-        GraphSnapshot { entries }
+        GraphSnapshot {
+            entries,
+            topology: None,
+        }
     }
 
     // --- Parameter / effect access (NodeId-based) ---
@@ -682,12 +685,34 @@ impl GraphEngine {
 
 /// Snapshot of the entire chain state for save/restore workflows.
 ///
-/// Captures effect IDs, parameter values, and bypass states.
+/// Captures effect IDs, parameter values, bypass states, and optional topology.
 /// Owned strings allow deserialization from external sources.
 #[derive(Debug, Clone)]
 pub struct GraphSnapshot {
     /// One entry per effect slot, in chain order.
     pub entries: Vec<SnapshotEntry>,
+    /// Graph topology description. `None` is treated as [`SnapshotTopology::Linear`].
+    pub topology: Option<SnapshotTopology>,
+}
+
+/// Topology description for a graph snapshot.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SnapshotTopology {
+    /// Linear chain: input → effect0 → effect1 → ... → output
+    Linear,
+    /// Tree topology with splits and dry paths
+    Tree(Vec<TopoNode>),
+}
+
+/// A node in the topology tree.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TopoNode {
+    /// Reference to snapshot entry by index
+    Effect(usize),
+    /// Dry (pass-through) path
+    Dry,
+    /// Split into parallel paths
+    Split(Vec<Vec<TopoNode>>),
 }
 
 /// State of a single effect slot in a [`GraphSnapshot`].

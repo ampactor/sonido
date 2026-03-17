@@ -46,8 +46,8 @@ Rows marked `<!-- PLANNED -->` are pre-reserved for v0.3+ features. Do not updat
 | `crates/sonido-gui/src/morph_state.rs` | `docs/GUI.md` | A/B morph snapshot capture, lerp-powered interpolation |
 | `crates/sonido-gui/src/app.rs` | `docs/GUI.md` | GUI features, layout, controls |
 | `crates/sonido-gui/src/signal_generator.rs` | `docs/GUI.md` (Signal Generator section) | Signal types, SourceMode, generator controls |
+| `crates/sonido-gui-core/src/effects_ui/*.rs` | `docs/GUI.md` (Effects Reference, Generic Effect Panels) | Per-effect panels, `GenericPanel` fallback, `LooperPanel`, `create_panel()` dispatch |
 | `crates/sonido-plugin/src/lib.rs`, `audio.rs`, `gui.rs`, `main_thread.rs`, `shared.rs` | CLAUDE.md (Crates table, Key Files table), `docs/ARCHITECTURE.md` (plugin section), `docs/DESIGN_DECISIONS.md` ADR-024 | Plugin adapter API, macro interface, GUI bridge, shared state, gesture protocol |
-| `crates/sonido-plugin/src/chain/*.rs` | CLAUDE.md (Key Files table), `docs/ARCHITECTURE.md` (plugin section), `docs/DESIGN_DECISIONS.md` ADR-026, `docs/CHANGELOG.md` | ChainPlugin, ClapParamId, ChainShared, ChainAudioProcessor, ChainMainThread, ChainParamBridge, ChainEditor |
 | `crates/sonido-config/src/*.rs` | `docs/GETTING_STARTED.md` (presets section) | Preset format, config paths, validation |
 | Any new crate | CLAUDE.md (Crates table + Key Files table), `docs/ARCHITECTURE.md` (diagram) | Crate purpose, no_std status, dependency position |
 | `crates/sonido-core/src/kernel/traits.rs`, `adapter.rs` | CLAUDE.md (Kernel Architecture section), `docs/ARCHITECTURE.md` (Kernel Architecture), `docs/KERNEL_ARCHITECTURE.md`, `docs/DESIGN_DECISIONS.md` ADR-028 | DspKernel, KernelParams, SmoothingStyle, Adapter (SmoothedPolicy / DirectPolicy) |

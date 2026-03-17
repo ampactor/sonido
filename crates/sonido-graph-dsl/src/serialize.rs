@@ -13,7 +13,7 @@
 use crate::DslError;
 use crate::effects::create_effect_with_params;
 use crate::parser::{GraphNode, GraphSpec};
-use sonido_core::graph::{GraphSnapshot, SnapshotEntry};
+use sonido_core::graph::{GraphSnapshot, SnapshotEntry, SnapshotTopology, TopoNode};
 use sonido_registry::EffectRegistry;
 
 /// Serialize a parsed graph specification back to DSL text.
@@ -81,13 +81,101 @@ fn serialize_node(node: &GraphNode) -> String {
 pub fn snapshot_to_dsl(snapshot: &GraphSnapshot) -> String {
     let registry = EffectRegistry::new();
 
-    let parts: Vec<String> = snapshot
-        .entries
-        .iter()
-        .map(|entry| snapshot_entry_to_dsl(entry, &registry))
-        .collect();
+    match &snapshot.topology {
+        None | Some(SnapshotTopology::Linear) => {
+            // Linear: emit entries in order joined by ` | `.
+            let parts: Vec<String> = snapshot
+                .entries
+                .iter()
+                .map(|entry| snapshot_entry_to_dsl(entry, &registry))
+                .collect();
+            parts.join(" | ")
+        }
+        Some(SnapshotTopology::Tree(nodes)) => {
+            serialize_topo_path(nodes, &snapshot.entries, &registry)
+        }
+    }
+}
 
+/// Serialize a topology path (serial chain of [`TopoNode`]s) joined by ` | `.
+fn serialize_topo_path(
+    nodes: &[TopoNode],
+    entries: &[SnapshotEntry],
+    registry: &EffectRegistry,
+) -> String {
+    let parts: Vec<String> = nodes
+        .iter()
+        .map(|n| serialize_topo_node(n, entries, registry))
+        .collect();
     parts.join(" | ")
+}
+
+/// Serialize a single [`TopoNode`] to DSL text.
+fn serialize_topo_node(
+    node: &TopoNode,
+    entries: &[SnapshotEntry],
+    registry: &EffectRegistry,
+) -> String {
+    match node {
+        TopoNode::Effect(idx) => {
+            if let Some(entry) = entries.get(*idx) {
+                snapshot_entry_to_dsl(entry, registry)
+            } else {
+                String::new()
+            }
+        }
+        TopoNode::Dry => "-".to_string(),
+        TopoNode::Split(paths) => {
+            let inner: Vec<String> = paths
+                .iter()
+                .map(|path| serialize_topo_path(path, entries, registry))
+                .collect();
+            format!("split({})", inner.join("; "))
+        }
+    }
+}
+
+/// Build a [`SnapshotTopology`] from a parsed [`GraphSpec`] by pre-order walk.
+///
+/// The walk order matches [`build_graph`](crate::builder::build_graph)'s manifest
+/// order, so `TopoNode::Effect(i)` indices correspond to snapshot entry slots.
+///
+/// Returns `SnapshotTopology::Linear` for a flat (no-split) spec, otherwise
+/// `SnapshotTopology::Tree(nodes)`.
+pub fn topology_from_spec(spec: &GraphSpec) -> SnapshotTopology {
+    if spec.iter().all(|n| matches!(n, GraphNode::Effect { .. })) {
+        return SnapshotTopology::Linear;
+    }
+    let mut counter = 0usize;
+    let nodes = topo_nodes_from_path(spec, &mut counter);
+    SnapshotTopology::Tree(nodes)
+}
+
+/// Recursively convert a path of [`GraphNode`]s to [`TopoNode`]s, incrementing
+/// `counter` for each effect in pre-order.
+fn topo_nodes_from_path(nodes: &[GraphNode], counter: &mut usize) -> Vec<TopoNode> {
+    nodes
+        .iter()
+        .map(|node| topo_node_from_graph_node(node, counter))
+        .collect()
+}
+
+fn topo_node_from_graph_node(node: &GraphNode, counter: &mut usize) -> TopoNode {
+    match node {
+        GraphNode::Effect { .. } => {
+            let idx = *counter;
+            *counter += 1;
+            TopoNode::Effect(idx)
+        }
+        GraphNode::Dry => TopoNode::Dry,
+        GraphNode::Split { paths } => {
+            let topo_paths = paths
+                .iter()
+                .map(|path| topo_nodes_from_path(path, counter))
+                .collect();
+            TopoNode::Split(topo_paths)
+        }
+    }
 }
 
 /// Serialize a single snapshot entry to `[!]effect_id[:param=value,...]`.
@@ -175,7 +263,10 @@ pub fn snapshot_from_dsl(s: &str, registry: &EffectRegistry) -> Result<GraphSnap
         .map(|part| dsl_part_to_snapshot_entry(part, registry))
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(GraphSnapshot { entries })
+    Ok(GraphSnapshot {
+        entries,
+        topology: None,
+    })
 }
 
 /// Parse one pipe-separated segment into a [`SnapshotEntry`].
@@ -407,6 +498,7 @@ mod tests {
                 params,
                 bypassed: false,
             }],
+            topology: None,
         };
         let dsl = snapshot_to_dsl(&snap);
         assert_eq!(dsl, "distortion");
@@ -429,5 +521,228 @@ mod tests {
                 assert!((va - vb).abs() < 1e-4, "param {i} diverged: {va} vs {vb}");
             }
         }
+    }
+
+    // --- Topology round-trip tests ---
+
+    /// Helper: build a snapshot with Tree topology from a DSL spec string.
+    fn snap_with_topology(dsl: &str, registry: &EffectRegistry) -> GraphSnapshot {
+        let spec = parse_graph_dsl(dsl).unwrap();
+        let topo = topology_from_spec(&spec);
+        // Collect entries in pre-order (matches topology_from_spec counter).
+        let entries = collect_entries_preorder(&spec, registry);
+        GraphSnapshot {
+            entries,
+            topology: Some(topo),
+        }
+    }
+
+    /// Walk spec in pre-order and parse each effect into a SnapshotEntry.
+    fn collect_entries_preorder(
+        nodes: &[GraphNode],
+        registry: &EffectRegistry,
+    ) -> Vec<SnapshotEntry> {
+        let mut entries = Vec::new();
+        for node in nodes {
+            match node {
+                GraphNode::Effect { name, .. } => {
+                    let canonical = crate::effects::resolve_effect_name(name);
+                    if let Some(effect) = registry.create(canonical, 48000.0) {
+                        let param_count = effect.effect_param_count();
+                        let params: Vec<f32> = (0..param_count)
+                            .map(|i| effect.effect_param_info(i).map_or(0.0, |d| d.default))
+                            .collect();
+                        entries.push(SnapshotEntry {
+                            effect_id: canonical.to_string(),
+                            params,
+                            bypassed: false,
+                        });
+                    }
+                }
+                GraphNode::Dry => {}
+                GraphNode::Split { paths } => {
+                    for path in paths {
+                        entries.extend(collect_entries_preorder(path, registry));
+                    }
+                }
+            }
+        }
+        entries
+    }
+
+    // 1. Linear (no topology): topology: None → linear serialization path.
+    #[test]
+    fn topo_rt_linear_no_topology() {
+        let registry = EffectRegistry::new();
+        let snap = snapshot_from_dsl("distortion | reverb", &registry).unwrap();
+        assert!(snap.topology.is_none());
+        let dsl = snapshot_to_dsl(&snap);
+        let snap2 = snapshot_from_dsl(&dsl, &registry).unwrap();
+        assert_eq!(snap.entries.len(), snap2.entries.len());
+        assert_eq!(snap.entries[0].effect_id, snap2.entries[0].effect_id);
+        assert_eq!(snap.entries[1].effect_id, snap2.entries[1].effect_id);
+    }
+
+    // 2. Simple split (2 paths).
+    #[test]
+    fn topo_rt_simple_split() {
+        let registry = EffectRegistry::new();
+        let snap = snap_with_topology("split(distortion; reverb)", &registry);
+        let dsl = snapshot_to_dsl(&snap);
+        let spec = parse_graph_dsl(&dsl).unwrap();
+        assert!(matches!(&spec[0], GraphNode::Split { paths } if paths.len() == 2));
+    }
+
+    // 3. Split + dry path.
+    #[test]
+    fn topo_rt_split_with_dry() {
+        let registry = EffectRegistry::new();
+        let snap = snap_with_topology("split(distortion; -)", &registry);
+        let dsl = snapshot_to_dsl(&snap);
+        let spec = parse_graph_dsl(&dsl).unwrap();
+        if let GraphNode::Split { paths } = &spec[0] {
+            assert_eq!(paths.len(), 2);
+            assert!(matches!(paths[1][0], GraphNode::Dry));
+        } else {
+            panic!("expected split");
+        }
+    }
+
+    // 4. Fan topology: split followed by merge effect.
+    #[test]
+    fn topo_rt_fan_topology() {
+        let registry = EffectRegistry::new();
+        let snap = snap_with_topology("split(distortion; chorus) | limiter", &registry);
+        let dsl = snapshot_to_dsl(&snap);
+        let spec = parse_graph_dsl(&dsl).unwrap();
+        assert_eq!(spec.len(), 2);
+        assert!(matches!(&spec[0], GraphNode::Split { .. }));
+        assert!(matches!(&spec[1], GraphNode::Effect { name, .. } if name == "limiter"));
+    }
+
+    // 5. Chains inside split paths.
+    #[test]
+    fn topo_rt_chains_in_split() {
+        let registry = EffectRegistry::new();
+        let snap = snap_with_topology("split(distortion | chorus; reverb)", &registry);
+        let dsl = snapshot_to_dsl(&snap);
+        let spec = parse_graph_dsl(&dsl).unwrap();
+        if let GraphNode::Split { paths } = &spec[0] {
+            assert_eq!(paths[0].len(), 2); // distortion | chorus
+            assert_eq!(paths[1].len(), 1); // reverb
+        } else {
+            panic!("expected split");
+        }
+    }
+
+    // 6. Nested splits.
+    #[test]
+    fn topo_rt_nested_splits() {
+        let registry = EffectRegistry::new();
+        let snap = snap_with_topology("split(split(chorus; flanger); reverb)", &registry);
+        let dsl = snapshot_to_dsl(&snap);
+        let spec = parse_graph_dsl(&dsl).unwrap();
+        if let GraphNode::Split { paths } = &spec[0] {
+            assert!(matches!(&paths[0][0], GraphNode::Split { .. }));
+            assert!(matches!(&paths[1][0], GraphNode::Effect { name, .. } if name == "reverb"));
+        } else {
+            panic!("expected split");
+        }
+    }
+
+    // 7. 3-way split.
+    #[test]
+    fn topo_rt_three_way_split() {
+        let registry = EffectRegistry::new();
+        let snap = snap_with_topology("split(distortion; chorus; reverb)", &registry);
+        let dsl = snapshot_to_dsl(&snap);
+        let spec = parse_graph_dsl(&dsl).unwrap();
+        if let GraphNode::Split { paths } = &spec[0] {
+            assert_eq!(paths.len(), 3);
+        } else {
+            panic!("expected 3-way split");
+        }
+    }
+
+    // 8. Bypassed effect in split path.
+    #[test]
+    fn topo_rt_bypassed_in_split() {
+        let registry = EffectRegistry::new();
+        let spec = parse_graph_dsl("split(distortion; reverb)").unwrap();
+        let topo = topology_from_spec(&spec);
+        let mut entries = collect_entries_preorder(&spec, &registry);
+        entries[1].bypassed = true; // bypass reverb
+        let snap = GraphSnapshot {
+            entries,
+            topology: Some(topo),
+        };
+        let dsl = snapshot_to_dsl(&snap);
+        // The bypassed reverb should be prefixed with '!'
+        assert!(
+            dsl.contains("!reverb"),
+            "bypassed effect must emit '!': {dsl}"
+        );
+    }
+
+    // 9. Params in split paths.
+    #[test]
+    fn topo_rt_params_in_split_paths() {
+        let registry = EffectRegistry::new();
+        let spec = parse_graph_dsl("split(distortion; reverb)").unwrap();
+        let topo = topology_from_spec(&spec);
+        let mut entries = collect_entries_preorder(&spec, &registry);
+        // Set distortion drive (param 0) to non-default value 25.
+        entries[0].params[0] = 25.0;
+        let snap = GraphSnapshot {
+            entries,
+            topology: Some(topo),
+        };
+        let dsl = snapshot_to_dsl(&snap);
+        // Params should appear in the serialized DSL.
+        assert!(
+            dsl.contains("distortion:"),
+            "drive param must appear: {dsl}"
+        );
+    }
+
+    // 10. Backward compat: topology: None → uses linear serialization path.
+    #[test]
+    fn topo_rt_backward_compat_none_is_linear() {
+        let registry = EffectRegistry::new();
+        let snap = GraphSnapshot {
+            entries: vec![
+                SnapshotEntry {
+                    effect_id: "distortion".to_string(),
+                    params: {
+                        let e = registry.create("distortion", 48000.0).unwrap();
+                        (0..e.effect_param_count())
+                            .map(|i| e.effect_param_info(i).unwrap().default)
+                            .collect()
+                    },
+                    bypassed: false,
+                },
+                SnapshotEntry {
+                    effect_id: "reverb".to_string(),
+                    params: {
+                        let e = registry.create("reverb", 48000.0).unwrap();
+                        (0..e.effect_param_count())
+                            .map(|i| e.effect_param_info(i).unwrap().default)
+                            .collect()
+                    },
+                    bypassed: false,
+                },
+            ],
+            topology: None,
+        };
+        let dsl = snapshot_to_dsl(&snap);
+        // Linear serialization: no split syntax, just `effect1 | effect2`.
+        assert!(
+            !dsl.contains("split("),
+            "topology: None must use linear format: {dsl}"
+        );
+        assert!(dsl.contains("distortion"), "{dsl}");
+        assert!(dsl.contains("reverb"), "{dsl}");
+        let snap2 = snapshot_from_dsl(&dsl, &registry).unwrap();
+        assert_eq!(snap2.entries.len(), 2);
     }
 }

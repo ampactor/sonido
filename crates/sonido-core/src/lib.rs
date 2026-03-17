@@ -149,7 +149,7 @@ pub use fast_math::{
 pub use graph::{
     BufferPool, CompensationDelay, CompiledSchedule, EdgeId, GraphEngine, GraphError,
     GraphSnapshot, NodeId, NodeKind, NodeRate, ProcessStep, ProcessingGraph, SnapshotEntry,
-    StereoBuffer, StereoSamples,
+    SnapshotTopology, StereoBuffer, StereoSamples, TopoNode,
 };
 pub use kernel::{
     Adapter, DirectPolicy, DspKernel, KernelParams, MorphCurve, MorphSpace, SmoothedPolicy,

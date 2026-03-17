@@ -14,7 +14,9 @@ mod eq;
 mod filter;
 mod flanger;
 mod gate;
+pub mod generic;
 mod limiter;
+pub mod looper;
 mod phaser;
 mod preamp;
 mod reverb;
@@ -34,7 +36,9 @@ pub use eq::ParametricEqPanel;
 pub use filter::FilterPanel;
 pub use flanger::FlangerPanel;
 pub use gate::GatePanel;
+pub use generic::GenericPanel;
 pub use limiter::LimiterPanel;
+pub use looper::LooperPanel;
 pub use phaser::PhaserPanel;
 pub use preamp::PreampPanel;
 pub use reverb::ReverbPanel;
@@ -101,10 +105,13 @@ impl_effect_panel!(VibratoPanel, "Vibrato", "Vib");
 impl_effect_panel!(TapePanel, "Tape", "Tape");
 impl_effect_panel!(ReverbPanel, "Reverb", "Rev");
 impl_effect_panel!(StagePanel, "Stage", "Stge");
+impl_effect_panel!(LooperPanel, "Looper", "Loop");
 
 /// Create an effect panel for the given registry effect ID.
 ///
-/// Returns `None` if `effect_id` doesn't map to a known panel type.
+/// Returns a dedicated panel for known effect IDs, or a [`GenericPanel`]
+/// for any unrecognized effect that exists in the registry. Returns `None`
+/// only for empty or empty-string IDs.
 pub fn create_panel(effect_id: &str) -> Option<Box<dyn EffectPanel + Send + Sync>> {
     match effect_id {
         "preamp" => Some(Box::new(PreampPanel::new())),
@@ -126,7 +133,8 @@ pub fn create_panel(effect_id: &str) -> Option<Box<dyn EffectPanel + Send + Sync
         "bitcrusher" => Some(Box::new(BitcrusherPanel::new())),
         "ringmod" => Some(Box::new(RingModPanel::new())),
         "stage" => Some(Box::new(StagePanel::new())),
-        _ => None,
+        "looper" => Some(Box::new(LooperPanel::new())),
+        other => GenericPanel::try_new(other).map(|p| Box::new(p) as _),
     }
 }
 
@@ -134,7 +142,7 @@ pub fn create_panel(effect_id: &str) -> Option<Box<dyn EffectPanel + Send + Sync
 mod tests {
     use super::*;
 
-    const ALL_EFFECT_IDS: [&str; 19] = [
+    const ALL_EFFECT_IDS: [&str; 20] = [
         "preamp",
         "distortion",
         "compressor",
@@ -154,6 +162,7 @@ mod tests {
         "bitcrusher",
         "ringmod",
         "stage",
+        "looper",
     ];
 
     #[test]
@@ -167,15 +176,38 @@ mod tests {
     }
 
     #[test]
-    fn create_panel_returns_none_for_unknown_id() {
-        assert!(create_panel("nonexistent").is_none());
+    fn create_panel_returns_none_for_empty_id() {
         assert!(create_panel("").is_none());
-        assert!(create_panel("PREAMP").is_none());
+    }
+
+    #[test]
+    fn create_panel_looper() {
+        let panel = create_panel("looper");
+        assert!(panel.is_some(), "create_panel(\"looper\") returned None");
+        let p = panel.unwrap();
+        assert_eq!(p.name(), "Looper");
+        assert_eq!(p.short_name(), "Loop");
+    }
+
+    #[test]
+    fn create_panel_generic_fallback() {
+        // Known registry effect without a dedicated panel returns a GenericPanel
+        let panel = create_panel("amp");
+        assert!(
+            panel.is_some(),
+            "create_panel(\"amp\") should produce a GenericPanel"
+        );
+        // Unknown ID also falls back to GenericPanel
+        let panel2 = create_panel("custom_effect");
+        assert!(
+            panel2.is_some(),
+            "create_panel(\"custom_effect\") should produce a GenericPanel"
+        );
     }
 
     #[test]
     fn panel_names() {
-        let expected: [(&str, &str); 19] = [
+        let expected: [(&str, &str); 20] = [
             ("preamp", "Preamp"),
             ("distortion", "Distortion"),
             ("compressor", "Compressor"),
@@ -195,6 +227,7 @@ mod tests {
             ("bitcrusher", "Bitcrusher"),
             ("ringmod", "Ring Mod"),
             ("stage", "Stage"),
+            ("looper", "Looper"),
         ];
         for (id, name) in &expected {
             let panel = create_panel(id).unwrap();
@@ -204,7 +237,7 @@ mod tests {
 
     #[test]
     fn panel_short_names() {
-        let expected: [(&str, &str); 19] = [
+        let expected: [(&str, &str); 20] = [
             ("preamp", "Pre"),
             ("distortion", "Dist"),
             ("compressor", "Comp"),
@@ -224,6 +257,7 @@ mod tests {
             ("bitcrusher", "Crsh"),
             ("ringmod", "Ring"),
             ("stage", "Stge"),
+            ("looper", "Loop"),
         ];
         for (id, short) in &expected {
             let panel = create_panel(id).unwrap();

@@ -5,7 +5,7 @@
 Sonido is a production-grade DSP library designed for multi-target deployment:
 - **Desktop**: CLI and GUI applications
 - **Embedded**: Electrosmith Daisy / Hothouse hardware
-- **Plugins**: CLAP via clack (20 plugins: 19 single-effect + 1 chain), VST3/AU via clap-wrapper
+- **Plugins**: CLAP via clack (35 single-effect plugins), VST3/AU via clap-wrapper
 
 The library is built with stereo-first processing and no_std compatibility at its core.
 
@@ -15,8 +15,8 @@ The library is built with stereo-first processing and no_std compatibility at it
 ┌───────────────────────────────────────────────────────────────────────────┐
 │                           Applications                                     │
 │  ┌─────────────┐  ┌─────────────┐  ┌───────────┐  ┌──────────────┐        │
-│  │ sonido-cli  │  │ sonido-gui  │  │sonido-    │  │sonido-hothouse│        │
-│  │  (binary)   │  │  (egui)     │  │ plugin    │  │  (planned)    │        │
+│  │ sonido-cli  │  │ sonido-gui  │  │sonido-    │  │sonido-daisy   │        │
+│  │  (binary)   │  │  (egui)     │  │ plugin    │  │    (firmware)  │        │
 │  │             │  │             │  │(CLAP/egui)│  │               │        │
 │  └──────┬──────┘  └──────┬──────┘  └─────┬─────┘  └──────┬───────┘        │
 └─────────┼────────────────┼───────────────┼───────────────┼────────────────┘
@@ -53,7 +53,7 @@ The library is built with stereo-first processing and no_std compatibility at it
                                     ▼
                            ┌───────────────┐
                            │sonido-effects │
-                           │  (19 effects) │
+                           │  (35 effects) │
                            │   [no_std]    │
                            └───────┬───────┘
                                    │
@@ -92,7 +92,7 @@ The foundation crate providing DSP primitives. Designed for `no_std` environment
 
 Audio effect implementations built on sonido-core. All `no_std` compatible with full stereo support.
 
-**Why separate effects from core?** The `Effect` trait and DSP primitives change rarely; effect implementations change often as new algorithms are added or refined. Separating them means adding a new effect never risks breaking the core infrastructure. It also means `sonido-core` can be used independently for custom DSP work without pulling in all 19 effect implementations.
+**Why separate effects from core?** The `Effect` trait and DSP primitives change rarely; effect implementations change often as new algorithms are added or refined. Separating them means adding a new effect never risks breaking the core infrastructure. It also means `sonido-core` can be used independently for custom DSP work without pulling in all 35 effect implementations.
 
 **19 Effects:**
 
@@ -121,7 +121,7 @@ Audio effect implementations built on sonido-core. All `no_std` compatible with 
 
 ### Kernel Architecture
 
-All 19 effects have kernel-architecture implementations in `crates/sonido-effects/src/kernels/` that separate pure DSP from parameter ownership. This enables two deployment modes from the same algorithm:
+All 35 effects have kernel-architecture implementations in `crates/sonido-effects/src/kernels/` that separate pure DSP from parameter ownership. This enables two deployment modes from the same algorithm:
 
 **Three-layer pattern:**
 
@@ -131,7 +131,7 @@ All 19 effects have kernel-architecture implementations in `crates/sonido-effect
 
 3. **`Adapter<K, SmoothedPolicy>`** — bridges kernel to `Effect + ParameterInfo`. Owns per-parameter `SmoothedParam` instances configured from `KernelParams::smoothing()`. Advances smoothers per sample, writes into a params snapshot, passes to `kernel.process_stereo()`.
 
-**Desktop/plugin** uses `Adapter<K, SmoothedPolicy>` (the registry creates `Adapter<XxxKernel, SmoothedPolicy>` for all 19 effects). **Embedded** calls the kernel directly with `XxxParams::from_knobs()` — no smoothing overhead, no heap allocation.
+**Desktop/plugin** uses `Adapter<K, SmoothedPolicy>` (the registry creates `Adapter<XxxKernel, SmoothedPolicy>` for all 35 effects). **Embedded** calls the kernel directly with `XxxParams::from_knobs()` — no smoothing overhead, no heap allocation.
 
 `SmoothingStyle` tiers: `None` (snap), `Fast` (5ms), `Standard` (10ms), `Slow` (20ms), `Interpolated` (50ms), `Custom(ms)`.
 
@@ -335,7 +335,7 @@ Shared GUI infrastructure for both standalone and plugin UIs. Contains everythin
 
 **Key modules:**
 - `param_bridge.rs`: `ParamBridge` trait — the abstraction boundary between GUI and audio thread. Includes `begin_set`/`end_set` gesture protocol for CLAP/VST3 undo grouping and automation recording.
-- `effects_ui/`: Per-effect parameter panels (19 effects + `EffectPanel` dispatcher)
+- `effects_ui/`: Per-effect parameter panels (35 effects + `EffectPanel` dispatcher)
 - `widgets/`: Knob (pointer-on-void with glow arc), BridgedKnob (knob + LED readout), LedDisplay (7-segment), LevelMeter (16-segment LED bar), BypassToggle (LED bloom), FootswitchToggle, MorphBar (segment crossfade)
 - `widgets/glow.rs`: Phosphor bloom rendering primitives (`glow_circle`, `glow_line`, `glow_arc`, `glow_rect`, `scanlines`)
 - `theme.rs`: `SonidoTheme` struct — single source of truth for the arcade CRT design system (colors, sizing, glow config, scanline config). Installed into `egui::Context::data()`, retrieved via `SonidoTheme::get(ctx)`. Includes `reduced_fx` flag for WASM performance.
@@ -344,7 +344,7 @@ Shared GUI infrastructure for both standalone and plugin UIs. Contains everythin
 
 ### sonido-plugin
 
-CLAP audio plugin adapter via the `clack` safe wrapper. Two plugin modes: 19 single-effect plugins and 1 multi-effect chain plugin.
+CLAP audio plugin adapter via the `clack` safe wrapper. 35 single-effect plugins — one per effect.
 
 **Single-effect plugins** (`sonido_effect_entry!` macro):
 - `lib.rs`: Macro generates CLAP entry points — one `cdylib` per effect
@@ -353,20 +353,12 @@ CLAP audio plugin adapter via the `clack` safe wrapper. Two plugin modes: 19 sin
 - `main_thread.rs`: CLAP params, state save/load (JSON), GUI extension, audio ports
 - `shared.rs`: `SonidoShared` — lock-free atomic parameter store shared across threads
 
-**Multi-effect chain plugin** (`chain/` module, ADR-026):
-- `chain/mod.rs`: `ChainPlugin` type with `DefaultPluginFactory`, `ClapParamId` validated newtype
-- `chain/shared.rs`: `ChainShared` — 512-element `AtomicU32` array (16 slots × 32 params), `ArcSwap` slot metadata, `Mutex` command queue
-- `chain/audio.rs`: `ChainAudioProcessor` — owns effects directly, drains structural commands, diffs param cache for host events
-- `chain/main_thread.rs`: `ChainMainThread` — full CLAP params (512), JSON state save/load, GUI lifecycle
-- `chain/param_bridge.rs`: `ChainParamBridge` — implements `ParamBridge` + `ChainMutator` over `ChainShared`
-- `chain/gui.rs`: `ChainEditor` — egui chain strip with click-to-select, context menu, effect panel
-
 **Shared infrastructure:**
 - `egui_bridge/`: Custom baseview-to-egui bridge (~350 lines), replacing `egui-baseview`
 - Custom egui bridge: sonido owns its rendering pipeline (baseview + egui_glow), with no external `egui-baseview` dependency
 - Lock-free parameter sync: `AtomicU32` (f32 bit-cast) per parameter, `AtomicU8` gesture flags
 - Host notification: `host.request_process()` / `host.request_callback()` for GUI changes and structural mutations
-- Plugin binaries: 20 `cdylib` example targets (19 single-effect + 1 chain)
+- Plugin binaries: 35 `cdylib` example targets (one per effect)
 
 ### sonido-gui
 
@@ -698,8 +690,8 @@ cargo test
 cargo test --no-default-features -p sonido-core
 cargo test --no-default-features -p sonido-effects
 
-# Embedded (planned — sonido-hothouse crate not yet implemented)
-# cargo build -p sonido-hothouse --target thumbv7em-none-eabihf --release
+# Embedded — implemented in sonido-daisy
+cargo check -p sonido-daisy --target thumbv7em-none-eabihf
 ```
 
 ## Parameter Threading Model

@@ -53,7 +53,7 @@ panic-probe = { version = "1.0", features = ["print-defmt"] }
 
 [[example]]
 name = "sonido_pedal"
-required-features = ["alloc"]
+required-features = ["alloc", "platform"]
 
 [[example]]
 name = "single_reverb"
@@ -62,6 +62,10 @@ required-features = ["alloc"]
 [[example]]
 name = "single_delay"
 required-features = ["alloc"]
+
+[[example]]
+name = "single_effect"
+required-features = ["alloc", "platform"]
 
 [[example]]
 name = "convert_passthrough"

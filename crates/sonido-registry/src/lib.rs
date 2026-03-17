@@ -57,10 +57,12 @@ use alloc::{boxed::Box, vec::Vec};
 pub use sonido_core::EffectWithParams;
 use sonido_core::{Adapter, ParamDescriptor};
 use sonido_effects::kernels::{
-    BitcrusherKernel, ChorusKernel, CompressorKernel, DelayKernel, DistortionKernel, EqKernel,
-    FilterKernel, FlangerKernel, GateKernel, LimiterKernel, LooperKernel, PhaserKernel,
-    PreampKernel, ReverbKernel, RingModKernel, StageKernel, TapeKernel, TremoloKernel,
-    VibratoKernel, WahKernel,
+    AmpKernel, BitcrusherKernel, CabinetKernel, ChorusKernel, CompressorKernel, DeesserKernel,
+    DelayKernel, DistortionKernel, DroneKernel, EqKernel, FilterKernel, FlangerKernel, GateKernel,
+    GlitchKernel, LimiterKernel, LooperKernel, MultibandCompKernel, PhaserKernel, PitchShiftKernel,
+    PlateReverbKernel, PreampKernel, ReverbKernel, RingModKernel, ShelvingEqKernel,
+    SpringReverbKernel, StageKernel, StereoWidenerKernel, TapeKernel, TextureKernel,
+    TimeStretchKernel, TransientShaperKernel, TremoloKernel, TunerKernel, VibratoKernel, WahKernel,
 };
 
 /// Category of audio effect for organization and filtering.
@@ -159,7 +161,7 @@ impl EffectRegistry {
     /// Create a new registry with all built-in effects registered.
     pub fn new() -> Self {
         let mut registry = Self {
-            entries: Vec::with_capacity(20),
+            entries: Vec::with_capacity(35),
         };
         registry.register_builtin_effects();
         registry
@@ -426,6 +428,201 @@ impl EffectRegistry {
             },
             |sr| Box::new(Adapter::new(LooperKernel::new(sr), sr)),
         );
+
+        // Amp
+        self.register(
+            EffectDescriptor {
+                id: "amp",
+                name: "Amp",
+                short_name: "Amp",
+                description: "Dual gain stage + interactive tone stack + sag amp simulator",
+                category: EffectCategory::Distortion,
+                param_count: 0,
+            },
+            |sr| Box::new(Adapter::new(AmpKernel::new(sr), sr)),
+        );
+
+        // Cabinet
+        self.register(
+            EffectDescriptor {
+                id: "cabinet",
+                name: "Cabinet",
+                short_name: "Cab",
+                description: "Cabinet IR simulator with direct convolution and 3 factory impulse responses",
+                category: EffectCategory::Distortion,
+                param_count: 0,
+            },
+            |sr| Box::new(Adapter::new(CabinetKernel::new(sr), sr)),
+        );
+
+        // De-esser
+        self.register(
+            EffectDescriptor {
+                id: "deesser",
+                name: "De-esser",
+                short_name: "DeEs",
+                description: "Wideband sibilance reduction via sidechain HPF",
+                category: EffectCategory::Dynamics,
+                param_count: 0,
+            },
+            |sr| Box::new(Adapter::new(DeesserKernel::new(sr), sr)),
+        );
+
+        // Drone
+        self.register(
+            EffectDescriptor {
+                id: "drone",
+                name: "Drone",
+                short_name: "Dron",
+                description: "Sympathetic resonance generator with harmonically-related sustaining tones",
+                category: EffectCategory::TimeBased,
+                param_count: 0,
+            },
+            |sr| Box::new(Adapter::new(DroneKernel::new(sr), sr)),
+        );
+
+        // Glitch
+        self.register(
+            EffectDescriptor {
+                id: "glitch",
+                name: "Glitch",
+                short_name: "Gltc",
+                description: "Buffer manipulation effect: stutter, tape-stop, reverse, shuffle",
+                category: EffectCategory::Distortion,
+                param_count: 0,
+            },
+            |sr| Box::new(Adapter::new(GlitchKernel::new(sr), sr)),
+        );
+
+        // Multiband Compressor
+        self.register(
+            EffectDescriptor {
+                id: "multiband_comp",
+                name: "Multiband Compressor",
+                short_name: "MBCo",
+                description: "Three-band dynamics with Linkwitz-Riley crossovers",
+                category: EffectCategory::Dynamics,
+                param_count: 0,
+            },
+            |sr| Box::new(Adapter::new(MultibandCompKernel::new(sr), sr)),
+        );
+
+        // Pitch Shift
+        self.register(
+            EffectDescriptor {
+                id: "pitch_shift",
+                name: "Pitch Shift",
+                short_name: "PtSh",
+                description: "Granular pitch shifter with overlapping Hann-windowed grain crossfade",
+                category: EffectCategory::Modulation,
+                param_count: 0,
+            },
+            |sr| Box::new(Adapter::new(PitchShiftKernel::new(sr), sr)),
+        );
+
+        // Plate Reverb
+        self.register(
+            EffectDescriptor {
+                id: "plate_reverb",
+                name: "Plate Reverb",
+                short_name: "PlRv",
+                description: "Dattorro-inspired plate algorithm with input diffusion and modulated tank",
+                category: EffectCategory::TimeBased,
+                param_count: 0,
+            },
+            |sr| Box::new(Adapter::new(PlateReverbKernel::new(sr), sr)),
+        );
+
+        // Shelving EQ
+        self.register(
+            EffectDescriptor {
+                id: "shelving_eq",
+                name: "Shelving EQ",
+                short_name: "ShEQ",
+                description: "Low shelf + high shelf with output gain",
+                category: EffectCategory::Filter,
+                param_count: 0,
+            },
+            |sr| Box::new(Adapter::new(ShelvingEqKernel::new(sr), sr)),
+        );
+
+        // Spring Reverb
+        self.register(
+            EffectDescriptor {
+                id: "spring_reverb",
+                name: "Spring Reverb",
+                short_name: "SpRv",
+                description: "Allpass dispersion chain modeling the boingy character of a spring reverb unit",
+                category: EffectCategory::TimeBased,
+                param_count: 0,
+            },
+            |sr| Box::new(Adapter::new(SpringReverbKernel::new(sr), sr)),
+        );
+
+        // Stereo Widener
+        self.register(
+            EffectDescriptor {
+                id: "stereo_widener",
+                name: "Stereo Widener",
+                short_name: "StWd",
+                description: "M/S width control, Haas delay, and bass mono",
+                category: EffectCategory::Utility,
+                param_count: 0,
+            },
+            |sr| Box::new(Adapter::new(StereoWidenerKernel::new(sr), sr)),
+        );
+
+        // Texture
+        self.register(
+            EffectDescriptor {
+                id: "texture",
+                name: "Texture",
+                short_name: "Txtr",
+                description: "Granular ambient pad from input with random grain positions and Hann-window envelopes",
+                category: EffectCategory::Modulation,
+                param_count: 0,
+            },
+            |sr| Box::new(Adapter::new(TextureKernel::new(sr), sr)),
+        );
+
+        // Time Stretch
+        self.register(
+            EffectDescriptor {
+                id: "time_stretch",
+                name: "Time Stretch",
+                short_name: "TmSt",
+                description: "Independent pitch and time control via granular synthesis",
+                category: EffectCategory::Modulation,
+                param_count: 0,
+            },
+            |sr| Box::new(Adapter::new(TimeStretchKernel::new(sr), sr)),
+        );
+
+        // Transient Shaper
+        self.register(
+            EffectDescriptor {
+                id: "transient_shaper",
+                name: "Transient Shaper",
+                short_name: "TrSh",
+                description: "Independent attack/sustain envelope control",
+                category: EffectCategory::Dynamics,
+                param_count: 0,
+            },
+            |sr| Box::new(Adapter::new(TransientShaperKernel::new(sr), sr)),
+        );
+
+        // Tuner
+        self.register(
+            EffectDescriptor {
+                id: "tuner",
+                name: "Tuner",
+                short_name: "Tunr",
+                description: "Chromatic tuner with YIN pitch detection and READ_ONLY diagnostic params",
+                category: EffectCategory::Utility,
+                param_count: 0,
+            },
+            |sr| Box::new(Adapter::new(TunerKernel::new(sr), sr)),
+        );
     }
 
     /// Register an effect with the registry.
@@ -555,14 +752,14 @@ mod tests {
     #[test]
     fn test_registry_creation() {
         let registry = EffectRegistry::new();
-        assert_eq!(registry.len(), 20);
+        assert_eq!(registry.len(), 35);
     }
 
     #[test]
     fn test_all_effects() {
         let registry = EffectRegistry::new();
         let effects = registry.all_effects();
-        assert_eq!(effects.len(), 20);
+        assert_eq!(effects.len(), 35);
     }
 
     #[test]
@@ -594,22 +791,22 @@ mod tests {
         let registry = EffectRegistry::new();
 
         let modulation = registry.effects_in_category(EffectCategory::Modulation);
-        assert_eq!(modulation.len(), 6); // Chorus, Flanger, Phaser, Vibrato, Tremolo, RingMod
+        assert_eq!(modulation.len(), 9); // Chorus, Flanger, Phaser, Vibrato, Tremolo, RingMod, PitchShift, Texture, TimeStretch
 
         let dynamics = registry.effects_in_category(EffectCategory::Dynamics);
-        assert_eq!(dynamics.len(), 3); // Compressor, Gate, Limiter
+        assert_eq!(dynamics.len(), 6); // Compressor, Gate, Limiter, Deesser, MultibandComp, TransientShaper
 
         let distortion = registry.effects_in_category(EffectCategory::Distortion);
-        assert_eq!(distortion.len(), 3); // Distortion, Tape, Bitcrusher
+        assert_eq!(distortion.len(), 6); // Distortion, Tape, Bitcrusher, Amp, Cabinet, Glitch
 
         let time_based = registry.effects_in_category(EffectCategory::TimeBased);
-        assert_eq!(time_based.len(), 3); // Delay, Reverb, Looper
+        assert_eq!(time_based.len(), 6); // Delay, Reverb, Looper, Drone, PlateReverb, SpringReverb
 
         let filter = registry.effects_in_category(EffectCategory::Filter);
-        assert_eq!(filter.len(), 3); // LowPass, Wah, ParametricEQ
+        assert_eq!(filter.len(), 4); // Filter, Wah, ParametricEQ, ShelvingEQ
 
         let utility = registry.effects_in_category(EffectCategory::Utility);
-        assert_eq!(utility.len(), 2); // Preamp, Stage
+        assert_eq!(utility.len(), 4); // Preamp, Stage, StereoWidener, Tuner
     }
 
     #[test]

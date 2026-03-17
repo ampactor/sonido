@@ -16,11 +16,20 @@ use std::path::PathBuf;
 /// Creates a preset that captures the current state of all parameters
 /// by iterating over all slots and their descriptors in the bridge.
 /// Parameter names are normalized to snake_case for the preset file format.
-pub fn params_to_preset(name: &str, description: Option<&str>, bridge: &dyn ParamBridge) -> Preset {
+pub fn params_to_preset(
+    name: &str,
+    description: Option<&str>,
+    topology: Option<&str>,
+    bridge: &dyn ParamBridge,
+) -> Preset {
     let mut preset = Preset::new(name);
 
     if let Some(desc) = description {
         preset = preset.with_description(desc);
+    }
+
+    if let Some(topo) = topology {
+        preset = preset.with_topology(topo);
     }
 
     for slot_raw in 0..bridge.slot_count() {
@@ -279,11 +288,17 @@ impl PresetManager {
     }
 
     /// Select a preset by index and apply it to the parameters.
-    pub fn select(&mut self, index: usize, bridge: &dyn ParamBridge) {
+    ///
+    /// Returns the topology string from the loaded preset, if any.
+    /// The caller can use this to update the graph topology accordingly.
+    pub fn select(&mut self, index: usize, bridge: &dyn ParamBridge) -> Option<String> {
         if index < self.presets.len() {
             self.current_preset = index;
             preset_to_params(&self.presets[index].preset, bridge);
             self.modified = false;
+            self.presets[index].preset.topology.clone()
+        } else {
+            None
         }
     }
 
@@ -306,9 +321,10 @@ impl PresetManager {
         &mut self,
         name: &str,
         description: Option<&str>,
+        topology: Option<&str>,
         bridge: &dyn ParamBridge,
     ) -> Result<(), String> {
-        let preset = params_to_preset(name, description, bridge);
+        let preset = params_to_preset(name, description, topology, bridge);
 
         ensure_user_presets_dir()
             .map_err(|e| format!("Failed to create presets directory: {}", e))?;
@@ -333,7 +349,11 @@ impl PresetManager {
     /// Only works for user presets, not factory presets.
     /// Not available on wasm (no filesystem).
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn save_current(&mut self, bridge: &dyn ParamBridge) -> Result<(), String> {
+    pub fn save_current(
+        &mut self,
+        topology: Option<&str>,
+        bridge: &dyn ParamBridge,
+    ) -> Result<(), String> {
         let entry = self
             .presets
             .get(self.current_preset)
@@ -352,6 +372,7 @@ impl PresetManager {
         let preset = params_to_preset(
             &entry.preset.name,
             entry.preset.description.as_deref(),
+            topology,
             bridge,
         );
 
@@ -472,7 +493,7 @@ mod tests {
         bridge.set_bypassed(SlotIndex(1), true);
 
         // Convert to preset and apply to fresh bridge
-        let preset = params_to_preset("Test", Some("Test preset"), &bridge);
+        let preset = params_to_preset("Test", Some("Test preset"), None, &bridge);
 
         let bridge2 = AtomicParamBridge::new(&registry, &["distortion", "reverb"], 48000.0);
         preset_to_params(&preset, &bridge2);

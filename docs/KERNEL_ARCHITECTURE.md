@@ -1,7 +1,7 @@
 # Kernel Architecture
 
 Reference for Sonido's kernel architecture -- the three-layer separation of DSP math,
-parameter ownership, and runtime bridging. All 19 effects use this pattern exclusively.
+parameter ownership, and runtime bridging. All 35 effects use this pattern exclusively.
 Classic `Effect` implementations have been removed as of v0.2.
 
 ---
@@ -540,26 +540,42 @@ crates/sonido-core/src/kernel/
 +-- adapter.rs      # Adapter<K, P> -- the only Effect implementor
 
 crates/sonido-effects/src/kernels/
-+-- mod.rs          # Module root, re-exports all 19 kernels
-+-- bitcrusher.rs   # BitcrusherKernel + BitcrusherParams
-+-- chorus.rs       # ChorusKernel + ChorusParams
-+-- compressor.rs   # CompressorKernel + CompressorParams
-+-- delay.rs        # DelayKernel + DelayParams
-+-- distortion.rs   # DistortionKernel + DistortionParams
-+-- eq.rs           # EqKernel + EqParams
-+-- filter.rs       # FilterKernel + FilterParams
-+-- flanger.rs      # FlangerKernel + FlangerParams
-+-- gate.rs         # GateKernel + GateParams
-+-- limiter.rs      # LimiterKernel + LimiterParams
-+-- phaser.rs       # PhaserKernel + PhaserParams
-+-- preamp.rs       # PreampKernel + PreampParams
-+-- reverb.rs       # ReverbKernel + ReverbParams
-+-- ringmod.rs      # RingModKernel + RingModParams
-+-- stage.rs        # StageKernel + StageParams
-+-- tape.rs         # TapeKernel + TapeParams
-+-- tremolo.rs      # TremoloKernel + TremoloParams
-+-- vibrato.rs      # VibratoKernel + VibratoParams
-+-- wah.rs          # WahKernel + WahParams
++-- mod.rs              # Module root, re-exports all 35 kernels
++-- amp.rs              # AmpKernel + AmpParams
++-- bitcrusher.rs       # BitcrusherKernel + BitcrusherParams
++-- cabinet.rs          # CabinetKernel + CabinetParams
++-- chorus.rs           # ChorusKernel + ChorusParams
++-- compressor.rs       # CompressorKernel + CompressorParams
++-- deesser.rs          # DeesserKernel + DeesserParams
++-- delay.rs            # DelayKernel + DelayParams
++-- distortion.rs       # DistortionKernel + DistortionParams
++-- drone.rs            # DroneKernel + DroneParams
++-- eq.rs               # EqKernel + EqParams
++-- filter.rs           # FilterKernel + FilterParams
++-- flanger.rs          # FlangerKernel + FlangerParams
++-- gate.rs             # GateKernel + GateParams
++-- glitch.rs           # GlitchKernel + GlitchParams
++-- limiter.rs          # LimiterKernel + LimiterParams
++-- looper.rs           # LooperKernel + LooperParams
++-- multiband_comp.rs   # MultibandCompKernel + MultibandCompParams
++-- phaser.rs           # PhaserKernel + PhaserParams
++-- pitch_shift.rs      # PitchShiftKernel + PitchShiftParams
++-- plate_reverb.rs     # PlateReverbKernel + PlateReverbParams
++-- preamp.rs           # PreampKernel + PreampParams
++-- reverb.rs           # ReverbKernel + ReverbParams
++-- ringmod.rs          # RingModKernel + RingModParams
++-- shelving_eq.rs      # ShelvingEqKernel + ShelvingEqParams
++-- spring_reverb.rs    # SpringReverbKernel + SpringReverbParams
++-- stage.rs            # StageKernel + StageParams
++-- stereo_widener.rs   # StereoWidenerKernel + StereoWidenerParams
++-- tape.rs             # TapeKernel + TapeParams
++-- texture.rs          # TextureKernel + TextureParams
++-- time_stretch.rs     # TimeStretchKernel + TimeStretchParams
++-- transient_shaper.rs # TransientShaperKernel + TransientShaperParams
++-- tremolo.rs          # TremoloKernel + TremoloParams
++-- tuner.rs            # TunerKernel + TunerParams
++-- vibrato.rs          # VibratoKernel + VibratoParams
++-- wah.rs              # WahKernel + WahParams
 ```
 
 ---
@@ -609,5 +625,5 @@ No `SmoothedParam`. No `Vec`. No `Arc`. No allocation. Same DSP math as the desk
 
 - [Architecture Overview](ARCHITECTURE.md) -- Crate dependency graph and design overview
 - [Design Decisions (ADR-028)](DESIGN_DECISIONS.md#adr-028-kernel-architecture--dspparameter-separation) -- Architectural decision record
-- [Effects Reference](EFFECTS_REFERENCE.md) -- All 19 effects with parameters and DSP theory
+- [Effects Reference](EFFECTS_REFERENCE.md) -- All 35 effects with parameters and DSP theory
 - [Embedded Guide](EMBEDDED.md) -- Hardware targets and deployment

@@ -63,6 +63,10 @@ pub struct Preset {
     #[serde(default = "default_sample_rate")]
     pub sample_rate: u32,
 
+    /// Graph topology — "linear", "parallel", or "fan". None defaults to linear.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topology: Option<String>,
+
     /// List of effects in the chain.
     #[serde(default)]
     pub effects: Vec<EffectConfig>,
@@ -84,6 +88,7 @@ impl Preset {
             description: None,
             version: PRESET_VERSION.to_string(),
             sample_rate: 48000,
+            topology: None,
             effects: Vec::new(),
         }
     }
@@ -97,6 +102,12 @@ impl Preset {
     /// Set the sample rate hint.
     pub fn with_sample_rate(mut self, sample_rate: u32) -> Self {
         self.sample_rate = sample_rate;
+        self
+    }
+
+    /// Set the graph topology.
+    pub fn with_topology(mut self, topology: impl Into<String>) -> Self {
+        self.topology = Some(topology.into());
         self
     }
 
@@ -190,6 +201,26 @@ impl Preset {
 impl Default for Preset {
     fn default() -> Self {
         Self::new("Untitled")
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Topology helpers
+// ---------------------------------------------------------------------------
+
+/// Convert topology name to Daisy binary byte. Returns None for unrecognized names.
+///
+/// | Name | Byte |
+/// |------|------|
+/// | `None` or `"linear"` | `0` |
+/// | `"parallel"` | `1` |
+/// | `"fan"` | `2` |
+pub fn topology_byte(name: Option<&str>) -> Option<u8> {
+    match name {
+        None | Some("linear") => Some(0),
+        Some("parallel") => Some(1),
+        Some("fan") => Some(2),
+        _ => None,
     }
 }
 
@@ -451,5 +482,37 @@ type = "reverb"
         let original = state.clone();
         migrate_state(&mut state, "1.0", "1.0");
         assert_eq!(state, original);
+    }
+
+    // --- topology field ---
+
+    #[test]
+    fn test_topology_backward_compat() {
+        // Old presets without topology field should load with topology == None.
+        let toml = r#"
+name = "Legacy"
+
+[[effects]]
+type = "distortion"
+"#;
+        let preset = Preset::from_toml(toml).unwrap();
+        assert_eq!(preset.topology, None);
+    }
+
+    #[test]
+    fn test_topology_roundtrip() {
+        let original = Preset::new("Parallel Rig").with_topology("parallel");
+        let toml = original.to_toml().unwrap();
+        let loaded = Preset::from_toml(&toml).unwrap();
+        assert_eq!(loaded.topology, Some("parallel".to_string()));
+    }
+
+    #[test]
+    fn test_topology_byte_mapping() {
+        assert_eq!(topology_byte(None), Some(0));
+        assert_eq!(topology_byte(Some("linear")), Some(0));
+        assert_eq!(topology_byte(Some("parallel")), Some(1));
+        assert_eq!(topology_byte(Some("fan")), Some(2));
+        assert_eq!(topology_byte(Some("unknown")), None);
     }
 }

@@ -391,6 +391,7 @@ fn snapshot_roundtrip_defaults_omitted() {
             params,
             bypassed: false,
         }],
+        topology: None,
     };
 
     // Serialize: all-default → bare name

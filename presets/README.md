@@ -34,7 +34,7 @@ param = "value"
 
 ## Available Effects
 
-All 19 effects registered in the `EffectRegistry`:
+All 35 effects registered in the `EffectRegistry`:
 
 | Effect | Description |
 |--------|------------|

@@ -749,6 +749,20 @@ impl SonidoApp {
                 },
             );
 
+            // Daisy eligibility badge — green if ≤3 effects, red if >3
+            ui.separator();
+            let effect_count = self.graph_view.effect_node_count();
+            let daisy_color = if effect_count <= 3 {
+                theme.colors.green
+            } else {
+                theme.colors.red
+            };
+            ui.label(
+                egui::RichText::new(format!("Daisy: {effect_count}/3"))
+                    .font(FontId::monospace(11.0))
+                    .color(daisy_color),
+            );
+
             // File player / generator transport (inline)
             ui.separator();
             self.file_player.render_compact(ui);

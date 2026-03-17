@@ -3,6 +3,7 @@
 pub mod analyze;
 pub mod common;
 pub mod compare;
+pub mod daisy;
 pub mod devices;
 pub mod effects;
 pub mod generate;

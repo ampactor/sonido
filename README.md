@@ -1,12 +1,12 @@
 # Sonido
 
-Production-grade DSP framework in Rust — 34 audio effects built on a three-layer kernel architecture that runs identically on desktop plugins, CLI tools, and bare-metal ARM (Cortex-M7). Six `no_std` crates, zero-heap audio paths, `libm` for all math, `from_knobs()` on every effect for direct ADC-to-parameter mapping.
+Production-grade DSP framework in Rust — 35 audio effects built on a three-layer kernel architecture that runs identically on desktop plugins, CLI tools, and bare-metal ARM (Cortex-M7). Six `no_std` crates, zero-heap audio paths, `libm` for all math, `from_knobs()` on every effect for direct ADC-to-parameter mapping.
 
 [![CI](https://github.com/ampactor-labs/sonido/actions/workflows/ci.yml/badge.svg)](https://github.com/ampactor-labs/sonido/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
 [![Rust Edition](https://img.shields.io/badge/Rust-Edition%202024-orange.svg)](https://doc.rust-lang.org/edition-guide/)
 
-14-crate Rust workspace: 34 effects, synthesis engine, spectral analysis, real-time GUI, 20 CLAP plugins — all from a shared `no_std` DSP core targeting Electrosmith Daisy Seed (STM32H750, 480 MHz Cortex-M7).
+14-crate Rust workspace: 35 effects, synthesis engine, spectral analysis, real-time GUI, 35 CLAP plugins — all from a shared `no_std` DSP core targeting Electrosmith Daisy Seed (STM32H750, 480 MHz Cortex-M7).
 
 ## Quick Start
 
@@ -113,7 +113,7 @@ The kernel never sees smoothing. On embedded, ADC readings are already hardware-
 
 ### Preset Morphing
 
-All 19 `KernelParams` implement `lerp()` for real-time preset interpolation:
+All 35 `KernelParams` implement `lerp()` for real-time preset interpolation:
 
 ```rust
 let blended = DistortionParams::lerp(&clean_preset, &heavy_preset, 0.5);
@@ -134,13 +134,13 @@ let blended = DistortionParams::lerp(&clean_preset, &heavy_preset, 0.5);
 
 Target hardware: **Electrosmith Daisy Seed** (STM32H750, Cortex-M7 @ 480 MHz, 64 MB SDRAM) and **PedalPCB Hothouse** DIY pedal platform (6 knobs, 3 toggles, stereo I/O).
 
-`no_std` across 6 crates (`sonido-core`, `sonido-effects`, `sonido-synth`, `sonido-registry`, `sonido-platform`, `sonido-daisy`). All math via `libm`. All 19 effects provide `from_knobs()` for direct 0.0–1.0 ADC-to-parameter mapping.
+`no_std` across 6 crates (`sonido-core`, `sonido-effects`, `sonido-synth`, `sonido-registry`, `sonido-platform`, `sonido-daisy`). All math via `libm`. All 35 effects provide `from_knobs()` for direct 0.0–1.0 ADC-to-parameter mapping.
 
 ### Morph Pedal Demo
 
 The `sonido_pedal` firmware is Sonido's flagship embedded demo — a 3-slot multi-effect with real-time morphing, running on the Hothouse at 48 kHz / 128 samples:
 
-- **3 effect slots** — scroll through all 19 effects per slot via footswitch
+- **3 effect slots** — scroll through all 35 effects per slot via footswitch
 - **Topology switching** — serial, parallel (split/merge), and fan routing, live via toggle
 - **Per-node A/B editing** — capture Sound A and Sound B independently for each slot
 - **Real-time morphing** — expression-ready sweep between A/B snapshots across all slots via `KernelParams::lerp()`
@@ -177,7 +177,7 @@ fn audio_callback(left_in: &[f32], right_in: &[f32],
 
 The `PlatformController` trait and `ControlMapper` in `sonido-platform` provide a structured abstraction for mapping hardware controls (knobs, toggles, expression pedals) to kernel parameters. See [docs/EMBEDDED.md](docs/EMBEDDED.md) for hardware integration details.
 
-## Effects (19)
+## Effects (35)
 
 | Effect | Category | True Stereo | Key Parameters |
 |--------|----------|:-----------:|----------------|
@@ -188,6 +188,9 @@ The `PlatformController` trait and `ControlMapper` in `sonido-platform` provide 
 | Compressor | Dynamics | | threshold, ratio, attack, release, knee, mix |
 | Limiter | Dynamics | x | threshold, release |
 | Gate | Dynamics | | threshold, attack, release, hold |
+| Multiband Compressor | Dynamics | | low/mid/high thresholds, ratios, crossover frequencies |
+| De-esser | Dynamics | | threshold, frequency, ratio |
+| Transient Shaper | Dynamics | | attack gain, sustain gain, speed |
 | Chorus | Modulation | x | rate, depth, mix, voices |
 | Flanger | Modulation | x | rate, depth, feedback, mix |
 | Phaser | Modulation | x | rate, depth, stages, feedback |
@@ -197,11 +200,24 @@ The `PlatformController` trait and `ControlMapper` in `sonido-platform` provide 
 | Wah | Filter | | frequency, resonance, mode (Auto / Manual) |
 | Filter | Filter | | cutoff, resonance (resonant biquad lowpass) |
 | Parametric EQ | Filter | | 3-band frequency, gain, Q |
+| Shelving EQ | Filter | | low shelf freq/gain, high shelf freq/gain |
 | Delay | Time-Based | x | time, feedback, mix, ping-pong, diffusion |
 | Reverb | Time-Based | x | room size, damping, width, mix |
+| Plate Reverb | Time-Based | x | decay, diffusion, mix |
+| Spring Reverb | Time-Based | | tension, decay, mix |
+| Time Stretch | Time-Based | | ratio, mix |
+| Pitch Shift | Pitch | x | semitones, mix |
+| Amp | Distortion | | drive, tone, cabinet |
+| Cabinet | Utility | x | model |
+| Stereo Widener | Utility | x | width, mono bass cutoff |
+| Drone | Synthesis | | root, mode, volume |
+| Glitch | Modulation | x | rate, depth, size |
+| Texture | Modulation | x | density, size, mix |
+| Tuner | Utility | | reference pitch |
 | Stage | Utility | x | phase invert, DC block, bass mono, width, Haas delay, output |
+| Looper | Utility | x | length, overdub, speed |
 
-**Categories**: Distortion (3), Dynamics (3), Modulation (6), Filter (3), Time-Based (2), Utility (2).
+**Categories**: Distortion (4), Dynamics (6), Modulation (9), Filter (4), Time-Based (5), Pitch (1), Utility (5), Synthesis (1).
 
 ## Processing Graph
 
@@ -276,7 +292,7 @@ graph TD
 | Crate | Purpose | no_std |
 |-------|---------|--------|
 | `sonido-core` | Effect trait, DspKernel/KernelParams/Adapter, parameters, delays, filters, LFOs, tempo, DAG processing graph | Yes |
-| `sonido-effects` | 19 effects via DspKernel + Adapter architecture | Yes |
+| `sonido-effects` | 35 effects via DspKernel + Adapter architecture | Yes |
 | `sonido-synth` | PolyBLEP oscillators, ADSR envelopes, voice management, modulation matrix | Yes |
 | `sonido-registry` | Effect factory and discovery by name/category | Yes |
 | `sonido-platform` | Hardware abstraction: PlatformController, ControlMapper | Yes |
@@ -290,16 +306,14 @@ graph TD
 
 ## CLAP Plugins
 
-Sonido builds 20 CLAP audio plugins — one per effect plus a multi-effect chain plugin — each with an embedded egui GUI. Compatible with Bitwig, Reaper, Ardour, and any CLAP-compatible DAW.
+Sonido builds 35 CLAP audio plugins — one per effect — each with an embedded egui GUI. Compatible with Bitwig, Reaper, Ardour, and any CLAP-compatible DAW.
 
 ```bash
 # Build and install all plugins
 make plugins
 ```
 
-Plugins: `sonido-preamp`, `sonido-distortion`, `sonido-compressor`, `sonido-gate`, `sonido-eq`, `sonido-wah`, `sonido-chorus`, `sonido-flanger`, `sonido-phaser`, `sonido-tremolo`, `sonido-delay`, `sonido-filter`, `sonido-vibrato`, `sonido-tape`, `sonido-reverb`, `sonido-limiter`, `sonido-bitcrusher`, `sonido-ringmod`, `sonido-stage`, `sonido-chain`
-
-`sonido-chain` is a 16-slot dynamic multi-effect: add, remove, and reorder effects without restarting the host. 512 pre-allocated CLAP parameters cover all slot combinations.
+Plugins: `sonido-preamp`, `sonido-distortion`, `sonido-compressor`, `sonido-gate`, `sonido-eq`, `sonido-wah`, `sonido-chorus`, `sonido-flanger`, `sonido-phaser`, `sonido-tremolo`, `sonido-delay`, `sonido-filter`, `sonido-vibrato`, `sonido-tape`, `sonido-reverb`, `sonido-limiter`, `sonido-bitcrusher`, `sonido-ringmod`, `sonido-stage`, `sonido-looper`, `sonido-amp`, `sonido-cabinet`, `sonido-deesser`, `sonido-drone`, `sonido-glitch`, `sonido-multiband-comp`, `sonido-pitch-shift`, `sonido-plate-reverb`, `sonido-shelving-eq`, `sonido-spring-reverb`, `sonido-stereo-widener`, `sonido-texture`, `sonido-time-stretch`, `sonido-transient-shaper`, `sonido-tuner`
 
 ## Synthesis Engine
 
@@ -382,7 +396,7 @@ CPU % = `ns_per_sample / (1e9 / 48000) × 100`. Measured on x86_64. Embedded ARM
 1,369 tests across the workspace:
 
 - **Golden file regression**: Effect output compared against reference WAV files (MSE < 1e-6, SNR > 60 dB, spectral correlation > 0.9999)
-- **Property-based testing**: Proptest verifies bounded output and reset behavior for all 19 effects
+- **Property-based testing**: Proptest verifies bounded output and reset behavior for all 35 effects
 - **no_std verification**: 5 core crates tested without default features
 - **Doc tests**: All rustdoc examples compile and run
 - **Algorithm citations**: Every DSP implementation traces to a published reference (Bristow-Johnson Audio EQ Cookbook, Parker et al. DAFx-2016, Jezar Freeverb, Välimäki PolyBLEP, Zölzer DAFX)

@@ -424,7 +424,7 @@ All runnable examples with their `cargo run` commands:
 | Synthesis (oscillators, envelopes, FM) | sonido-synth | `cargo run -p sonido-synth --example synthesis_demo` |
 | Modulation (mod matrix, LFO routing) | sonido-synth | `cargo run -p sonido-synth --example modulation_demo` |
 | Tempo sync (BPM, note divisions) | sonido-core | `cargo run -p sonido-core --example tempo_sync_demo` |
-| Presets and config (factory presets, chains) | sonido-config | `cargo run -p sonido-config --example preset_demo` |
+| Presets and config (factory presets, topology, chains) | sonido-config | `cargo run -p sonido-config --example preset_demo` |
 | Analysis (FFT, dynamics, filter banks) | sonido-analysis | `cargo run -p sonido-analysis --example analysis_demo` |
 
 ## WebAssembly Build
