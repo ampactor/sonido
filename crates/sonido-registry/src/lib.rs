@@ -53,6 +53,38 @@ extern crate alloc;
 #[cfg(not(feature = "std"))]
 use alloc::{boxed::Box, vec::Vec};
 
+// ---------------------------------------------------------------------------
+// Pedal firmware constants
+// ---------------------------------------------------------------------------
+
+/// Ordered effect IDs for the Hothouse pedal firmware.
+///
+/// Index in this slice = `effect_idx` in the binary preset format.
+/// Both CLI (`sonido daisy export`) and firmware (`sonido_pedal.rs`)
+/// MUST use this single source of truth.
+///
+/// # Invariant
+///
+/// This list is append-only. Reordering or removing entries would break
+/// existing binary presets stored in QSPI flash.
+pub const PEDAL_EFFECT_IDS: &[&str] = &[
+    "filter",     // 0
+    "tremolo",    // 1
+    "vibrato",    // 2
+    "chorus",     // 3
+    "phaser",     // 4
+    "flanger",    // 5
+    "delay",      // 6
+    "reverb",     // 7
+    "tape",       // 8
+    "compressor", // 9
+    "wah",        // 10
+    "distortion", // 11
+    "bitcrusher", // 12
+    "ringmod",    // 13
+    "looper",     // 14
+];
+
 // Re-export EffectWithParams from core (moved there to unblock ProcessingGraph).
 pub use sonido_core::EffectWithParams;
 use sonido_core::{Adapter, ParamDescriptor};

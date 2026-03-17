@@ -75,26 +75,71 @@ fn serialize_node(node: &GraphNode) -> String {
 /// # Example
 ///
 /// ```rust,ignore
-/// let dsl = snapshot_to_dsl(&snapshot);
+/// let dsl = snapshot_to_dsl(&snapshot, &registry);
 /// // "distortion:drive=20 | reverb:decay=2.5,mix=30"
 /// ```
-pub fn snapshot_to_dsl(snapshot: &GraphSnapshot) -> String {
-    let registry = EffectRegistry::new();
-
+pub fn snapshot_to_dsl(snapshot: &GraphSnapshot, registry: &EffectRegistry) -> String {
     match &snapshot.topology {
         None | Some(SnapshotTopology::Linear) => {
             // Linear: emit entries in order joined by ` | `.
             let parts: Vec<String> = snapshot
                 .entries
                 .iter()
-                .map(|entry| snapshot_entry_to_dsl(entry, &registry))
+                .map(|entry| snapshot_entry_to_dsl(entry, registry))
                 .collect();
             parts.join(" | ")
         }
         Some(SnapshotTopology::Tree(nodes)) => {
-            serialize_topo_path(nodes, &snapshot.entries, &registry)
+            serialize_topo_path(nodes, &snapshot.entries, registry)
         }
     }
+}
+
+/// Convert a [`GraphSnapshot`] into a [`sonido_config::Preset`].
+///
+/// Each snapshot entry becomes an [`sonido_config::EffectConfig`] with non-default
+/// parameter values stored by their `string_id` key. The preset name is set to `name`.
+///
+/// Tree topologies store the full DSL string in the preset's `topology` field
+/// as `"tree"`; linear and absent topologies leave it as `None`.
+pub fn snapshot_to_preset(
+    snapshot: &GraphSnapshot,
+    name: &str,
+    registry: &EffectRegistry,
+) -> sonido_config::Preset {
+    let mut preset = sonido_config::Preset::new(name);
+
+    for entry in &snapshot.entries {
+        let mut config = sonido_config::EffectConfig::new(&entry.effect_id);
+        config.bypassed = entry.bypassed;
+
+        // Create a temporary effect to obtain descriptors and defaults.
+        if let Some(effect) = registry.create(&entry.effect_id, 48000.0) {
+            let param_count = effect.effect_param_count();
+            for i in 0..param_count {
+                if let Some(desc) = effect.effect_param_info(i)
+                    && let Some(&value) = entry.params.get(i)
+                    && (value - desc.default).abs() > 1e-6
+                {
+                    config
+                        .params
+                        .insert(desc.string_id.to_string(), format_f32(value));
+                }
+            }
+        }
+
+        preset.effects.push(config);
+    }
+
+    // Set topology for tree topologies.
+    match &snapshot.topology {
+        None | Some(SnapshotTopology::Linear) => {}
+        Some(SnapshotTopology::Tree(_)) => {
+            preset.topology = Some("tree".to_string());
+        }
+    }
+
+    preset
 }
 
 /// Serialize a topology path (serial chain of [`TopoNode`]s) joined by ` | `.
@@ -500,7 +545,7 @@ mod tests {
             }],
             topology: None,
         };
-        let dsl = snapshot_to_dsl(&snap);
+        let dsl = snapshot_to_dsl(&snap, &registry);
         assert_eq!(dsl, "distortion");
     }
 
@@ -510,7 +555,7 @@ mod tests {
         // Parse DSL → snapshot → DSL → snapshot, check structural equality.
         let original_dsl = "distortion:drive=20 | !reverb";
         let snap1 = snapshot_from_dsl(original_dsl, &registry).unwrap();
-        let round_dsl = snapshot_to_dsl(&snap1);
+        let round_dsl = snapshot_to_dsl(&snap1, &registry);
         let snap2 = snapshot_from_dsl(&round_dsl, &registry).unwrap();
 
         assert_eq!(snap1.entries.len(), snap2.entries.len());
@@ -576,7 +621,7 @@ mod tests {
         let registry = EffectRegistry::new();
         let snap = snapshot_from_dsl("distortion | reverb", &registry).unwrap();
         assert!(snap.topology.is_none());
-        let dsl = snapshot_to_dsl(&snap);
+        let dsl = snapshot_to_dsl(&snap, &registry);
         let snap2 = snapshot_from_dsl(&dsl, &registry).unwrap();
         assert_eq!(snap.entries.len(), snap2.entries.len());
         assert_eq!(snap.entries[0].effect_id, snap2.entries[0].effect_id);
@@ -588,7 +633,7 @@ mod tests {
     fn topo_rt_simple_split() {
         let registry = EffectRegistry::new();
         let snap = snap_with_topology("split(distortion; reverb)", &registry);
-        let dsl = snapshot_to_dsl(&snap);
+        let dsl = snapshot_to_dsl(&snap, &registry);
         let spec = parse_graph_dsl(&dsl).unwrap();
         assert!(matches!(&spec[0], GraphNode::Split { paths } if paths.len() == 2));
     }
@@ -598,7 +643,7 @@ mod tests {
     fn topo_rt_split_with_dry() {
         let registry = EffectRegistry::new();
         let snap = snap_with_topology("split(distortion; -)", &registry);
-        let dsl = snapshot_to_dsl(&snap);
+        let dsl = snapshot_to_dsl(&snap, &registry);
         let spec = parse_graph_dsl(&dsl).unwrap();
         if let GraphNode::Split { paths } = &spec[0] {
             assert_eq!(paths.len(), 2);
@@ -613,7 +658,7 @@ mod tests {
     fn topo_rt_fan_topology() {
         let registry = EffectRegistry::new();
         let snap = snap_with_topology("split(distortion; chorus) | limiter", &registry);
-        let dsl = snapshot_to_dsl(&snap);
+        let dsl = snapshot_to_dsl(&snap, &registry);
         let spec = parse_graph_dsl(&dsl).unwrap();
         assert_eq!(spec.len(), 2);
         assert!(matches!(&spec[0], GraphNode::Split { .. }));
@@ -625,7 +670,7 @@ mod tests {
     fn topo_rt_chains_in_split() {
         let registry = EffectRegistry::new();
         let snap = snap_with_topology("split(distortion | chorus; reverb)", &registry);
-        let dsl = snapshot_to_dsl(&snap);
+        let dsl = snapshot_to_dsl(&snap, &registry);
         let spec = parse_graph_dsl(&dsl).unwrap();
         if let GraphNode::Split { paths } = &spec[0] {
             assert_eq!(paths[0].len(), 2); // distortion | chorus
@@ -640,7 +685,7 @@ mod tests {
     fn topo_rt_nested_splits() {
         let registry = EffectRegistry::new();
         let snap = snap_with_topology("split(split(chorus; flanger); reverb)", &registry);
-        let dsl = snapshot_to_dsl(&snap);
+        let dsl = snapshot_to_dsl(&snap, &registry);
         let spec = parse_graph_dsl(&dsl).unwrap();
         if let GraphNode::Split { paths } = &spec[0] {
             assert!(matches!(&paths[0][0], GraphNode::Split { .. }));
@@ -655,7 +700,7 @@ mod tests {
     fn topo_rt_three_way_split() {
         let registry = EffectRegistry::new();
         let snap = snap_with_topology("split(distortion; chorus; reverb)", &registry);
-        let dsl = snapshot_to_dsl(&snap);
+        let dsl = snapshot_to_dsl(&snap, &registry);
         let spec = parse_graph_dsl(&dsl).unwrap();
         if let GraphNode::Split { paths } = &spec[0] {
             assert_eq!(paths.len(), 3);
@@ -676,7 +721,7 @@ mod tests {
             entries,
             topology: Some(topo),
         };
-        let dsl = snapshot_to_dsl(&snap);
+        let dsl = snapshot_to_dsl(&snap, &registry);
         // The bypassed reverb should be prefixed with '!'
         assert!(
             dsl.contains("!reverb"),
@@ -697,7 +742,7 @@ mod tests {
             entries,
             topology: Some(topo),
         };
-        let dsl = snapshot_to_dsl(&snap);
+        let dsl = snapshot_to_dsl(&snap, &registry);
         // Params should appear in the serialized DSL.
         assert!(
             dsl.contains("distortion:"),
@@ -734,7 +779,7 @@ mod tests {
             ],
             topology: None,
         };
-        let dsl = snapshot_to_dsl(&snap);
+        let dsl = snapshot_to_dsl(&snap, &registry);
         // Linear serialization: no split syntax, just `effect1 | effect2`.
         assert!(
             !dsl.contains("split("),

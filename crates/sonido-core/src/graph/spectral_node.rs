@@ -1,3 +1,5 @@
+//! # Status: Stub — not yet implemented. Not in the demo or audio path.
+//!
 //! Spectral processing as a graph primitive.
 //!
 //! `SpectralNode` wraps an FFT at its input and an IFFT at its output. Any

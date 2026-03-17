@@ -6,7 +6,7 @@
 
 use sonido_graph_dsl::{
     DslError, GraphNode, build_graph, count_nodes, graph_to_dsl, parse_chain, parse_graph_dsl,
-    resolve_effect_name, snapshot_from_dsl, snapshot_to_dsl, validate_spec,
+    resolve_effect_name, snapshot_from_dsl, snapshot_to_dsl, snapshot_to_preset, validate_spec,
 };
 use sonido_registry::EffectRegistry;
 
@@ -395,7 +395,7 @@ fn snapshot_roundtrip_defaults_omitted() {
     };
 
     // Serialize: all-default → bare name
-    let dsl = snapshot_to_dsl(&snap);
+    let dsl = snapshot_to_dsl(&snap, &registry);
     assert_eq!(dsl, "distortion");
 
     // Re-parse back to snapshot and verify param count matches.
@@ -415,7 +415,7 @@ fn snapshot_roundtrip_non_default_param() {
     assert_eq!(snap1.entries[0].effect_id, "distortion");
 
     // Serialize back to DSL and re-parse.
-    let dsl = snapshot_to_dsl(&snap1);
+    let dsl = snapshot_to_dsl(&snap1, &registry);
     let snap2 = snapshot_from_dsl(&dsl, &registry).unwrap();
 
     assert_eq!(snap1.entries.len(), snap2.entries.len());
@@ -439,7 +439,7 @@ fn snapshot_roundtrip_bypass_flag() {
     let snap1 = snapshot_from_dsl("!reverb", &registry).unwrap();
     assert!(snap1.entries[0].bypassed);
 
-    let dsl = snapshot_to_dsl(&snap1);
+    let dsl = snapshot_to_dsl(&snap1, &registry);
     // The serialized form should include the `!` prefix.
     assert!(
         dsl.starts_with('!'),
@@ -467,7 +467,7 @@ fn snapshot_roundtrip_multi_effect_chain() {
     assert!(!snap1.entries[2].bypassed);
 
     // Round-trip: serialize → parse → check structural equality.
-    let dsl2 = snapshot_to_dsl(&snap1);
+    let dsl2 = snapshot_to_dsl(&snap1, &registry);
     let snap2 = snapshot_from_dsl(&dsl2, &registry).unwrap();
 
     assert_eq!(snap1.entries.len(), snap2.entries.len());
@@ -508,7 +508,7 @@ fn snapshot_from_dsl_unknown_effect_is_error() {
 fn snapshot_roundtrip_negative_param_values() {
     let registry = EffectRegistry::new();
     let snap1 = snapshot_from_dsl("limiter:threshold=-12,ceiling=-0.5", &registry).unwrap();
-    let dsl = snapshot_to_dsl(&snap1);
+    let dsl = snapshot_to_dsl(&snap1, &registry);
     let snap2 = snapshot_from_dsl(&dsl, &registry).unwrap();
 
     for (a, b) in snap1.entries.iter().zip(snap2.entries.iter()) {
@@ -516,4 +516,23 @@ fn snapshot_roundtrip_negative_param_values() {
             assert!((va - vb).abs() < 1e-3, "param {i} diverged: {va} vs {vb}");
         }
     }
+}
+
+// ── snapshot_to_preset ──────────────────────────────────────────────────────
+
+/// `snapshot_to_preset` produces a valid preset from a DSL snapshot.
+#[test]
+fn snapshot_to_preset_round_trip() {
+    let registry = EffectRegistry::new();
+    let dsl = "distortion:drive=20,mix=80 | reverb:decay=2.5,mix=30";
+    let snap = snapshot_from_dsl(dsl, &registry).unwrap();
+    let preset = snapshot_to_preset(&snap, "test_preset", &registry);
+
+    assert_eq!(preset.name, "test_preset");
+    assert_eq!(preset.effects.len(), 2);
+    assert_eq!(preset.effects[0].effect_type, "distortion");
+    assert_eq!(preset.effects[1].effect_type, "reverb");
+    assert!(!preset.effects[0].bypassed);
+    // Verify params are populated
+    assert!(!preset.effects[0].params.is_empty());
 }

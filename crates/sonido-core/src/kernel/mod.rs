@@ -73,7 +73,6 @@
 //! This module is fully `no_std` compatible with `alloc` (for `Vec` in the adapter).
 
 mod adapter;
-pub mod hot_reload;
 pub mod morph;
 mod traits;
 

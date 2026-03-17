@@ -4195,6 +4195,7 @@ dependencies = [
 name = "sonido-graph-dsl"
 version = "0.1.0"
 dependencies = [
+ "sonido-config",
  "sonido-core",
  "sonido-registry",
  "thiserror 2.0.18",

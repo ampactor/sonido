@@ -42,7 +42,7 @@ extern crate alloc;
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use defmt_rtt as _;
 use embassy_stm32 as hal;
@@ -53,9 +53,7 @@ use sonido_core::graph::ProcessingGraph;
 use sonido_core::kernel::Adapter;
 use sonido_core::{EffectWithParams, ParamFlags, TempoManager};
 use sonido_daisy::controls::HothouseBuffer;
-use sonido_daisy::expression::ExpressionInput;
 use sonido_daisy::hothouse::hothouse_control_task;
-use sonido_daisy::midi::{MidiEvent, MidiHandler};
 use sonido_daisy::noon_presets;
 use sonido_daisy::qspi::{EffectSlotData, MAX_USER_PRESETS, PresetSlot};
 use sonido_daisy::tap_tempo::TapTempo;
@@ -70,6 +68,7 @@ use sonido_effects::{
     PhaserParams, ReverbKernel, ReverbParams, RingModKernel, RingModParams, TapeKernel, TapeParams,
     TremoloKernel, TremoloParams, VibratoKernel, VibratoParams, WahKernel, WahParams,
 };
+use sonido_registry::PEDAL_EFFECT_IDS;
 
 // ── Heap ────────────────────────────────────────────────────────────────────
 
@@ -97,14 +96,17 @@ const POLL_EVERY: u16 = 15;
 /// Footswitch tap threshold: 30 polls × ~10ms = 300ms.
 const TAP_LIMIT: u16 = 30;
 
-/// Number of effects in the curated list.
-const NUM_EFFECTS: usize = 15;
+/// Number of effects in the curated list (derived from shared constant).
+const NUM_EFFECTS: usize = PEDAL_EFFECT_IDS.len();
+
+/// Compile-time assertion: PEDAL_EFFECT_IDS length matches our knob map count.
+const _: () = assert!(PEDAL_EFFECT_IDS.len() == NUM_EFFECTS);
 
 // ── Curated Effect List ─────────────────────────────────────────────────────
 
-/// Knob-to-parameter mapping entry for one effect.
+/// Knob-to-parameter mapping per effect, parallel to [`PEDAL_EFFECT_IDS`].
 ///
-/// Each effect has 6 knob slots mapped to specific parameter indices.
+/// Each entry has 6 knob slots mapped to specific parameter indices.
 /// `NULL_KNOB` (0xFF) means the knob is inactive for this effect.
 ///
 /// Consistent knob roles for muscle memory:
@@ -114,14 +116,6 @@ const NUM_EFFECTS: usize = 15;
 /// - K4: Character (mode/shape, often STEPPED)
 /// - K5: Mix (wet/dry blend)
 /// - K6: Level (output/makeup gain) — **morph mode: morph speed**
-struct EffectEntry {
-    /// Registry ID for logging.
-    id: &'static str,
-    /// Knob-to-param-index mapping: `knobs[k]` = param index for knob K.
-    knobs: [u8; 6],
-}
-
-/// 14 curated effects ordered chillest → gnarliest.
 ///
 /// Verified parameter indices from kernel implementations.
 /// `--` = `NULL_KNOB`. **(S)** = STEPPED (snaps at morph midpoint).
@@ -143,72 +137,27 @@ struct EffectEntry {
 /// |12 | bitcrusher | 0:Bits(S)   | 1:Down(S)    | 2:Jitter     | --            | 3:Mix| 4:Out   |
 /// |13 | ringmod    | 0:Freq      | 1:Depth      | 2:Wave(S)    | --            | 3:Mix| 4:Out   |
 /// |14 | looper     | 0:Mode(S)   | 1:Feedback   | 2:HalfSpd(S) | 3:Reverse(S)  | 4:Mix| 5:Out   |
-const EFFECT_LIST: [EffectEntry; NUM_EFFECTS] = [
-    EffectEntry {
-        id: "filter",
-        knobs: [0, 1, 3, NULL_KNOB, NULL_KNOB, 2],
-    },
-    EffectEntry {
-        id: "tremolo",
-        knobs: [0, 1, 2, 3, NULL_KNOB, 6],
-    },
-    EffectEntry {
-        id: "vibrato",
-        knobs: [0, NULL_KNOB, NULL_KNOB, NULL_KNOB, 1, 2],
-    },
-    EffectEntry {
-        id: "chorus",
-        knobs: [0, 1, 4, 3, 2, 8],
-    },
-    EffectEntry {
-        id: "phaser",
-        knobs: [0, 1, 2, 3, 4, 9],
-    },
-    EffectEntry {
-        id: "flanger",
-        knobs: [0, 1, 2, 4, 3, 7],
-    },
-    EffectEntry {
-        id: "delay",
-        knobs: [0, 1, 4, 3, 2, 9],
-    },
-    EffectEntry {
-        id: "reverb",
-        knobs: [0, 1, 2, 3, 4, 7],
-    },
-    EffectEntry {
-        id: "tape",
-        knobs: [0, 1, 2, 4, 5, 9],
-    },
-    EffectEntry {
-        id: "compressor",
-        knobs: [0, 1, 2, 3, 10, 4],
-    },
-    EffectEntry {
-        id: "wah",
-        knobs: [0, 1, 2, 3, NULL_KNOB, 4],
-    },
-    EffectEntry {
-        id: "distortion",
-        knobs: [0, 1, 3, 5, 4, 2],
-    },
-    EffectEntry {
-        id: "bitcrusher",
-        knobs: [0, 1, 2, NULL_KNOB, 3, 4],
-    },
-    EffectEntry {
-        id: "ringmod",
-        knobs: [0, 1, 2, NULL_KNOB, 3, 4],
-    },
-    EffectEntry {
-        id: "looper",
-        knobs: [0, 1, 2, 3, 4, 5],
-    },
+const KNOB_MAPS: [[u8; 6]; NUM_EFFECTS] = [
+    [0, 1, 3, NULL_KNOB, NULL_KNOB, 2], // filter
+    [0, 1, 2, 3, NULL_KNOB, 6],         // tremolo
+    [0, NULL_KNOB, NULL_KNOB, NULL_KNOB, 1, 2], // vibrato
+    [0, 1, 4, 3, 2, 8],                 // chorus
+    [0, 1, 2, 3, 4, 9],                 // phaser
+    [0, 1, 2, 4, 3, 7],                 // flanger
+    [0, 1, 4, 3, 2, 9],                 // delay
+    [0, 1, 2, 3, 4, 7],                 // reverb
+    [0, 1, 2, 4, 5, 9],                 // tape
+    [0, 1, 2, 3, 10, 4],                // compressor
+    [0, 1, 2, 3, NULL_KNOB, 4],         // wah
+    [0, 1, 3, 5, 4, 2],                 // distortion
+    [0, 1, 2, NULL_KNOB, 3, 4],         // bitcrusher
+    [0, 1, 2, NULL_KNOB, 3, 4],         // ringmod
+    [0, 1, 2, 3, 4, 5],                 // looper
 ];
 
-/// Parallel to EFFECT_LIST: `KernelParams::COUNT` per entry (compile-time guard).
+/// Parallel to [`KNOB_MAPS`]: `KernelParams::COUNT` per entry (compile-time guard).
 ///
-/// If a knob index in EFFECT_LIST exceeds the effect's param count, the
+/// If a knob index in `KNOB_MAPS` exceeds the effect's param count, the
 /// `const _: ()` assertion below fires a compile-time error.
 const EFFECT_PARAM_COUNTS: [u8; NUM_EFFECTS] = {
     use sonido_core::kernel::KernelParams;
@@ -231,13 +180,13 @@ const EFFECT_PARAM_COUNTS: [u8; NUM_EFFECTS] = {
     ]
 };
 
-/// Compile-time assertion: every knob index in EFFECT_LIST is within bounds.
+/// Compile-time assertion: every knob index in `KNOB_MAPS` is within bounds.
 const _: () = {
     let mut i = 0;
     while i < NUM_EFFECTS {
         let mut k = 0;
         while k < 6 {
-            let pidx = EFFECT_LIST[i].knobs[k];
+            let pidx = KNOB_MAPS[i][k];
             if pidx != NULL_KNOB {
                 assert!(
                     (pidx as usize) < (EFFECT_PARAM_COUNTS[i] as usize),
@@ -308,10 +257,10 @@ fn toggle_to_topology(val: u8) -> Topology {
 /// Node ID type re-exported for convenience.
 use sonido_core::graph::NodeId;
 
-/// Create an effect by `EFFECT_LIST` index. Returns `None` for out-of-range.
+/// Create an effect by [`PEDAL_EFFECT_IDS`] index. Returns `None` for out-of-range.
 ///
 /// Each arm wraps a `DspKernel` in `Adapter<K, DirectPolicy>` for zero-smoothing
-/// `Effect + ParameterInfo`. Replaces `EffectRegistry` — we know our 14
+/// `Effect + ParameterInfo`. Replaces `EffectRegistry` — we know our 15
 /// effects at compile time.
 fn create_effect(idx: usize, sr: f32) -> Option<Box<dyn EffectWithParams + Send>> {
     match idx {
@@ -387,7 +336,7 @@ impl SlotSnapshot {
 
 /// Per-node state — each of the 3 DAG slots has independent A/B snapshots.
 struct NodeState {
-    /// Index into `EFFECT_LIST`, or `None` if slot is empty (passthrough).
+    /// Index into [`PEDAL_EFFECT_IDS`], or `None` if slot is empty (passthrough).
     effect_index: Option<usize>,
     /// A-state parameter snapshot. Always populated once an effect is selected.
     params_a: SlotSnapshot,
@@ -457,7 +406,7 @@ fn scroll_effect(nodes: &mut [NodeState; NUM_SLOTS], node_idx: usize, delta: i32
 
 /// One slot in a factory preset — defines the effect and A/B parameter values.
 struct FactorySlot {
-    /// Index into `EFFECT_LIST`, or `None` for passthrough.
+    /// Index into [`PEDAL_EFFECT_IDS`], or `None` for passthrough.
     effect_idx: Option<usize>,
     /// A-state parameter values in descriptor units.
     params_a: [f32; MAX_PARAMS],
@@ -821,55 +770,6 @@ fn apply_all_snapshots(
     }
 }
 
-// ── MIDI event handler ──────────────────────────────────────────────────────
-
-/// Process a single MIDI event into the control buffer.
-///
-/// Maps CC 0–5 to knobs, CC 11 to expression pedal, and MIDI Clock to tap
-/// tempo. Called per USB-MIDI packet once the USB task is spawned. See the
-/// TODO comment block in `main` for USB task setup.
-#[allow(dead_code)]
-fn process_midi_event(
-    event: &MidiEvent,
-    controls: &HothouseBuffer,
-    tap_tempo: &mut TapTempo,
-    now_ticks: u64,
-) {
-    if event.is_cc() {
-        match event.cc_number() {
-            // CC 0–5 → knobs 0–5 (normalized 0.0–1.0 from 7-bit MIDI value).
-            0..=5 => {
-                let knob_idx = event.cc_number() as usize;
-                let normalized = event.cc_value() as f32 / 127.0;
-                // Write with alpha=1.0 (no IIR smoothing — MIDI is already smooth).
-                controls.write_knob(knob_idx, normalized, 1.0);
-            }
-            // CC 11 (Expression) → expression pedal value.
-            11 => {
-                let normalized = event.cc_value() as f32 / 127.0;
-                controls.write_expression(normalized);
-            }
-            _ => {}
-        }
-    } else if event.is_clock() {
-        // MIDI Clock fires 24× per beat. Divide down to 1 tap per beat.
-        let count = MIDI_CLOCK_DIV.fetch_add(1, Ordering::Relaxed);
-        if count == 0 {
-            tap_tempo.tap(now_ticks);
-        }
-        if count >= 23 {
-            MIDI_CLOCK_DIV.store(0, Ordering::Relaxed);
-        }
-    } else if event.is_start() {
-        // MIDI Start: reset divider so first clock triggers a tap.
-        MIDI_CLOCK_DIV.store(0, Ordering::Relaxed);
-    } else if event.is_stop() {
-        // MIDI Stop: reset divider; no more taps until next Start.
-        MIDI_CLOCK_DIV.store(0, Ordering::Relaxed);
-    }
-    // Program Change → preset load handled in the poll loop where preset state lives.
-}
-
 // ── Preset serialization ────────────────────────────────────────────────────
 
 /// Capture current pedal state into a [`PresetSlot`] for persistence.
@@ -926,11 +826,6 @@ async fn milestone(controls: &HothouseBuffer) {
 
 /// Global bypass flag — audio callback checks this.
 static BYPASSED: AtomicBool = AtomicBool::new(false);
-
-/// MIDI clock divider counter (0–23). MIDI clock fires 24× per beat;
-/// `TapTempo` expects ~1 tap per beat. Only the first of every 24 clocks
-/// triggers a tap.
-static MIDI_CLOCK_DIV: AtomicU8 = AtomicU8::new(0);
 
 // ── Deferred D-cache ────────────────────────────────────────────────────────
 
@@ -989,6 +884,13 @@ unsafe fn write_boot_count(count: u8) {
 ///
 /// TODO: replace raw pointer writes with `embassy_stm32::iwdg::IndependentWatchdog`
 ///       once the HAL adds stm32h750ib support.
+///
+/// # Safety
+///
+/// Uses direct IWDG register access because embassy-stm32 0.5 does not
+/// expose `IndependentWatchdog` for STM32H750. Raw writes are safe:
+/// IWDG registers are write-only control with no read-back side effects.
+/// KR=0x5555 unlocks PR/RLR, KR=0xCCCC starts watchdog, KR=0xAAAA feeds it.
 ///
 /// # Register-level fallback (current)
 ///
@@ -1149,44 +1051,35 @@ async fn main(spawner: embassy_executor::Spawner) {
     let mut tap_tempo = TapTempo::new();
     let mut tempo_manager = TempoManager::new(SAMPLE_RATE, 120.0);
 
-    // ── Expression pedal ─────────────────────────────────────────────────────
-    let mut expression = ExpressionInput::new();
-
-    // ── MIDI ─────────────────────────────────────────────────────────────────
-    // TODO: Spawn USB MIDI task
-    // let usb_driver = embassy_stm32::usb::Driver::new(p.USB_OTG_FS, irqs, p.PA12, p.PA11, &mut ep_out_buffer, config);
-    // let mut midi_config = embassy_usb::Config::new(0x1209, 0x0001);
-    // midi_config.manufacturer = Some("Ampactor Labs");
-    // midi_config.product = Some("Sonido Pedal");
-    // midi_config.serial_number = Some("00000001");
-    // spawner.spawn(usb_task(usb_device)).unwrap();
-    // spawner.spawn(usb_midi_task(usb_driver, midi_handler)).unwrap();
-    //
-    // When the USB task is live, received 4-byte packets are dispatched via:
-    //   if let Some(event) = midi.parse_packet(&packet) {
-    //       process_midi_event(&event, &CONTROLS, &mut tap_tempo,
-    //                          embassy_time::Instant::now().as_ticks());
-    //   }
-    let _midi = MidiHandler::new();
-
     // ── QSPI preset persistence ───────────────────────────────────────────────
-    // Preset RAM buffer (4 KB).  On boot we'd read from QSPI flash into this
-    // buffer and deserialize with PresetStore.  Writing back is deferred until
+    // Preset RAM buffer (4 KB). On boot we read from QSPI flash into this
+    // buffer and deserialize with PresetStore. Writing back is deferred until
     // save_debounce fires.
     let mut preset_buffer = [0xFFu8; sonido_daisy::qspi::PRESET_SECTOR_SIZE];
     let mut user_presets: [Option<PresetSlot>; MAX_USER_PRESETS] = [None; MAX_USER_PRESETS];
-    // On boot: init buffer and attempt to load user presets.
+    // On boot: read QSPI flash into RAM buffer, then attempt to load user presets.
+    //
+    // NOTE: QspiPresetStore hardware driver is not yet implemented (see
+    // qspi.rs TODO). When it ships, wire it in here:
+    //
+    //   if let Ok(mut qspi_store) = QspiPresetStore::new(qspi_peripheral) {
+    //       if qspi_store.read_sector(&mut preset_buffer).is_ok() {
+    //           // Buffer populated from flash — PresetStore will parse it below.
+    //       }
+    //       // else: buffer stays 0xFF → fresh factory defaults (valid fallback)
+    //   }
     {
         use sonido_daisy::qspi::PresetStore;
-        let mut store = PresetStore::new(&mut preset_buffer);
-        // TODO: Read from QSPI flash into preset_buffer before constructing store:
-        // qspi.read(PRESET_SECTOR_ADDR, &mut preset_buffer).unwrap();
+        let store = PresetStore::new(&mut preset_buffer);
         let header = store.header();
         if header.is_valid() {
             user_presets = store.load_all();
             defmt::info!("QSPI: loaded {} user presets", header.count);
         } else {
             // No valid data — initialize empty store in RAM.
+            // (Re-borrow as mutable only when we need to write.)
+            drop(store);
+            let mut store = PresetStore::new(&mut preset_buffer);
             store.init_empty();
             defmt::info!("QSPI: no valid presets, starting empty");
         }
@@ -1457,7 +1350,7 @@ async fn main(spawner: embassy_executor::Spawner) {
                     defmt::info!(
                         "node {} ← {}",
                         focused_node + 1,
-                        EFFECT_LIST[nodes[focused_node].browse_cursor].id
+                        PEDAL_EFFECT_IDS[nodes[focused_node].browse_cursor]
                     );
                 }
 
@@ -1484,7 +1377,7 @@ async fn main(spawner: embassy_executor::Spawner) {
                     defmt::info!(
                         "node {} → {}",
                         focused_node + 1,
-                        EFFECT_LIST[nodes[focused_node].browse_cursor].id
+                        PEDAL_EFFECT_IDS[nodes[focused_node].browse_cursor]
                     );
                 }
 
@@ -1513,35 +1406,18 @@ async fn main(spawner: embassy_executor::Spawner) {
             fs1_was_pressed = fs1_pressed;
             fs2_was_pressed = fs2_pressed;
 
-            // ── 5b. Expression pedal update ──
-            // Update expression processor with the latest value from ControlBuffer.
-            // The hothouse control task writes CONTROLS.write_expression() from the
-            // ADC channel wired to the TRS expression jack.
-            //
-            // TODO (hothouse.rs): In hothouse_control_task, read the expression ADC
-            // channel and call: CONTROLS.write_expression(expr_raw as f32 / 65535.0);
-            expression.update(CONTROLS.read_expression());
-
-            // In morph mode: expression pedal overrides morph_t when connected.
-            if ab_mode == AbMode::Morph && expression.is_connected() {
-                morph_t = expression.value();
-            }
-
-            // ── 5c. Tap tempo: BPM → TempoManager ──
+            // ── 5b. Tap tempo: BPM → TempoManager ──
             // (Tap is triggered in section 5 footswitch handling for FS2 long-hold
             // in B-mode; here we flush any new BPM into the TempoManager.)
             if let Some(bpm) = tap_tempo.bpm() {
                 tempo_manager.set_bpm(bpm);
             }
 
-            // ── 5d. Save debounce countdown ──
+            // ── 5c. Save debounce countdown ──
             if save_debounce > 0 {
                 save_debounce -= 1;
                 if save_debounce == 0 && ab_mode != AbMode::Morph {
                     // Auto-save: serialize current state into RAM preset buffer.
-                    // TODO: after writing to preset_buffer, flush to QSPI flash:
-                    // qspi.sector_erase(PRESET_SECTOR_ADDR);
-                    // qspi.write(PRESET_SECTOR_ADDR, &preset_buffer);
                     let preset = current_state_to_preset_slot(&nodes, topology);
                     if active_preset == 0xFF {
                         active_preset = 0;
@@ -1551,6 +1427,15 @@ async fn main(spawner: embassy_executor::Spawner) {
                         let mut store = PresetStore::new(&mut preset_buffer);
                         store.save(active_preset, &preset);
                     }
+                    // Persist RAM buffer to QSPI flash.
+                    //
+                    // NOTE: QspiPresetStore hardware driver is not yet implemented.
+                    // When it ships, flush here:
+                    //
+                    //   if let Some(ref mut qspi_store) = qspi_hw {
+                    //       qspi_store.erase_sector().ok();
+                    //       qspi_store.write_sector(&preset_buffer).ok();
+                    //   }
                     user_presets[active_preset] = Some(preset);
                     defmt::info!("auto-saved preset slot {}", active_preset);
                 }
@@ -1561,22 +1446,23 @@ async fn main(spawner: embassy_executor::Spawner) {
                 if let Some(eff_idx) = nodes[focused_node].effect_index
                     && let Some(nid) = node_ids[focused_node]
                 {
-                    let entry = &EFFECT_LIST[eff_idx];
+                    let knobs = &KNOB_MAPS[eff_idx];
+                    let effect_id = PEDAL_EFFECT_IDS[eff_idx];
 
                     let platform = sonido_daisy::hothouse::HothousePlatform::new(&CONTROLS);
                     use sonido_platform::PlatformController;
-                    
+
                     // Compute param values using descriptors (immutable borrow first).
                     let mut param_vals: [(u8, f32); 6] = [(NULL_KNOB, 0.0); 6];
                     if let Some(effect) = graph.effect_with_params_ref(nid) {
                         for k in 0..6 {
                             let ctrl_id = sonido_platform::ControlId::hardware(k as u8);
                             if let Some(state) = platform.read_control(ctrl_id) {
-                                // Since we poll continuously in A/B mode we act on the absolute value regardless 
+                                // Since we poll continuously in A/B mode we act on the absolute value regardless
                                 // of `state.changed` to ensure the snapshot perfectly matches hardware state.
-                                let param_idx = entry.knobs[k] as usize;
+                                let param_idx = knobs[k] as usize;
                                 if let Some(desc) = effect.effect_param_info(param_idx) {
-                                    let noon = noon_presets::noon_value(entry.id, param_idx)
+                                    let noon = noon_presets::noon_value(effect_id, param_idx)
                                         .unwrap_or(desc.default);
                                     let val = adc_to_param_biased(&desc, noon, state.value);
                                     
@@ -1747,7 +1633,7 @@ async fn main(spawner: embassy_executor::Spawner) {
 
                 let effect_id = nodes[focused_node]
                     .effect_index
-                    .map_or("", |idx| EFFECT_LIST[idx].id);
+                    .map_or("", |idx| PEDAL_EFFECT_IDS[idx]);
                 let effect_ref =
                     node_ids[focused_node].and_then(|nid| graph.effect_with_params_ref(nid));
 

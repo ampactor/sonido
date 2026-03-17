@@ -1,4 +1,6 @@
 //! Impulse response capture via exponential sine sweep
+//!
+//! # Status: Scaffolded — sweep-based IR capture is implemented but not in the demo path.
 
 use std::f32::consts::PI;
 

@@ -9,6 +9,7 @@ authors.workspace = true
 [dependencies]
 sonido-core = { workspace = true, features = ["std"] }
 sonido-registry = { workspace = true, features = ["std"] }
+sonido-config = { workspace = true, features = ["std"] }
 
 thiserror = { workspace = true }
 tracing = { workspace = true }
