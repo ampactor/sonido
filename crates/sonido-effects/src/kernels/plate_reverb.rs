@@ -553,6 +553,10 @@ impl PlateReverbKernel {
 impl DspKernel for PlateReverbKernel {
     type Params = PlateReverbParams;
 
+    fn is_true_stereo(&self) -> bool {
+        true
+    }
+
     fn process_stereo(&mut self, left: f32, right: f32, params: &Self::Params) -> (f32, f32) {
         self.update_derived(
             params.decay_s,

@@ -490,6 +490,6 @@ mod tests {
 
     #[test]
     fn max_split_targets_is_at_least_two() {
-        assert!(MAX_SPLIT_TARGETS >= 2);
+        const { assert!(MAX_SPLIT_TARGETS >= 2) };
     }
 }
