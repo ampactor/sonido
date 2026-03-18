@@ -597,8 +597,9 @@ impl DspKernel for PlateReverbKernel {
         let max_tap_r = (self.tank_delay[1].capacity() - 2) as f32;
         let tap_l = (533.0 * self.sample_rate / REF_RATE).clamp(1.0, max_tap_l);
         let tap_r = (889.0 * self.sample_rate / REF_RATE).clamp(1.0, max_tap_r);
-        let wet_l = flush_denormal(self.tank_delay[0].read(tap_l));
-        let wet_r = flush_denormal(self.tank_delay[1].read(tap_r));
+        const WET_SCALE: f32 = 0.35;
+        let wet_l = flush_denormal(self.tank_delay[0].read(tap_l)) * WET_SCALE;
+        let wet_r = flush_denormal(self.tank_delay[1].read(tap_r)) * WET_SCALE;
 
         // Read full-length delay for cross-recirculation feedback
         let fb_from_r = self.tank_delay[1].read(self.tank_delay_len[1]);

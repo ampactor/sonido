@@ -46,6 +46,7 @@
 
 use libm::{expf, powf};
 use sonido_core::kernel::{DspKernel, KernelParams, SmoothingStyle};
+use sonido_core::math::soft_limit;
 use sonido_core::{
     AllpassFilter, InterpolatedDelay, OnePole, ParamDescriptor, ParamId, ParamUnit, db_to_linear,
     flush_denormal, wet_dry_mix,
@@ -459,17 +460,20 @@ impl DspKernel for SpringReverbKernel {
             dispersed = ap.process(dispersed);
         }
 
-        // 4. Damp and write into feedback delay
+        // 4. Safety limiter on dispersed signal to prevent feedback runaway
+        let dispersed = soft_limit(dispersed, 1.5);
+
+        // 5. Damp and write into feedback delay
         let damped = flush_denormal(self.fb_damp.process(dispersed));
         self.fb_delay.write(damped);
 
-        // 5. Update feedback state for next sample
+        // 6. Update feedback state for next sample
         self.fb_state = fb_out * self.feedback_gain;
 
-        // 6. Wet output is the feedback delay output (the recirculated, dispersed signal)
+        // 7. Wet output is the feedback delay output (the recirculated, dispersed signal)
         let wet = flush_denormal(fb_out);
 
-        // 7. Wet/dry mix → gain
+        // 8. Wet/dry mix → gain
         let gain = db_to_linear(params.output_db);
         let mixed = wet_dry_mix(mono, wet, params.mix_pct * 0.01) * gain;
 
