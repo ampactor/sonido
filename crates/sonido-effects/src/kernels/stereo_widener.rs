@@ -67,8 +67,7 @@ use sonido_core::biquad::{highpass_coefficients, lowpass_coefficients};
 use sonido_core::kernel::{DspKernel, KernelParams, SmoothingStyle};
 use sonido_core::math::ms_to_samples;
 use sonido_core::{
-    Biquad, Cached, InterpolatedDelay, ParamDescriptor, ParamId, ParamScale, ParamUnit,
-    fast_db_to_linear,
+    Biquad, Cached, InterpolatedDelay, ParamDescriptor, ParamId, ParamUnit, fast_db_to_linear,
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
