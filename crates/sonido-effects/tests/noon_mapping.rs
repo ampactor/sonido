@@ -1,23 +1,21 @@
-//! Host-side verification of the Daisy noon preset table and biased knob mapping.
+//! Host-side verification of noon presets and biased knob mapping.
 //!
-//! The noon presets and `adc_to_param_biased` live in `sonido-daisy` (a `no_std`
-//! Cortex-M7 crate) where unit tests can't run. Both are pure math depending only
-//! on `ParamDescriptor`, so we inline them here with `std` math substitutions
-//! (`f32::log2` instead of `libm::log2f`, etc.) and run exhaustive checks against
-//! every registered effect.
+//! The biased ADC mapping (`adc_to_param_biased`) lives in `sonido-daisy`
+//! (no_std Cortex-M7) where unit tests can't run. It's pure math depending
+//! only on `ParamDescriptor`, so we inline it here with `std` math
+//! substitutions and run exhaustive checks against every registered effect.
+//!
+//! The noon preset table itself lives in `sonido_core::noon` (single source
+//! of truth) — no inlined copy needed.
 
 mod helpers;
 
 use helpers::{all_ids_from, assert_no_violations};
+use sonido_core::noon::{HARDWARE_MAPPED, noon_value};
 use sonido_core::{ParamFlags, ParamScale};
 use sonido_registry::EffectRegistry;
 
 const SAMPLE_RATE: f32 = 48000.0;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// NOTE: This file does NOT use `all_ids()` — it uses `all_ids_from(&registry)`
-// to avoid constructing a second EffectRegistry per test.
-// ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Inlined from crates/sonido-daisy/src/param_map.rs — keep in sync
@@ -68,67 +66,33 @@ fn adc_to_param_biased(desc: &sonido_core::ParamDescriptor, noon: f32, normalize
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Inlined from crates/sonido-daisy/src/noon_presets.rs — keep in sync
+// Test A: Noon Coverage for Hardware-Mapped Effects
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn noon_value(effect_id: &str, param_idx: usize) -> Option<f32> {
-    let values: &[f32] = match effect_id {
-        "distortion" => &[8.0, 0.0, 0.0, 0.0, 50.0, 0.0],
-        "preamp" => &[0.0, 0.0, 0.0],
-        "compressor" => &[-18.0, 4.0, 10.0, 100.0, 0.0, 6.0, 0.0, 80.0, 0.0, 0.0, 50.0],
-        "gate" => &[-40.0, 1.0, 100.0, 50.0, -80.0, 3.0, 80.0, 0.0],
-        "eq" => &[100.0, 0.0, 1.0, 500.0, 0.0, 1.0, 5000.0, 0.0, 1.0, 0.0],
-        "wah" => &[800.0, 5.0, 50.0, 0.0, 0.0],
-        "chorus" => &[1.0, 50.0, 50.0, 2.0, 0.0, 15.0, 0.0, 3.0, 0.0],
-        "flanger" => &[0.5, 35.0, 50.0, 50.0, 0.0, 0.0, 3.0, 0.0],
-        "phaser" => &[0.3, 50.0, 6.0, 50.0, 50.0, 20.0, 4000.0, 0.0, 3.0, 0.0],
-        "tremolo" => &[5.0, 50.0, 0.0, 0.0, 0.0, 3.0, 0.0],
-        "delay" => &[300.0, 40.0, 50.0, 0.0, 20000.0, 20.0, 0.0, 0.0, 2.0, 0.0],
-        "filter" => &[1000.0, 0.707, 0.0, 0.0],
-        "vibrato" => &[100.0, 50.0, 0.0],
-        "tape" => &[6.0, 30.0, 12000.0, 0.0, 0.3, 0.2, 0.15, 0.3, 80.0, -6.0],
-        "reverb" => &[50.0, 50.0, 30.0, 10.0, 50.0, 100.0, 50.0, 0.0],
-        "limiter" => &[-6.0, -0.3, 100.0, 5.0, 0.0],
-        "bitcrusher" => &[8.0, 1.0, 0.0, 50.0, 0.0],
-        "ringmod" => &[440.0, 50.0, 0.0, 50.0, 0.0],
-        "stage" => &[
-            0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 120.0, 0.0, 0.0, 0.0,
-        ],
-        "looper" => &[0.0, 80.0, 0.0, 0.0, 50.0, 0.0],
-        _ => return None,
-    };
-    values.get(param_idx).copied()
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Test A: Noon Coverage Completeness
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Every writable (non-READ_ONLY) parameter must have a noon preset.
-/// READ_ONLY diagnostic params must NOT have one.
+/// Every writable (non-READ_ONLY) parameter of a hardware-mapped effect must
+/// have a noon preset. Effects not in `HARDWARE_MAPPED` are not checked.
 #[test]
-fn noon_coverage_completeness() {
+fn noon_coverage_hardware_mapped() {
     let registry = EffectRegistry::new();
     let mut violations = Vec::new();
 
-    for id in all_ids_from(&registry) {
-        let effect = registry.create(&id, SAMPLE_RATE).unwrap();
+    for &id in HARDWARE_MAPPED {
+        let Some(effect) = registry.create(id, SAMPLE_RATE) else {
+            violations.push(format!(
+                "  {id}: listed in HARDWARE_MAPPED but not in registry"
+            ));
+            continue;
+        };
         let count = effect.effect_param_count();
 
         for idx in 0..count {
             if let Some(desc) = effect.effect_param_info(idx) {
                 let is_read_only = desc.flags.contains(ParamFlags::READ_ONLY);
-                let has_noon = noon_value(&id, idx).is_some();
+                let has_noon = noon_value(id, idx).is_some();
 
                 if !is_read_only && !has_noon {
                     violations.push(format!(
                         "  {id}[{idx}] \"{}\": writable param missing noon preset",
-                        desc.name
-                    ));
-                }
-                if is_read_only && has_noon {
-                    violations.push(format!(
-                        "  {id}[{idx}] \"{}\": READ_ONLY param has unnecessary noon preset",
                         desc.name
                     ));
                 }
@@ -137,8 +101,8 @@ fn noon_coverage_completeness() {
     }
 
     assert_no_violations(
-        "noon_coverage_completeness",
-        "every writable param needs a noon preset; READ_ONLY params must not have one",
+        "noon_coverage_hardware_mapped",
+        "every writable param of a hardware-mapped effect needs a noon preset",
         violations,
     );
 }
