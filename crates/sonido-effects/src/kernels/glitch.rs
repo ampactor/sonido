@@ -37,7 +37,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 use sonido_core::kernel::{DspKernel, KernelParams, SmoothingStyle};
 use sonido_core::{
-    ParamDescriptor, ParamFlags, ParamId, ParamUnit, fast_db_to_linear, wet_dry_mix,
+    ParamDescriptor, ParamFlags, ParamId, ParamScale, ParamUnit, fast_db_to_linear, wet_dry_mix,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -122,6 +122,7 @@ impl KernelParams for GlitchParams {
             1 => Some(
                 ParamDescriptor::custom("Rate", "Rate", 1.0, 32.0, 4.0)
                     .with_unit(ParamUnit::Hertz)
+                    .with_scale(ParamScale::Logarithmic)
                     .with_id(ParamId(3501), "gl_rate"),
             ),
             2 => Some(

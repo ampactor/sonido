@@ -175,8 +175,7 @@ impl KernelParams for StereoWidenerParams {
                     step: 1.0,
                     ..ParamDescriptor::mix()
                 }
-                .with_id(ParamId(3102), "sw_bass_mono")
-                .with_scale(ParamScale::Logarithmic),
+                .with_id(ParamId(3102), "sw_bass_mono"),
             ),
             3 => Some(
                 sonido_core::gain::output_param_descriptor().with_id(ParamId(3103), "sw_output"),

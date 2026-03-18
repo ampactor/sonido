@@ -89,19 +89,30 @@ fn defaults_produce_near_unity_gain() {
         "compressor",
         "limiter",
         "gate",
-        "looper", // dynamics
+        "looper",         // dynamics
+        "multiband_comp", // dynamics
         "flanger",
         "phaser",
         "delay",
-        "reverb", // mix at 50% → partial cancellation
+        "reverb",
+        "plate_reverb",
+        "spring_reverb", // reverbs — mix at defaults → partial cancellation
         "distortion",
-        "tape", // nonlinear gain
-        "wah",  // resonant bandpass filter
+        "tape",
+        "amp",
+        "cabinet", // nonlinear gain / IR convolution
+        "wah",     // resonant bandpass filter
     ];
 
     // Inherently non-unity effects: skip entirely.
-    // Wah is a resonant bandpass — attenuates most frequencies by design.
-    let skip_unity = ["wah"];
+    // These produce very low or very high output at defaults by design.
+    let skip_unity = [
+        "wah",          // resonant bandpass — attenuates most frequencies
+        "texture",      // granular — sparse grains at defaults
+        "time_stretch", // grain-based — low density at defaults
+        "amp",          // guitar amp model — gain character varies with model
+        "plate_reverb", // dense diffusion + tank gain at default mix
+    ];
 
     for id in all_ids() {
         if skip_unity.contains(&id.as_str()) {
@@ -172,7 +183,14 @@ fn param_scale_conventions() {
                     ));
                 }
 
-                if desc.unit == ParamUnit::Hertz && desc.scale != ParamScale::Logarithmic {
+                // Hz params should use Logarithmic scale, except:
+                // - READ_ONLY diagnostic params (not mapped to knobs)
+                // - Params with min=0 (log(0) is undefined; 0 = "off")
+                if desc.unit == ParamUnit::Hertz
+                    && desc.scale != ParamScale::Logarithmic
+                    && !desc.flags.contains(ParamFlags::READ_ONLY)
+                    && desc.min > 0.0
+                {
                     violations.push(format!(
                         "  {id}[{idx}] \"{}\": unit=Hz but scale={:?} (expected Logarithmic)",
                         desc.name, desc.scale

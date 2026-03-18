@@ -47,7 +47,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use sonido_core::kernel::{DspKernel, KernelParams, SmoothingStyle};
-use sonido_core::{ParamDescriptor, ParamFlags, ParamId, ParamUnit, fast_db_to_linear};
+use sonido_core::{ParamDescriptor, ParamFlags, ParamId, ParamScale, ParamUnit, fast_db_to_linear};
 
 /// YIN threshold: lower = more accurate but more misses; 0.15 is a good balance.
 const YIN_THRESHOLD: f32 = 0.15;
@@ -117,6 +117,7 @@ impl KernelParams for TunerParams {
             0 => Some(
                 ParamDescriptor::custom("Reference", "Ref", 415.0, 465.0, 440.0)
                     .with_unit(ParamUnit::Hertz)
+                    .with_scale(ParamScale::Logarithmic)
                     .with_id(ParamId(2300), "tuner_reference"),
             ),
             1 => Some(
