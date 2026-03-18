@@ -44,6 +44,70 @@ Cleveland Music Co. Hothouse DIY pedal platform.
 **Total internal SRAM: 1 MB.** DTCM is fastest but only 128 KB.
 AXI SRAM (512 KB) is the primary working memory for DSP allocations.
 
+### Memory Budget
+
+Per-effect heap usage for the 15 pedal effects (`sonido_registry::PEDAL_EFFECT_IDS`),
+measured from kernel `new()` buffer allocations at 48 kHz. The Adapter wrapper adds
+a `Vec<SmoothedParam>` proportional to param count (~40 B per param); this is included
+in the "Adapter overhead" column but is negligible compared to DSP buffers.
+
+| Effect | Kernel heap (bytes) | Adapter overhead | Total | Notes |
+|--------|-------------------:|----------------:|---------:|-------|
+| filter | 0 | ~160 | **~160** | 2× Biquad + Cached (all stack) |
+| tremolo | 0 | ~320 | **~320** | 2× Lfo + TempoManager (all stack) |
+| vibrato | 0 | ~120 | **~120** | 12× `FixedDelayLine<256>` — stack arrays, no heap |
+| chorus | 23,040 | ~400 | **~23,440** | 4× `InterpolatedDelay` (30 ms × 48 kHz = 1,440 samples each) |
+| phaser | 0 | ~440 | **~440** | 2× 12 first-order allpass (stack), 2× Lfo |
+| flanger | 7,696 | ~360 | **~8,056** | 4× `InterpolatedDelay` (10 ms max, wet + dry L/R) |
+| delay | 771,840 | ~560 | **~772,400** | 2× `InterpolatedDelay` (2 s = 96,000 samples each) + 4× diffusion allpass (13 ms + 7 ms) |
+| reverb | 115,840 | ~520 | **~116,360** | 8× FDN delay + 8× `ModulatedAllpass` + ER tapped delay + 2× predelay (100 ms) |
+| tape | 4,400 | ~400 | **~4,800** | 2× wow/flutter delay (10 ms) + 2× ADAA + biquads + LFOs |
+| compressor | 0 | ~440 | **~440** | 2× `EnvelopeFollower` + Biquad HPF (all stack) |
+| wah | 0 | ~200 | **~200** | 2× SVF + 1× `EnvelopeFollower` (all stack) |
+| distortion | 0 | ~240 | **~240** | 8× ADAA + 2× Biquad + `EnvelopeFollower` (all stack) |
+| bitcrusher | 0 | ~200 | **~200** | ZOH state + PRNG (all stack) |
+| ringmod | 0 | ~200 | **~200** | Phase accumulator only (all stack) |
+| looper | 23,040,000 | ~240 | **~23,040,240** | 2× `Vec<f32>` at 60 s × 48 kHz = 2,880,000 samples per channel |
+
+#### Worst-Case 3-Slot Total
+
+The firmware runs up to 3 effects simultaneously. Worst-case combination:
+
+| Slot | Effect | Heap |
+|:----:|--------|-----:|
+| 1 | looper | 23,040,240 |
+| 2 | delay | 772,400 |
+| 3 | reverb | 116,360 |
+| | **Total** | **~23.9 MB** |
+
+The looper dominates — its 60-second stereo buffer alone exceeds AXI SRAM.
+Without the looper, the worst case (delay + reverb + chorus) is **~912 KB**.
+
+#### AXI SRAM Budget (512 KB)
+
+| Item | Bytes | Remaining |
+|------|------:|----------:|
+| AXI SRAM total | 524,288 | 524,288 |
+| Stack (ISR + tasks) | ~8,192 | 516,096 |
+| DMA audio buffers (2× stereo × 32 samples × 2 halves) | ~1,024 | 515,072 |
+| BSS / static state | ~4,096 | 510,976 |
+| **Available for effects** | | **~510 KB** |
+
+Most effects fit comfortably in AXI SRAM. The delay effect (772 KB) exceeds the
+available budget by itself — its 2-second stereo delay line must be placed in SDRAM.
+
+**Effects that fit in AXI SRAM (any 3):** filter, tremolo, vibrato, chorus, phaser,
+flanger, tape, compressor, wah, distortion, bitcrusher, ringmod. Worst 3-slot
+combination from this set: chorus + reverb + tape = ~144 KB.
+
+**Effects requiring SDRAM:**
+- **delay** — 772 KB (2 s stereo delay lines). Reduce `MAX_DELAY_S` to 0.5 s
+  to fit in AXI (~193 KB), or allocate delay buffers in SDRAM.
+- **looper** — 23 MB (60 s stereo buffer). Must use SDRAM. Note: SDRAM has
+  4–8 wait states; access patterns are sequential (read/write head), so the
+  latency penalty is acceptable.
+- **reverb** — 116 KB. Fits alone, but combined with delay requires careful budgeting.
+
 ### Audio Path
 
 ```

@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
 use sonido_config::Preset;
-use sonido_registry::EffectRegistry;
+use sonido_registry::{EffectRegistry, PEDAL_EFFECT_IDS};
 
 // ---------------------------------------------------------------------------
 // CLI types
@@ -41,7 +41,11 @@ pub enum DaisyCommand {
     /// Export a preset TOML to Daisy binary format
     Export {
         /// Path to preset TOML file
-        preset: PathBuf,
+        #[arg(conflicts_with = "from_dsl")]
+        preset: Option<PathBuf>,
+        /// DSL string to export directly (e.g., "distortion:drive=20|reverb:mix=30")
+        #[arg(long, conflicts_with = "preset")]
+        from_dsl: Option<String>,
         /// Output binary file
         #[arg(short, long)]
         output: PathBuf,
@@ -62,27 +66,6 @@ pub enum DaisyCommand {
 
 const MAGIC: u32 = 0x534F_4E44; // "SOND" in ASCII, little-endian
 const SECTOR_SIZE: usize = 4096;
-
-/// Ordered effect list that **must** match `EFFECT_LIST` in `sonido_pedal.rs`
-/// on the Daisy firmware side.  The index in this slice becomes `effect_idx`
-/// in the binary slot.
-const PEDAL_EFFECTS: &[&str] = &[
-    "filter",     // 0
-    "tremolo",    // 1
-    "vibrato",    // 2
-    "chorus",     // 3
-    "phaser",     // 4
-    "flanger",    // 5
-    "delay",      // 6
-    "reverb",     // 7
-    "tape",       // 8
-    "compressor", // 9
-    "wah",        // 10
-    "distortion", // 11
-    "bitcrusher", // 12
-    "ringmod",    // 13
-    "looper",     // 14
-];
 
 // ---------------------------------------------------------------------------
 // Binary structs
@@ -141,9 +124,14 @@ pub fn run(args: DaisyArgs) -> anyhow::Result<()> {
     match args.command {
         DaisyCommand::Export {
             preset,
+            from_dsl,
             output,
             slot,
-        } => export_preset(&preset, &output, slot),
+        } => match (preset, from_dsl) {
+            (Some(path), None) => export_preset(&path, &output, slot),
+            (None, Some(dsl)) => export_from_dsl(&dsl, &output, slot),
+            _ => anyhow::bail!("Provide either a preset TOML path or --from-dsl, not both"),
+        },
         DaisyCommand::Inspect { file } => inspect_binary(&file),
     }
 }
@@ -153,14 +141,25 @@ pub fn run(args: DaisyArgs) -> anyhow::Result<()> {
 // ---------------------------------------------------------------------------
 
 fn export_preset(preset_path: &Path, output_path: &Path, slot: u8) -> anyhow::Result<()> {
+    let preset = Preset::load(preset_path)
+        .map_err(|e| anyhow::anyhow!("Failed to load preset '{}': {}", preset_path.display(), e))?;
+    export_preset_obj(&preset, output_path, slot)
+}
+
+fn export_from_dsl(dsl: &str, output_path: &Path, slot: u8) -> anyhow::Result<()> {
+    let registry = EffectRegistry::new();
+    let snapshot = sonido_graph_dsl::snapshot_from_dsl(dsl, &registry)
+        .map_err(|e| anyhow::anyhow!("Failed to parse DSL: {}", e))?;
+    let preset = sonido_graph_dsl::snapshot_to_preset(&snapshot, "dsl_export", &registry);
+    export_preset_obj(&preset, output_path, slot)
+}
+
+/// Core export: Preset → binary sector file.
+fn export_preset_obj(preset: &Preset, output_path: &Path, slot: u8) -> anyhow::Result<()> {
     // Validate slot range.
     if slot > 7 {
         anyhow::bail!("Slot must be 0-7, got {}", slot);
     }
-
-    // Load TOML preset.
-    let preset = Preset::load(preset_path)
-        .map_err(|e| anyhow::anyhow!("Failed to load preset '{}': {}", preset_path.display(), e))?;
 
     // Validate effect count.
     if preset.effects.len() > 3 {
@@ -193,14 +192,17 @@ fn export_preset(preset_path: &Path, output_path: &Path, slot: u8) -> anyhow::Re
         let id = effect_cfg.effect_type.as_str();
 
         // Find the effect index in the pedal list.
-        let effect_idx = PEDAL_EFFECTS.iter().position(|&e| e == id).ok_or_else(|| {
-            anyhow::anyhow!(
-                "Effect '{}' is not available on the Daisy pedal. \
+        let effect_idx = PEDAL_EFFECT_IDS
+            .iter()
+            .position(|&e| e == id)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Effect '{}' is not available on the Daisy pedal. \
                      Available effects: {}",
-                id,
-                PEDAL_EFFECTS.join(", ")
-            )
-        })?;
+                    id,
+                    PEDAL_EFFECT_IDS.join(", ")
+                )
+            })?;
 
         // Create a temporary effect instance to read parameter descriptors.
         let effect = registry
@@ -220,6 +222,7 @@ fn export_preset(preset_path: &Path, output_path: &Path, slot: u8) -> anyhow::Re
                 defaults[idx] = desc.default;
                 name_to_index.insert(desc.name.to_lowercase(), idx);
                 name_to_index.insert(desc.short_name.to_lowercase(), idx);
+                name_to_index.insert(desc.string_id.to_string(), idx);
             }
         }
 
@@ -345,7 +348,7 @@ fn inspect_binary(file_path: &Path) -> anyhow::Result<()> {
 
     for i in 0..ps.num_slots.min(3) as usize {
         let es = &ps.effects[i];
-        let effect_name = PEDAL_EFFECTS
+        let effect_name = PEDAL_EFFECT_IDS
             .get(es.effect_idx as usize)
             .copied()
             .unwrap_or("<unknown>");
@@ -688,5 +691,30 @@ mod tests {
         assert_eq!(topology_byte_from_name(Some("parallel")), Some(1));
         assert_eq!(topology_byte_from_name(Some("fan")), Some(2));
         assert_eq!(topology_byte_from_name(Some("bogus")), None);
+    }
+
+    #[test]
+    fn export_from_dsl_creates_valid_binary() {
+        let dir = std::env::temp_dir();
+        let output = dir.join("test_dsl_export.bin");
+        export_from_dsl("distortion:drive=20 | reverb:mix=30", &output, 0).unwrap();
+
+        let data = std::fs::read(&output).unwrap();
+        assert_eq!(data.len(), SECTOR_SIZE);
+
+        // Check magic.
+        let magic = u32::from_le_bytes(data[0..4].try_into().unwrap());
+        assert_eq!(magic, MAGIC);
+
+        // Check two effects were serialized.
+        let ps = read_preset_slot(&data[8..]);
+        assert_eq!(ps.valid, 1);
+        assert_eq!(ps.num_slots, 2);
+
+        // distortion = index 11, reverb = index 7.
+        assert_eq!(ps.effects[0].effect_idx, 11);
+        assert_eq!(ps.effects[1].effect_idx, 7);
+
+        let _ = std::fs::remove_file(&output);
     }
 }
