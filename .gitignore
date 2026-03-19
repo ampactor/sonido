@@ -10,3 +10,7 @@ demos/smoke/
 CLAUDE.md
 docs/DSP_AUDIT.md
 docs/DIGITECH_RD_BRIEF.md
+.claude/
+.env
+.env.*
+!.env.example
