@@ -1335,6 +1335,6 @@ Additionally, noon preset values for mix parameters were changed from 100% (plug
 
 - `crates/sonido-daisy/src/param_map.rs` — `adc_to_param_biased()`, `interpolate_scaled()`
 - `crates/sonido-daisy/src/noon_presets.rs` — per-effect sweet-spot values
-- `crates/sonido-core/src/param_info.rs` — `ParamDescriptor::noon_aligned()` (kept but not applied)
+- `crates/sonido-platform/src/param_map.rs` — `adc_to_param_biased()`, noon mapping logic
 - ADR-028 — Kernel Architecture (parameter ownership)
 - ADR-029 — Hardware Serves the Kernel (design priority)

@@ -30,7 +30,7 @@
 //!
 //! ```bash
 //! cd crates/sonido-daisy
-//! cargo objcopy --example sonido_pedal --release -- -O binary -R .sram1_bss sonido_pedal.bin
+//! cargo objcopy --example sonido_pedal --release --features alloc,platform -- -O binary -R .sram1_bss sonido_pedal.bin
 //! dfu-util -a 0 -s 0x90040000:leave -D sonido_pedal.bin
 //! ```
 
@@ -53,20 +53,18 @@ use sonido_core::graph::ProcessingGraph;
 use sonido_core::kernel::Adapter;
 use sonido_core::{EffectWithParams, ParamFlags, TempoManager};
 use sonido_daisy::controls::HothouseBuffer;
+use sonido_daisy::effect_slot::{self, BypassCrossfade, sanitize_stereo};
 use sonido_daisy::hothouse::hothouse_control_task;
-use sonido_daisy::noon_presets;
 use sonido_daisy::qspi::{EffectSlotData, MAX_USER_PRESETS, PresetSlot};
 use sonido_daisy::tap_tempo::TapTempo;
 use sonido_daisy::{
-    BLOCK_SIZE, ClockProfile, SAMPLE_RATE, adc_to_param_biased, f32_to_u24, heartbeat,
-    led::UserLed, u24_to_f32,
+    BLOCK_SIZE, ClockProfile, SAMPLE_RATE, f32_to_u24, heartbeat, led::UserLed, u24_to_f32,
 };
+use sonido_platform::knob_mapping::{self, NULL_KNOB};
 use sonido_effects::{
-    BitcrusherKernel, BitcrusherParams, ChorusKernel, ChorusParams, CompressorKernel,
-    CompressorParams, DelayKernel, DelayParams, DistortionKernel, DistortionParams, FilterKernel,
-    FilterParams, FlangerKernel, FlangerParams, LooperKernel, LooperParams, PhaserKernel,
-    PhaserParams, ReverbKernel, ReverbParams, RingModKernel, RingModParams, TapeKernel, TapeParams,
-    TremoloKernel, TremoloParams, VibratoKernel, VibratoParams, WahKernel, WahParams,
+    BitcrusherKernel, ChorusKernel, CompressorKernel, DelayKernel, DistortionKernel, FilterKernel,
+    FlangerKernel, LooperKernel, PhaserKernel, ReverbKernel, RingModKernel, TapeKernel,
+    TremoloKernel, VibratoKernel, WahKernel,
 };
 use sonido_registry::PEDAL_EFFECT_IDS;
 
@@ -81,17 +79,11 @@ static CONTROLS: HothouseBuffer = HothouseBuffer::new();
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
-/// Sentinel value for unmapped knob positions.
-const NULL_KNOB: u8 = 0xFF;
-
 /// Maximum parameters per effect slot (largest is Reverb with 10).
 const MAX_PARAMS: usize = 16;
 
 /// Number of effect slots.
 const NUM_SLOTS: usize = 3;
-
-/// Control poll rate: every 15th block ≈ 100 Hz at 48 kHz / 32 samples.
-const POLL_EVERY: u16 = 15;
 
 /// Footswitch tap threshold: 30 polls × ~10ms = 300ms.
 const TAP_LIMIT: u16 = 30;
@@ -99,105 +91,8 @@ const TAP_LIMIT: u16 = 30;
 /// Number of effects in the curated list (derived from shared constant).
 const NUM_EFFECTS: usize = PEDAL_EFFECT_IDS.len();
 
-/// Compile-time assertion: PEDAL_EFFECT_IDS length matches our knob map count.
+/// Compile-time assertion: PEDAL_EFFECT_IDS length matches our count.
 const _: () = assert!(PEDAL_EFFECT_IDS.len() == NUM_EFFECTS);
-
-// ── Curated Effect List ─────────────────────────────────────────────────────
-
-/// Knob-to-parameter mapping per effect, parallel to [`PEDAL_EFFECT_IDS`].
-///
-/// Each entry has 6 knob slots mapped to specific parameter indices.
-/// `NULL_KNOB` (0xFF) means the knob is inactive for this effect.
-///
-/// Consistent knob roles for muscle memory:
-/// - K1: Primary (rate, cutoff, drive, threshold, frequency)
-/// - K2: Secondary (depth, feedback, resonance, tone, ratio)
-/// - K3: Color (damping, HF rolloff, stages, jitter, waveform)
-/// - K4: Character (mode/shape, often STEPPED)
-/// - K5: Mix (wet/dry blend)
-/// - K6: Level (output/makeup gain) — **morph mode: morph speed**
-///
-/// Verified parameter indices from kernel implementations.
-/// `--` = `NULL_KNOB`. **(S)** = STEPPED (snaps at morph midpoint).
-///
-/// | # | Effect     | K1          | K2           | K3           | K4            | K5   | K6      |
-/// |---|------------|-------------|--------------|--------------|---------------|------|---------|
-/// | 0 | filter     | 0:Cutoff    | 1:Reso       | 3:Type(S)    | --            | --   | 2:Out   |
-/// | 1 | tremolo    | 0:Rate      | 1:Depth      | 2:Wave(S)    | 3:Spread      | --   | 6:Out   |
-/// | 2 | vibrato    | 0:Depth     | --           | --           | --            | 1:Mix| 2:Out   |
-/// | 3 | chorus     | 0:Rate      | 1:Depth      | 4:Feedback   | 3:Voices(S)   | 2:Mix| 8:Out   |
-/// | 4 | phaser     | 0:Rate      | 1:Depth      | 2:Stages(S)  | 3:Feedback    | 4:Mix| 9:Out   |
-/// | 5 | flanger    | 0:Rate      | 1:Depth      | 2:Feedback   | 4:TZF(S)      | 3:Mix| 7:Out   |
-/// | 6 | delay      | 0:Time      | 1:Feedback   | 4:FbLP       | 3:PingPong(S) | 2:Mix| 9:Out   |
-/// | 7 | reverb     | 0:Room      | 1:Decay      | 2:Damping    | 3:PreDelay    | 4:Mix| 7:Out   |
-/// | 8 | tape       | 0:Drive     | 1:Saturation | 2:HFRolloff  | 4:Wow         | 5:Flutter| 9:Out|
-/// | 9 | compressor | 0:Threshold | 1:Ratio      | 2:Attack     | 3:Release     |10:Mix| 4:Makeup|
-/// |10 | wah        | 0:Freq      | 1:Reso       | 2:Sensitivity| 3:Mode(S)     | --   | 4:Out   |
-/// |11 | distortion | 0:Drive     | 1:Tone       | 3:Shape(S)   | 5:Dyn         | 4:Mix| 2:Out   |
-/// |12 | bitcrusher | 0:Bits(S)   | 1:Down(S)    | 2:Jitter     | --            | 3:Mix| 4:Out   |
-/// |13 | ringmod    | 0:Freq      | 1:Depth      | 2:Wave(S)    | --            | 3:Mix| 4:Out   |
-/// |14 | looper     | 0:Mode(S)   | 1:Feedback   | 2:HalfSpd(S) | 3:Reverse(S)  | 4:Mix| 5:Out   |
-const KNOB_MAPS: [[u8; 6]; NUM_EFFECTS] = [
-    [0, 1, 3, NULL_KNOB, NULL_KNOB, 2], // filter
-    [0, 1, 2, 3, NULL_KNOB, 6],         // tremolo
-    [0, NULL_KNOB, NULL_KNOB, NULL_KNOB, 1, 2], // vibrato
-    [0, 1, 4, 3, 2, 8],                 // chorus
-    [0, 1, 2, 3, 4, 9],                 // phaser
-    [0, 1, 2, 4, 3, 7],                 // flanger
-    [0, 1, 4, 3, 2, 9],                 // delay
-    [0, 1, 2, 3, 4, 7],                 // reverb
-    [0, 1, 2, 4, 5, 9],                 // tape
-    [0, 1, 2, 3, 10, 4],                // compressor
-    [0, 1, 2, 3, NULL_KNOB, 4],         // wah
-    [0, 1, 3, 5, 4, 2],                 // distortion
-    [0, 1, 2, NULL_KNOB, 3, 4],         // bitcrusher
-    [0, 1, 2, NULL_KNOB, 3, 4],         // ringmod
-    [0, 1, 2, 3, 4, 5],                 // looper
-];
-
-/// Parallel to [`KNOB_MAPS`]: `KernelParams::COUNT` per entry (compile-time guard).
-///
-/// If a knob index in `KNOB_MAPS` exceeds the effect's param count, the
-/// `const _: ()` assertion below fires a compile-time error.
-const EFFECT_PARAM_COUNTS: [u8; NUM_EFFECTS] = {
-    use sonido_core::kernel::KernelParams;
-    [
-        FilterParams::COUNT as u8,      // 0: filter
-        TremoloParams::COUNT as u8,     // 1: tremolo
-        VibratoParams::COUNT as u8,     // 2: vibrato
-        ChorusParams::COUNT as u8,      // 3: chorus
-        PhaserParams::COUNT as u8,      // 4: phaser
-        FlangerParams::COUNT as u8,     // 5: flanger
-        DelayParams::COUNT as u8,       // 6: delay
-        ReverbParams::COUNT as u8,      // 7: reverb
-        TapeParams::COUNT as u8,        // 8: tape
-        CompressorParams::COUNT as u8,  // 9: compressor
-        WahParams::COUNT as u8,         // 10: wah
-        DistortionParams::COUNT as u8,  // 11: distortion
-        BitcrusherParams::COUNT as u8,  // 12: bitcrusher
-        RingModParams::COUNT as u8,     // 13: ringmod
-        LooperParams::COUNT as u8,      // 14: looper
-    ]
-};
-
-/// Compile-time assertion: every knob index in `KNOB_MAPS` is within bounds.
-const _: () = {
-    let mut i = 0;
-    while i < NUM_EFFECTS {
-        let mut k = 0;
-        while k < 6 {
-            let pidx = KNOB_MAPS[i][k];
-            if pidx != NULL_KNOB {
-                assert!(
-                    (pidx as usize) < (EFFECT_PARAM_COUNTS[i] as usize),
-                    // compile-time panic if knob index exceeds param count
-                );
-            }
-            k += 1;
-        }
-        i += 1;
-    }
-};
 
 // ── Enums ───────────────────────────────────────────────────────────────────
 
@@ -1107,6 +1002,9 @@ async fn main(spawner: embassy_executor::Spawner) {
     let mut poll_counter: u16 = 0;
     let mut needs_rebuild = false;
 
+    // Click-free global bypass crossfade (5 ms ramp).
+    let mut bypass_xfade = BypassCrossfade::new(SAMPLE_RATE);
+
     // Pre-allocate audio buffers for deinterleave/reinterleave.
     let mut left_in = [0.0f32; BLOCK_SIZE];
     let mut right_in = [0.0f32; BLOCK_SIZE];
@@ -1154,11 +1052,8 @@ async fn main(spawner: embassy_executor::Spawner) {
 
     match interface
         .start_callback(move |input, output| {
-            // ── Bypass passthrough ──
-            if BYPASSED.load(Ordering::Relaxed) {
-                output.copy_from_slice(input);
-                return;
-            }
+            // ── Update bypass crossfade target ──
+            bypass_xfade.set_active(!BYPASSED.load(Ordering::Relaxed));
 
             // ── Deinterleave u32 → f32 ──
             for i in 0..BLOCK_SIZE {
@@ -1173,15 +1068,19 @@ async fn main(spawner: embassy_executor::Spawner) {
             // ── Process through graph ──
             graph.process_block(&left_in, &right_in, &mut left_out, &mut right_out);
 
-            // ── Reinterleave f32 → u32 ──
+            // ── Sanitize + bypass crossfade → output ──
             for i in 0..BLOCK_SIZE {
-                output[i * 2] = f32_to_u24(left_out[i]);
-                output[i * 2 + 1] = f32_to_u24(right_out[i]);
+                let (wet_l, wet_r) = sanitize_stereo(left_out[i], right_out[i]);
+                let (out_l, out_r) = bypass_xfade.advance(
+                    left_in[i], right_in[i], wet_l, wet_r,
+                );
+                output[i * 2] = f32_to_u24(out_l);
+                output[i * 2 + 1] = f32_to_u24(out_r);
             }
 
             // ── Control poll (~100 Hz) ──
             poll_counter = poll_counter.wrapping_add(1);
-            if !poll_counter.is_multiple_of(POLL_EVERY) {
+            if !poll_counter.is_multiple_of(effect_slot::CONTROL_POLL_EVERY) {
                 return;
             }
 
@@ -1446,8 +1345,9 @@ async fn main(spawner: embassy_executor::Spawner) {
                 if let Some(eff_idx) = nodes[focused_node].effect_index
                     && let Some(nid) = node_ids[focused_node]
                 {
-                    let knobs = &KNOB_MAPS[eff_idx];
                     let effect_id = PEDAL_EFFECT_IDS[eff_idx];
+                    let knobs = knob_mapping::knob_map(effect_id)
+                        .unwrap_or([NULL_KNOB; 6]);
 
                     let platform = sonido_daisy::hothouse::HothousePlatform::new(&CONTROLS);
                     use sonido_platform::PlatformController;
@@ -1458,24 +1358,26 @@ async fn main(spawner: embassy_executor::Spawner) {
                         for k in 0..6 {
                             let ctrl_id = sonido_platform::ControlId::hardware(k as u8);
                             if let Some(state) = platform.read_control(ctrl_id) {
-                                // Since we poll continuously in A/B mode we act on the absolute value regardless
-                                // of `state.changed` to ensure the snapshot perfectly matches hardware state.
-                                let param_idx = knobs[k] as usize;
-                                if let Some(desc) = effect.effect_param_info(param_idx) {
-                                    let noon = noon_presets::noon_value(effect_id, param_idx)
-                                        .unwrap_or(desc.default);
-                                    let val = adc_to_param_biased(&desc, noon, state.value);
-                                    
+                                let param_idx = knobs[k];
+                                if param_idx == NULL_KNOB {
+                                    continue;
+                                }
+                                let idx = param_idx as usize;
+                                if let Some(desc) = effect.effect_param_info(idx) {
+                                    let val = knob_mapping::knob_to_param(
+                                        effect_id, idx, &desc, state.value,
+                                    );
+
                                     // Skip K1 (mode) for looper when FS override is active,
                                     // unless the user turned K1 to Stop (clears override).
-                                    if looper_fs_override && eff_idx == 14 && param_idx == 0 {
+                                    if looper_fs_override && eff_idx == 14 && idx == 0 {
                                         if val < 0.5 {
                                             looper_fs_override = false;
                                         } else {
                                             continue;
                                         }
                                     }
-                                    param_vals[k] = (param_idx as u8, val);
+                                    param_vals[k] = (param_idx, val);
                                 }
                             }
                         }
@@ -1641,7 +1543,7 @@ async fn main(spawner: embassy_executor::Spawner) {
                     "chorus" | "flanger" | "phaser" | "tremolo" => {
                         // LED pulses at LFO rate.
                         let rate = effect_ref.map_or(1.0, |e| e.effect_get_param(0));
-                        let dt = POLL_EVERY as f32 * BLOCK_SIZE as f32 / SAMPLE_RATE;
+                        let dt = effect_slot::CONTROL_POLL_EVERY as f32 * BLOCK_SIZE as f32 / SAMPLE_RATE;
                         led_phase += rate * dt;
                         if led_phase >= 1.0 {
                             led_phase -= 1.0;
@@ -1651,7 +1553,7 @@ async fn main(spawner: embassy_executor::Spawner) {
                     "delay" => {
                         // Brief flash every delay period.
                         let time_ms = effect_ref.map_or(300.0, |e| e.effect_get_param(0));
-                        let dt_ms = POLL_EVERY as f32 * BLOCK_SIZE as f32 / SAMPLE_RATE * 1000.0;
+                        let dt_ms = effect_slot::CONTROL_POLL_EVERY as f32 * BLOCK_SIZE as f32 / SAMPLE_RATE * 1000.0;
                         let period = (time_ms / dt_ms) as u32;
                         let period = if period < 1 { 1 } else { period };
                         led_tap_counter += 1;

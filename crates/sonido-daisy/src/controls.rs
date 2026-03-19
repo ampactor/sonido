@@ -15,17 +15,13 @@
 //! └─────────────────┘                          └──────────────────┘
 //! ```
 //!
-//! # IIR Smoothing
+//! # Direct Storage (No IIR)
 //!
-//! The writer side applies first-order IIR low-pass smoothing to knob values:
-//!
-//! ```text
-//! y[n] = alpha * x[n] + (1 - alpha) * y[n-1]
-//! ```
-//!
-//! Default `alpha = 0.1` at 50 Hz matches libDaisy's `AnalogControl` behavior
-//! (1 kHz / 0.01 alpha). 90% step response in ~460 ms — smooth enough to
-//! eliminate ADC jitter, fast enough for responsive knob turns.
+//! Knob values are stored directly without IIR smoothing. The 2-LSB ADC
+//! jitter at `CYCLES387_5` sample time maps to sub-audible parameter
+//! fluctuation across any param range. The epsilon change detection (3e-4)
+//! prevents noise-triggered updates, making IIR redundant. This gives
+//! instant knob response instead of the 460ms settling time that IIR imposed.
 //!
 //! # Change Detection
 //!
@@ -154,33 +150,33 @@ impl<const KNOBS: usize, const TOGGLES: usize, const FOOTSWITCHES: usize, const 
 
     // ── Writer methods (control task, ~50 Hz) ─────────────────────────────
 
-    /// Writes a raw 16-bit ADC reading with IIR smoothing.
+    /// Writes a raw 16-bit ADC reading.
     ///
-    /// Normalizes `raw_u16` to 0.0–1.0 and applies first-order IIR:
-    /// `y[n] = alpha * x[n] + (1 - alpha) * y[n-1]`
+    /// Normalizes `raw_u16` to 0.0–1.0 and stores it directly.
     ///
     /// # Parameters
     ///
     /// - `index`: Knob index (0-based). Panics if `>= KNOBS`.
     /// - `raw_u16`: Raw ADC value (0–65535).
-    /// - `alpha`: Smoothing coefficient (0.0–1.0). Higher = less smoothing.
-    ///   Typical: 0.1 at 50 Hz poll rate.
-    pub fn write_knob_raw(&self, index: usize, raw_u16: u16, alpha: f32) {
+    pub fn write_knob_raw(&self, index: usize, raw_u16: u16) {
         let normalized = raw_u16 as f32 / ADC_MAX_U16;
-        self.write_knob(index, normalized, alpha);
+        self.write_knob(index, normalized);
     }
 
-    /// Writes a pre-normalized knob value (0.0–1.0) with IIR smoothing.
+    /// Writes a pre-normalized knob value (0.0–1.0).
+    ///
+    /// ADC jitter (2 LSB at CYCLES387_5) maps to sub-audible param fluctuation
+    /// across any param range. The epsilon change detection (3e-4) prevents
+    /// noise-triggered updates. IIR smoothing was removed because it added
+    /// 460ms latency solving a non-problem — hardware oversampling is the
+    /// correct fix if noise ever becomes an issue.
     ///
     /// # Parameters
     ///
     /// - `index`: Knob index (0-based). Panics if `>= KNOBS`.
     /// - `normalized`: Input value in 0.0–1.0 range.
-    /// - `alpha`: Smoothing coefficient (0.0–1.0). Higher = less smoothing.
-    pub fn write_knob(&self, index: usize, normalized: f32, alpha: f32) {
-        let prev_bits = self.knobs[index].load(Ordering::Relaxed);
-        let prev = f32::from_bits(prev_bits);
-        let smoothed = alpha * normalized + (1.0 - alpha) * prev;
+    pub fn write_knob(&self, index: usize, normalized: f32) {
+        let smoothed = normalized;
 
         self.knobs[index].store(smoothed.to_bits(), Ordering::Relaxed);
 
@@ -350,7 +346,7 @@ mod tests {
         let buf = TestBuffer::new();
 
         // Set initial value.
-        buf.write_knob(0, 0.5, 1.0);
+        buf.write_knob(0, 0.5);
         // Clear any change flag from the initial write.
         buf.read_knob_changed(0);
 
@@ -360,7 +356,7 @@ mod tests {
         // knobs_prev updates every write, so no single step crosses epsilon.
         for i in 0..50 {
             let drift = 0.5 + (i as f32) * 1e-5;
-            buf.write_knob(0, drift, 1.0);
+            buf.write_knob(0, drift);
         }
 
         let (_, changed) = buf.read_knob_changed(0);
@@ -373,10 +369,10 @@ mod tests {
     #[test]
     fn large_knob_change_triggers_flag() {
         let buf = TestBuffer::new();
-        buf.write_knob(0, 0.0, 1.0);
+        buf.write_knob(0, 0.0);
         buf.read_knob_changed(0);
 
-        buf.write_knob(0, 0.5, 1.0);
+        buf.write_knob(0, 0.5);
         let (val, changed) = buf.read_knob_changed(0);
         assert!(changed, "large change should trigger knobs_changed");
         assert!((val - 0.5).abs() < 1e-6);

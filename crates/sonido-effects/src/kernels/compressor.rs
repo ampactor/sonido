@@ -93,7 +93,7 @@ const SC_HPF_Q: f32 = 0.707;
 /// | 6 | `detection` | index | 0–1 | 0 (Peak) |
 /// | 7 | `sidechain_freq_hz` | Hz | 20–500 | 80.0 |
 /// | 8 | `auto_makeup` | index | 0–1 | 0 (Off) |
-/// | 9 | `output_db` | dB | −20–20 | 0.0 |
+/// | 9 | `output_db` | dB | −6–6 | 0.0 |
 /// | 10 | `mix_pct` | % | 0–100 | 100.0 |
 ///
 /// ## Smoothing Notes
@@ -167,7 +167,7 @@ pub struct CompressorParams {
 
     /// Output level in decibels.
     ///
-    /// Range: −20.0–20.0 dB (default 0.0). Final output trim applied after
+    /// Range: −6.0–6.0 dB (default 0.0). Final output trim applied after
     /// makeup gain and wet/dry mix.
     pub output_db: f32,
 

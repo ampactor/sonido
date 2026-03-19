@@ -4189,6 +4189,7 @@ dependencies = [
  "proptest",
  "sonido-analysis",
  "sonido-core",
+ "sonido-platform",
  "sonido-registry",
 ]
 
@@ -4263,6 +4264,7 @@ dependencies = [
 name = "sonido-platform"
 version = "0.1.0"
 dependencies = [
+ "libm",
  "sonido-core",
 ]
 

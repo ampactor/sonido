@@ -5,20 +5,20 @@
 //! only on `ParamDescriptor`, so we inline it here with `std` math
 //! substitutions and run exhaustive checks against every registered effect.
 //!
-//! The noon preset table itself lives in `sonido_core::noon` (single source
+//! The noon preset table itself lives in `sonido_platform::noon` (single source
 //! of truth) — no inlined copy needed.
 
 mod helpers;
 
 use helpers::{all_ids_from, assert_no_violations};
-use sonido_core::noon::{HARDWARE_MAPPED, noon_value};
 use sonido_core::{ParamFlags, ParamScale};
+use sonido_platform::noon::{HARDWARE_MAPPED, noon_value};
 use sonido_registry::EffectRegistry;
 
 const SAMPLE_RATE: f32 = 48000.0;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Inlined from crates/sonido-daisy/src/param_map.rs — keep in sync
+// Inlined from crates/sonido-platform/src/param_map.rs — keep in sync
 // Uses std math (f32::log2, f32::exp2, f32::powf) instead of libm.
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -935,6 +935,7 @@ dependencies = [
 name = "sonido-platform"
 version = "0.1.0"
 dependencies = [
+ "libm",
  "sonido-core",
 ]
 

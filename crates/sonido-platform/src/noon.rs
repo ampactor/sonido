@@ -7,8 +7,8 @@
 //! rather than the raw midpoint of the parameter range.
 //!
 //! Noon values are **guitarist sweet spots**, not always descriptor defaults.
-//! Mix params use 50% (pedal blend convention) even though the plugin default
-//! is 100% (insert chain convention).
+//! Mix params use 100% for insert effects (distortion, bitcrusher, ringmod)
+//! and 50% for send/blend effects (delay, reverb, chorus, compressor).
 //!
 //! Arrays include ALL parameters (writable + READ_ONLY) to match
 //! `KernelParams::COUNT` for index-based embedded access. The biased mapping
@@ -52,29 +52,31 @@ pub const HARDWARE_MAPPED: &[&str] = &[
 /// range, in which case callers should fall back to the descriptor's `default`.
 pub fn noon_value(effect_id: &str, param_idx: usize) -> Option<f32> {
     let values: &[f32] = match effect_id {
-        "bitcrusher" => &[8.0, 1.0, 0.0, 50.0, 0.0],
+        "bitcrusher" => &[8.0, 1.0, 0.0, 100.0, 0.0],
         "chorus" => &[1.0, 50.0, 50.0, 2.0, 0.0, 15.0, 0.0, 3.0, 0.0, 0.0],
         "compressor" => &[
             -18.0, 4.0, 10.0, 100.0, 0.0, 6.0, 0.0, 80.0, 0.0, 0.0, 50.0, 0.0,
         ],
         "delay" => &[300.0, 40.0, 50.0, 0.0, 20000.0, 20.0, 0.0, 0.0, 2.0, 0.0],
-        "distortion" => &[8.0, 0.0, 0.0, 0.0, 50.0, 0.0],
-        "eq" => &[100.0, 0.0, 1.0, 500.0, 0.0, 1.0, 5000.0, 0.0, 1.0, 0.0],
-        "filter" => &[1000.0, 0.707, 0.0, 0.0],
-        "flanger" => &[0.5, 35.0, 50.0, 50.0, 0.0, 0.0, 3.0, 0.0, 0.0],
-        "gate" => &[-40.0, 1.0, 100.0, 50.0, -80.0, 3.0, 80.0, 0.0, 0.0],
+        "distortion" => &[15.0, 0.0, 0.0, 0.0, 100.0, 0.0],
+        "eq" => &[100.0, 0.0, 1.0, 1000.0, 0.0, 1.0, 5000.0, 0.0, 1.0, 0.0],
+        "filter" => &[1000.0, 2.5, 0.0, 0.0],
+        "flanger" => &[0.5, 50.0, 50.0, 50.0, 0.0, 0.0, 3.0, 0.0, 0.0],
+        "gate" => &[-40.0, 5.0, 100.0, 50.0, -80.0, 3.0, 80.0, 0.0, 0.0],
         "limiter" => &[-6.0, -0.3, 100.0, 5.0, 0.0],
         "looper" => &[0.0, 80.0, 0.0, 0.0, 50.0, 0.0],
-        "phaser" => &[0.3, 50.0, 6.0, 50.0, 50.0, 20.0, 4000.0, 0.0, 3.0, 0.0, 0.0],
-        "preamp" => &[0.0, 0.0, 0.0],
-        "reverb" => &[50.0, 50.0, 30.0, 10.0, 50.0, 100.0, 50.0, 0.0],
-        "ringmod" => &[440.0, 50.0, 0.0, 50.0, 0.0],
+        "phaser" => &[
+            0.3, 50.0, 6.0, 50.0, 50.0, 200.0, 4000.0, 0.0, 3.0, 0.0, 0.0,
+        ],
+        "preamp" => &[15.0, 0.0, 0.0],
+        "reverb" => &[50.0, 50.0, 50.0, 10.0, 50.0, 100.0, 50.0, 0.0],
+        "ringmod" => &[440.0, 100.0, 0.0, 50.0, 0.0],
         "stage" => &[
             0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 120.0, 0.0, 0.0, 0.0,
         ],
         "tape" => &[6.0, 30.0, 12000.0, 0.0, 0.3, 0.2, 0.15, 0.3, 80.0, -6.0],
         "tremolo" => &[5.0, 50.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0],
-        "vibrato" => &[100.0, 50.0, 0.0],
+        "vibrato" => &[50.0, 50.0, 0.0],
         "wah" => &[800.0, 5.0, 50.0, 0.0, 0.0],
         _ => return None,
     };

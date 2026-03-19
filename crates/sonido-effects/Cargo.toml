@@ -23,6 +23,7 @@ workspace = true
 criterion = { workspace = true }
 proptest = { workspace = true }
 sonido-analysis = { workspace = true }
+sonido-platform = { workspace = true }
 sonido-registry = { workspace = true }
 
 [[bench]]

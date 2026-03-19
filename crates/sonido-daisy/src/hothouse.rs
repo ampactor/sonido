@@ -60,12 +60,6 @@ pub const KNOB_SAMPLE_TIME: SampleTime = SampleTime::CYCLES387_5;
 /// Control task poll interval in milliseconds (50 Hz).
 pub const POLL_INTERVAL_MS: u64 = 20;
 
-/// IIR smoothing coefficient for knob readings.
-///
-/// At 50 Hz with alpha=0.1: 90% step response in ~460 ms.
-/// Matches libDaisy's `AnalogControl` default (1 kHz / 0.01 alpha).
-pub const KNOB_ALPHA: f32 = 0.1;
-
 // ── Toggle decode ─────────────────────────────────────────────────────────
 
 /// Decodes a 3-position toggle switch from its two GPIO pins (both pull-up, active-low).
@@ -202,7 +196,7 @@ pub async fn hothouse_control_task(mut ctrl: HothouseControls, buf: &'static Hot
         // ── Read all 6 knobs via uniform blocking_read (~48 µs total) ──
         for (i, knob) in ctrl.knobs.iter_mut().enumerate() {
             let raw = ctrl.adc1.blocking_read(knob, KNOB_SAMPLE_TIME);
-            buf.write_knob_raw(i, raw, KNOB_ALPHA);
+            buf.write_knob_raw(i, raw);
         }
 
         // ── Read toggles ──

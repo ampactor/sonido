@@ -190,11 +190,11 @@ All 6 knobs use uniform `blocking_read()` polling in a 50 Hz Embassy task (`hoth
 
 | Module | Purpose | Dependencies |
 |--------|---------|-------------|
-| `controls.rs` | `ControlBuffer<KNOBS,TOGGLES,FS,LEDS>` — lock-free shared state with IIR smoothing, change detection, LED bridge | `core` only |
+| `controls.rs` | `ControlBuffer<KNOBS,TOGGLES,FS,LEDS>` — lock-free shared state with change detection, LED bridge | `core` only |
 | `hothouse.rs` | `HothouseControls` (knobs array + GPIO), `hothouse_control_task` (uniform polling), `hothouse_pins!` macro, `decode_toggle` | `controls.rs` + Embassy |
 | `embedded_adapter.rs` | `Adapter<K, DirectPolicy>` — zero-smoothing `Effect + ParameterInfo` for `DspKernel` | `sonido-core` (feature `alloc`) |
 | `param_map.rs` | `adc_to_param()` / `adc_to_param_biased()` — scale-aware ADC→parameter conversion with STEPPED rounding | `sonido-core` (feature `alloc`) |
-| `noon_presets.rs` | Per-effect sweet-spot values for biased knob mapping | `sonido-core` (feature `alloc`) |
+| `noon_presets.rs` | Per-effect sweet-spot values for biased knob mapping | `sonido-platform` |
 
 ### Biased Knob Mapping (Noon = Sweet Spot)
 

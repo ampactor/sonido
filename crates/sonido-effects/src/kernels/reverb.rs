@@ -216,7 +216,7 @@ fn hadamard8(buf: &mut [f32; 8]) {
 /// | 4 | `mix_pct` | % | 0–100 | 50.0 |
 /// | 5 | `width_pct` | % | 0–100 | 100.0 |
 /// | 6 | `er_level_pct` | % | 0–100 | 50.0 |
-/// | 7 | `output_db` | dB | −20–+20 | 0.0 |
+/// | 7 | `output_db` | dB | −6–+6 | 0.0 |
 #[derive(Debug, Clone, Copy)]
 pub struct ReverbParams {
     /// Room size as a percentage (0–100%).
@@ -258,7 +258,7 @@ pub struct ReverbParams {
     /// the late diffuse reverb tail.
     pub er_level_pct: f32,
 
-    /// Output level in decibels (−20 to +20 dB).
+    /// Output level in decibels (−6 to +6 dB).
     pub output_db: f32,
 }
 

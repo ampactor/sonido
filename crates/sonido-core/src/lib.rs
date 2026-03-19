@@ -119,7 +119,6 @@ pub mod loop_buffer;
 pub mod macro_map;
 pub mod math;
 pub mod modulation;
-pub mod noon;
 pub mod one_pole;
 pub mod oversample;
 pub mod param;
