@@ -1,12 +1,12 @@
 # Sonido
 
-Production-grade DSP framework in Rust — 35 audio effects built on a three-layer kernel architecture that runs identically on desktop plugins, CLI tools, and bare-metal ARM (Cortex-M7). Six `no_std` crates, zero-heap audio paths, `libm` for all math, `from_knobs()` on every effect for direct ADC-to-parameter mapping.
+A three-layer DSP kernel architecture built in Rust that runs identically on CLAP (VST3 incoming) plugins, and ARM (Electrosmith Daisy Seed - STM32H750, 480 MHz Cortex-M7) via `no_std` core, dynamic build target adapter, parameter bridge, and a shared DSL. Convenience-first with `from_knobs()` for ADC-param mapping and baked-in `lerp()` for easy multi-param morphing.
+
+DAG orchestration with ~30 effects, synthesis engine, spectral analysis, real-time GUI node-graph editor.
 
 [![CI](https://github.com/ampactor-labs/sonido/actions/workflows/ci.yml/badge.svg)](https://github.com/ampactor-labs/sonido/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
 [![Rust Edition](https://img.shields.io/badge/Rust-Edition%202024-orange.svg)](https://doc.rust-lang.org/edition-guide/)
-
-14-crate Rust workspace: 35 effects, synthesis engine, spectral analysis, real-time GUI, 35 CLAP plugins — all from a shared `no_std` DSP core targeting Electrosmith Daisy Seed (STM32H750, 480 MHz Cortex-M7).
 
 ## Quick Start
 
@@ -28,7 +28,7 @@ use sonido_core::kernel::DspKernel;
 
 let mut kernel = DistortionKernel::new(48000.0);
 
-// from_knobs() maps 0.0–1.0 ADC readings → parameter ranges
+// from_knobs() maps ADC readings → parameter ranges
 let params = DistortionParams::from_knobs(
     adc_drive, adc_tone, adc_output, adc_shape, adc_mix, adc_dynamics,
 );
