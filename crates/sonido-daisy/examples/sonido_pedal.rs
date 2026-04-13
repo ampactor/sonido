@@ -835,6 +835,24 @@ async fn main(spawner: embassy_executor::Spawner) {
                     if both_pressed {
                         cb.both_held += 1;
                         if cb.both_held > cb.both_held_peak { cb.both_held_peak = cb.both_held; }
+                        
+                        // 3 sec hold = 150 poll ticks at 50 Hz
+                        if cb.both_held >= 150 {
+                            unsafe {
+                                // Enable Backup SRAM clock & unlock Backup domain
+                                let ahb4enr = 0x5802_44E0 as *mut u32;
+                                core::ptr::write_volatile(ahb4enr, core::ptr::read_volatile(ahb4enr) | (1 << 28));
+                                
+                                let pwr_cr1 = 0x5802_4800 as *mut u32;
+                                core::ptr::write_volatile(pwr_cr1, core::ptr::read_volatile(pwr_cr1) | (1 << 8));
+                                
+                                // Write DAISY_INFINITE_TIMEOUT magic to start of Backup SRAM
+                                let backup_sram_ptr = 0x3880_0000 as *mut u32;
+                                core::ptr::write_volatile(backup_sram_ptr, 0xB0074EFA);
+                            }
+                            // Trigger system reset
+                            cortex_m::peripheral::SCB::sys_reset();
+                        }
                     } else { cb.both_held = 0; }
                     if fs1_pressed { cb.fs1_held += 1; }
                     if fs2_pressed { cb.fs2_held += 1; }
