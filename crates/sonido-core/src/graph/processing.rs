@@ -219,6 +219,8 @@ pub struct ProcessingGraph {
     spillover_tails: Vec<SpilloverTail>,
     /// Whether spillover is enabled (default: true).
     spillover_enabled: bool,
+    /// Pending dropped effects (to avoid deallocation inside audio thread).
+    pub dead_effects: Vec<Box<dyn EffectWithParams + Send>>,
 }
 
 impl ProcessingGraph {
@@ -250,6 +252,7 @@ impl ProcessingGraph {
             feedback_delay_lines: Vec::new(),
             spillover_tails: Vec::new(),
             spillover_enabled: true,
+            dead_effects: Vec::new(),
         }
     }
 
@@ -375,6 +378,12 @@ impl ProcessingGraph {
                 None
             }
         })
+    }
+
+    /// Clears orphaned/dead effects from the garbage list.
+    /// MUST be called from a non-audio thread to avoid interrupt latency spikes!
+    pub fn clear_garbage(&mut self) {
+        self.dead_effects.clear();
     }
 
     /// Removes all nodes except Input and Output, and clears all edges.
@@ -1604,10 +1613,14 @@ impl ProcessingGraph {
         }
 
         // Process spillover tails and mix into output.
-        self.spillover_tails.retain_mut(|tail| {
-            if tail.remaining == 0 {
-                return false;
+        let mut i = 0;
+        while i < self.spillover_tails.len() {
+            if self.spillover_tails[i].remaining == 0 {
+                let tail = self.spillover_tails.swap_remove(i);
+                self.dead_effects.push(tail.effect);
+                continue;
             }
+            let tail = &mut self.spillover_tails[i];
             let buf_len = len.min(tail.left_buf.len());
             // Fill scratch buffers with silence — the effect's internal state
             // (reverb feedback, delay lines) produces the ring-out as output.
@@ -1619,14 +1632,20 @@ impl ProcessingGraph {
                 &mut tail.right_buf[..buf_len],
             );
             // Mix faded tail into the final output.
-            for i in 0..buf_len {
+            for j in 0..buf_len {
                 let fade = tail.fade.advance();
-                left_out[i] += tail.left_buf[i] * fade;
-                right_out[i] += tail.right_buf[i] * fade;
+                left_out[j] += tail.left_buf[j] * fade;
+                right_out[j] += tail.right_buf[j] * fade;
             }
             tail.remaining = tail.remaining.saturating_sub(buf_len);
-            tail.remaining > 0 && !tail.fade.is_settled()
-        });
+            
+            if tail.remaining == 0 && tail.fade.is_settled() {
+                let tail = self.spillover_tails.swap_remove(i);
+                self.dead_effects.push(tail.effect);
+            } else {
+                i += 1;
+            }
+        }
 
         // Cache output for potential future crossfade.
         let cache_len = len.min(self.crossfade_left.len());
@@ -1985,7 +2004,9 @@ impl ProcessingGraph {
         for dl in &mut self.audio_delay_lines {
             dl.clear();
         }
-        self.spillover_tails.clear();
+        while let Some(tail) = self.spillover_tails.pop() {
+            self.dead_effects.push(tail.effect);
+        }
     }
 
     /// Broadcasts a tempo context to all effect nodes.
@@ -2014,7 +2035,9 @@ impl ProcessingGraph {
     pub fn set_spillover(&mut self, enabled: bool) {
         self.spillover_enabled = enabled;
         if !enabled {
-            self.spillover_tails.clear();
+            while let Some(tail) = self.spillover_tails.pop() {
+                self.dead_effects.push(tail.effect);
+            }
         }
     }
 

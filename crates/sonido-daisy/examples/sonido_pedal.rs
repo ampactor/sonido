@@ -1008,6 +1008,10 @@ async fn main(spawner: embassy_executor::Spawner) {
 async fn graph_rebuild_task() {
     loop {
         embassy_time::Timer::after_millis(20).await;
+        if !GRAPH_UPDATING.load(core::sync::atomic::Ordering::Acquire) {
+            let graph = unsafe { GRAPH_STORAGE.as_mut().unwrap() };
+            graph.clear_garbage();
+        }
         if NEEDS_REBUILD.load(Ordering::Acquire) {
             GRAPH_UPDATING.store(true, Ordering::Release);
             // Wait to ensure audio thread enters the bypass state
