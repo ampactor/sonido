@@ -27,7 +27,6 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use defmt_rtt as _;
@@ -72,7 +71,25 @@ static NEEDS_REBUILD: AtomicBool = AtomicBool::new(false);
 
 const MAX_PARAMS: usize = 16;
 const NUM_SLOTS: usize = 3;
-const TAP_LIMIT: u16 = 30;
+
+/// Footswitch-hold threshold separating tap from long-press, in poll ticks
+/// (50 Hz effective poll rate → 30 ticks ≈ 600 ms).
+const TAP_LIMIT: u32 = 30;
+
+/// Dual-footswitch hold duration that triggers DFU bootloader entry, in poll ticks
+/// (50 Hz × 3 s = 150 ticks).
+const BOOTLOADER_HOLD_TICKS: u16 = 150;
+
+/// Pickup threshold for soft-takeover: knob is unlocked once within 5% of range.
+const PICKUP_THRESHOLD_FRAC: f32 = 0.05;
+
+// STM32H750 backup-SRAM bootloader trigger — see RM0433 §8.11 (AHB4ENR), §7.4 (PWR CR1).
+const AHB4ENR_ADDR: *mut u32 = 0x5802_44E0 as *mut u32;
+const AHB4ENR_BKPRAMEN: u32 = 1 << 28;
+const PWR_CR1_ADDR: *mut u32 = 0x5802_4800 as *mut u32;
+const PWR_CR1_DBP: u32 = 1 << 8;
+const BACKUP_SRAM_ADDR: *mut u32 = 0x3880_0000 as *mut u32;
+const DAISY_INFINITE_TIMEOUT: u32 = 0xB007_4EFA;
 
 const EFFECT_IDS: &[&str] = PEDAL_EFFECT_IDS;
 const NUM_EFFECTS: usize = EFFECT_IDS.len() + 1; // +1 for null/bypass at index 0
@@ -94,12 +111,13 @@ struct CallbackState {
     left_out: [f32; BLOCK_SIZE],
     right_out: [f32; BLOCK_SIZE],
     poll_counter: u16,
-    needs_rebuild: bool,
     focused_node: usize,
     ab_mode: AbMode,
     topology: Topology,
     morph_t: f32,
     morph_speed: f32,
+    /// Reciprocal cache of `morph_speed * 100`, updated when `morph_speed` changes.
+    morph_delta: f32,
     master_gain: f32,
     factory_cursor: usize,
     led_blink_remaining: u8,
@@ -265,6 +283,88 @@ fn create_effect(idx: usize, sr: f32) -> Option<Box<dyn EffectWithParams + Send>
 
 // ── Graph construction ──────────────────────────────────────────────────────
 
+/// Insert effects into `graph` for each populated slot, returning
+/// `(node_ids_by_slot, populated_slice)` where `populated` holds only the
+/// filled `(slot, NodeId)` entries.
+fn populate_effects(
+    graph: &mut ProcessingGraph,
+    nodes: &[NodeState; NUM_SLOTS],
+    sr: f32,
+) -> (
+    [Option<NodeId>; NUM_SLOTS],
+    [Option<NodeId>; NUM_SLOTS],
+    usize,
+) {
+    let mut node_ids: [Option<NodeId>; NUM_SLOTS] = [None; NUM_SLOTS];
+    let mut populated: [Option<NodeId>; NUM_SLOTS] = [None; NUM_SLOTS];
+    let mut n = 0;
+
+    for (slot, node) in nodes.iter().enumerate() {
+        if let Some(effect_idx) = node.effect_index
+            && let Some(effect) = create_effect(effect_idx, sr)
+        {
+            let nid = graph.add_effect(effect);
+            node_ids[slot] = Some(nid);
+            populated[n] = Some(nid);
+            n += 1;
+        }
+    }
+    (node_ids, populated, n)
+}
+
+fn wire_topology(
+    g: &mut ProcessingGraph,
+    inp: NodeId,
+    out: NodeId,
+    populated: &[Option<NodeId>],
+    topology: Topology,
+) -> Result<(), sonido_core::graph::GraphError> {
+    match populated.len() {
+        0 => {
+            g.connect(inp, out)?;
+        }
+        1 => {
+            let nid = populated[0].unwrap();
+            g.connect(inp, nid)?;
+            g.connect(nid, out)?;
+        }
+        _ => match topology {
+            Topology::Linear => {
+                g.connect(inp, populated[0].unwrap())?;
+                for i in 1..populated.len() {
+                    g.connect(populated[i - 1].unwrap(), populated[i].unwrap())?;
+                }
+                g.connect(populated[populated.len() - 1].unwrap(), out)?;
+            }
+            Topology::Parallel => {
+                let s = g.add_split();
+                let m = g.add_merge();
+                g.connect(inp, s)?;
+                for &slot in populated {
+                    let nid = slot.unwrap();
+                    g.connect(s, nid)?;
+                    g.connect(nid, m)?;
+                }
+                g.connect(m, out)?;
+            }
+            Topology::Fan => {
+                let s = g.add_split();
+                let m = g.add_merge();
+                let first = populated[0].unwrap();
+                g.connect(inp, first)?;
+                g.connect(first, s)?;
+                for &slot in &populated[1..] {
+                    let nid = slot.unwrap();
+                    g.connect(s, nid)?;
+                    g.connect(nid, m)?;
+                }
+                g.connect(m, out)?;
+            }
+        },
+    }
+    Ok(())
+}
+
 fn build_graph(
     nodes: &[NodeState; NUM_SLOTS],
     topology: Topology,
@@ -275,58 +375,8 @@ fn build_graph(
     let inp = g.add_input();
     let out = g.add_output();
 
-    let mut populated: Vec<(usize, NodeId)> = Vec::new();
-    let mut node_ids: [Option<NodeId>; NUM_SLOTS] = [None; NUM_SLOTS];
-
-    for (slot, node) in nodes.iter().enumerate() {
-        if let Some(effect_idx) = node.effect_index
-            && let Some(effect) = create_effect(effect_idx, sr)
-        {
-            let nid = g.add_effect(effect);
-            node_ids[slot] = Some(nid);
-            populated.push((slot, nid));
-        }
-    }
-
-    if populated.is_empty() {
-        g.connect(inp, out).unwrap();
-    } else if populated.len() == 1 {
-        let nid = populated[0].1;
-        g.connect(inp, nid).unwrap();
-        g.connect(nid, out).unwrap();
-    } else {
-        match topology {
-            Topology::Linear => {
-                g.connect(inp, populated[0].1).unwrap();
-                for i in 1..populated.len() {
-                    g.connect(populated[i - 1].1, populated[i].1).unwrap();
-                }
-                g.connect(populated[populated.len() - 1].1, out).unwrap();
-            }
-            Topology::Parallel => {
-                let s = g.add_split();
-                let m = g.add_merge();
-                g.connect(inp, s).unwrap();
-                for &(_, nid) in &populated {
-                    g.connect(s, nid).unwrap();
-                    g.connect(nid, m).unwrap();
-                }
-                g.connect(m, out).unwrap();
-            }
-            Topology::Fan => {
-                let s = g.add_split();
-                let m = g.add_merge();
-                g.connect(inp, populated[0].1).unwrap();
-                g.connect(populated[0].1, s).unwrap();
-                for &(_, nid) in &populated[1..] {
-                    g.connect(s, nid).unwrap();
-                    g.connect(nid, m).unwrap();
-                }
-                g.connect(m, out).unwrap();
-            }
-        }
-    }
-
+    let (node_ids, populated, n) = populate_effects(&mut g, nodes, sr);
+    wire_topology(&mut g, inp, out, &populated[..n], topology)?;
     g.compile()?;
     Ok((g, node_ids))
 }
@@ -344,58 +394,8 @@ fn rebuild_graph_in_place(
     let inp = graph.input_id().unwrap();
     let out = graph.output_id().unwrap();
 
-    let mut populated: Vec<(usize, NodeId)> = Vec::new();
-    let mut node_ids: [Option<NodeId>; NUM_SLOTS] = [None; NUM_SLOTS];
-
-    for (slot, node) in nodes.iter().enumerate() {
-        if let Some(effect_idx) = node.effect_index
-            && let Some(effect) = create_effect(effect_idx, sr)
-        {
-            let nid = graph.add_effect(effect);
-            node_ids[slot] = Some(nid);
-            populated.push((slot, nid));
-        }
-    }
-
-    if populated.is_empty() {
-        graph.connect(inp, out)?;
-    } else if populated.len() == 1 {
-        let nid = populated[0].1;
-        graph.connect(inp, nid)?;
-        graph.connect(nid, out)?;
-    } else {
-        match topology {
-            Topology::Linear => {
-                graph.connect(inp, populated[0].1)?;
-                for i in 1..populated.len() {
-                    graph.connect(populated[i - 1].1, populated[i].1)?;
-                }
-                graph.connect(populated[populated.len() - 1].1, out)?;
-            }
-            Topology::Parallel => {
-                let s = graph.add_split();
-                let m = graph.add_merge();
-                graph.connect(inp, s)?;
-                for &(_, nid) in &populated {
-                    graph.connect(s, nid)?;
-                    graph.connect(nid, m)?;
-                }
-                graph.connect(m, out)?;
-            }
-            Topology::Fan => {
-                let s = graph.add_split();
-                let m = graph.add_merge();
-                graph.connect(inp, populated[0].1)?;
-                graph.connect(populated[0].1, s)?;
-                for &(_, nid) in &populated[1..] {
-                    graph.connect(s, nid)?;
-                    graph.connect(nid, m)?;
-                }
-                graph.connect(m, out)?;
-            }
-        }
-    }
-
+    let (node_ids, populated, n) = populate_effects(graph, nodes, sr);
+    wire_topology(graph, inp, out, &populated[..n], topology)?;
     graph.compile()?;
     Ok(node_ids)
 }
@@ -632,12 +632,12 @@ fn init_statics(focused: usize, ab: AbMode, topo: Topology) {
             left_out: [0.0; BLOCK_SIZE],
             right_out: [0.0; BLOCK_SIZE],
             poll_counter: 0,
-            needs_rebuild: false,
             focused_node: focused,
             ab_mode: ab,
             topology: topo,
             morph_t: 0.0,
             morph_speed: 2.0,
+            morph_delta: 1.0 / (2.0 * 100.0),
             master_gain: 1.0,
             factory_cursor: 0,
             led_blink_remaining: 0,
@@ -716,8 +716,6 @@ async fn main(spawner: embassy_executor::Spawner) {
     // Zero-capture closure — ALL state accessed via statics.
     // SAFETY: CB_STORAGE is only accessed here (single-threaded audio callback).
     // No critical_section — interrupts must stay enabled for DMA completion.
-    
-    // Initial rebuild off-load
     NEEDS_REBUILD.store(true, Ordering::Release);
     spawner.spawn(graph_rebuild_task()).unwrap();
     defmt::unwrap!(
@@ -795,7 +793,7 @@ async fn main(spawner: embassy_executor::Spawner) {
                     let new_topo = toggle_to_topology(t3);
                     if new_topo != cb.topology {
                         cb.topology = new_topo;
-                        cb.needs_rebuild = true;
+                        NEEDS_REBUILD.store(true, Ordering::Release);
                     }
                     let new_focused = toggle_to_node(t1);
                     if new_focused != cb.focused_node { cb.focused_node = new_focused; }
@@ -841,30 +839,15 @@ async fn main(spawner: embassy_executor::Spawner) {
                     if both_pressed {
                         cb.both_held += 1;
                         if cb.both_held > cb.both_held_peak { cb.both_held_peak = cb.both_held; }
-                        
-                        // 3 sec hold = 150 poll ticks at 50 Hz
-                        if cb.both_held >= 150 {
-                            unsafe {
-                                // Enable Backup SRAM clock & unlock Backup domain
-                                let ahb4enr = 0x5802_44E0 as *mut u32;
-                                core::ptr::write_volatile(ahb4enr, core::ptr::read_volatile(ahb4enr) | (1 << 28));
-                                
-                                let pwr_cr1 = 0x5802_4800 as *mut u32;
-                                core::ptr::write_volatile(pwr_cr1, core::ptr::read_volatile(pwr_cr1) | (1 << 8));
-                                
-                                // Write DAISY_INFINITE_TIMEOUT magic to start of Backup SRAM
-                                let backup_sram_ptr = 0x3880_0000 as *mut u32;
-                                core::ptr::write_volatile(backup_sram_ptr, 0xB0074EFA);
-                            }
-                            // Trigger system reset
-                            cortex_m::peripheral::SCB::sys_reset();
+                        if cb.both_held >= BOOTLOADER_HOLD_TICKS {
+                            enter_daisy_bootloader();
                         }
                     } else { cb.both_held = 0; }
                     if fs1_pressed { cb.fs1_held += 1; }
                     if fs2_pressed { cb.fs2_held += 1; }
 
                     if cb.ab_mode == AbMode::Morph && !both_pressed {
-                        let delta = 1.0 / (cb.morph_speed * 100.0);
+                        let delta = cb.morph_delta;
                         if fs1_pressed && !fs2_pressed {
                             cb.morph_t = if cb.morph_t > delta { cb.morph_t - delta } else { 0.0 };
                         } else if fs2_pressed && !fs1_pressed {
@@ -882,25 +865,25 @@ async fn main(spawner: embassy_executor::Spawner) {
                     if !fs1_pressed && !fs2_pressed { cb.both_held_peak = 0; }
 
                     if (cb.ab_mode == AbMode::A || cb.ab_mode == AbMode::B) && !was_both {
-                        if cb.fs1_was_pressed && !fs1_pressed && cb.fs1_held < TAP_LIMIT as u32 {
+                        if cb.fs1_was_pressed && !fs1_pressed && cb.fs1_held < TAP_LIMIT {
                             let nodes = unsafe { NODES_STORAGE.as_mut().unwrap() };
                             scroll_effect(nodes, cb.focused_node, -1);
-                            cb.needs_rebuild = true;
+                            NEEDS_REBUILD.store(true, Ordering::Release);
                             cb.pickup_locked = [true; 6];
                         }
-                        if cb.ab_mode == AbMode::A && cb.fs1_was_pressed && !fs1_pressed && cb.fs1_held >= TAP_LIMIT as u32 {
+                        if cb.ab_mode == AbMode::A && cb.fs1_was_pressed && !fs1_pressed && cb.fs1_held >= TAP_LIMIT {
                             cb.factory_cursor = (cb.factory_cursor + 1) % FACTORY_PRESETS.len();
                             let nodes = unsafe { NODES_STORAGE.as_mut().unwrap() };
                             load_factory_preset(nodes, cb.factory_cursor);
-                            cb.needs_rebuild = true;
+                            NEEDS_REBUILD.store(true, Ordering::Release);
                             cb.pickup_locked = [true; 6];
                             cb.led_blink_remaining = (cb.factory_cursor as u8 + 1) * 2;
                             cb.led_blink_timer = 0;
                         }
-                        if cb.fs2_was_pressed && !fs2_pressed && cb.fs2_held < TAP_LIMIT as u32 {
+                        if cb.fs2_was_pressed && !fs2_pressed && cb.fs2_held < TAP_LIMIT {
                             let nodes = unsafe { NODES_STORAGE.as_mut().unwrap() };
                             scroll_effect(nodes, cb.focused_node, 1);
-                            cb.needs_rebuild = true;
+                            NEEDS_REBUILD.store(true, Ordering::Release);
                             cb.pickup_locked = [true; 6];
                         }
                     }
@@ -937,7 +920,7 @@ async fn main(spawner: embassy_executor::Spawner) {
                                             if cb.pickup_locked[k] {
                                                 let current = effect.effect_get_param(idx);
                                                 let range = desc.max - desc.min;
-                                                if (val - current).abs() < range * 0.05 {
+                                                if (val - current).abs() < range * PICKUP_THRESHOLD_FRAC {
                                                     cb.pickup_locked[k] = false;
                                                 } else { continue; }
                                             }
@@ -954,18 +937,17 @@ async fn main(spawner: embassy_executor::Spawner) {
                             nodes[cb.focused_node].update_snapshot(&cb.ab_mode, &param_vals);
                         }
                     } else {
-                        let speed_desc = ParamDescriptor::custom("Morph Speed", "Morph Speed", 0.1, 5.0, 2.0);
-                        cb.morph_speed = adc_to_param(&speed_desc, CONTROLS.read_knob(4));
+                        const SPEED_DESC: ParamDescriptor =
+                            ParamDescriptor::custom("Morph Speed", "Morph Speed", 0.1, 5.0, 2.0);
+                        let new_speed = adc_to_param(&SPEED_DESC, CONTROLS.read_knob(4));
+                        if new_speed != cb.morph_speed {
+                            cb.morph_speed = new_speed;
+                            cb.morph_delta = 1.0 / (new_speed * 100.0);
+                        }
 
                         let master_desc = ParamDescriptor::gain_db("Master", "Master", -60.0, 12.0, 0.0);
                         let master_gain_db = adc_to_param(&master_desc, CONTROLS.read_knob(5));
                         cb.master_gain = sonido_core::fast_db_to_linear(master_gain_db);
-                    }
-
-                    // ── Graph rebuild ──
-                    if cb.needs_rebuild {
-                        NEEDS_REBUILD.store(true, Ordering::Release);
-                        cb.needs_rebuild = false;
                     }
 
                     // ── Morph interpolation ──
@@ -1004,11 +986,30 @@ async fn main(spawner: embassy_executor::Spawner) {
     );
 }
 
+/// Write the DFU-timeout magic into STM32H7 Backup SRAM and reset, which causes the
+/// Daisy Seed bootloader to remain in DFU mode indefinitely on the next boot.
+/// See RM0433 §8.11 (AHB4ENR) / §7.4 (PWR CR1) and the libDaisy bootloader source.
+#[inline(never)]
+fn enter_daisy_bootloader() -> ! {
+    unsafe {
+        core::ptr::write_volatile(
+            AHB4ENR_ADDR,
+            core::ptr::read_volatile(AHB4ENR_ADDR) | AHB4ENR_BKPRAMEN,
+        );
+        core::ptr::write_volatile(
+            PWR_CR1_ADDR,
+            core::ptr::read_volatile(PWR_CR1_ADDR) | PWR_CR1_DBP,
+        );
+        core::ptr::write_volatile(BACKUP_SRAM_ADDR, DAISY_INFINITE_TIMEOUT);
+    }
+    cortex_m::peripheral::SCB::sys_reset();
+}
+
 #[embassy_executor::task]
 async fn graph_rebuild_task() {
     loop {
         embassy_time::Timer::after_millis(20).await;
-        if !GRAPH_UPDATING.load(core::sync::atomic::Ordering::Acquire) {
+        if !GRAPH_UPDATING.load(Ordering::Acquire) {
             let graph = unsafe { GRAPH_STORAGE.as_mut().unwrap() };
             graph.clear_garbage();
         }
@@ -1024,10 +1025,11 @@ async fn graph_rebuild_task() {
             if let Ok(new_nids) = rebuild_graph_in_place(graph, nodes, cb.topology, SAMPLE_RATE) {
                 unsafe { NODE_IDS_STORAGE = new_nids; }
                 for slot in 0..NUM_SLOTS {
-                    if nodes[slot].effect_index.is_some() && nodes[slot].params_a.count == 0 {
-                        if let Some(nid) = new_nids[slot] {
-                            nodes[slot].params_a.capture_from(graph, nid);
-                        }
+                    if nodes[slot].effect_index.is_some()
+                        && nodes[slot].params_a.count == 0
+                        && let Some(nid) = new_nids[slot]
+                    {
+                        nodes[slot].params_a.capture_from(graph, nid);
                     }
                 }
                 match cb.ab_mode {
